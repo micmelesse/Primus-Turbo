@@ -116,14 +116,14 @@ def benchmark(seed, report_dir_path, load_config_path=None, dump_dir_path=None):
     save_to_excel(results_with_gpu, report_with_gpu)
 
     benchmark_reports = [report_with_cpu]
-    if Path(report_with_gpu).exists():
-        benchmark_reports.append(report_with_gpu)
     if (
         load_config_path
         and load_config.get("report_path")
         and Path(load_config.get("report_path")).exists()
     ):
         benchmark_reports.append(Path(load_config.get("report_path")))
+    if Path(report_with_gpu).exists():
+        benchmark_reports.append(report_with_gpu)
     if len(benchmark_reports) >= 2:
         report_path = report_dir / f"benchmark_{FUNC_NAME}.xlsx"
         merge_excels(benchmark_reports, report_path)
