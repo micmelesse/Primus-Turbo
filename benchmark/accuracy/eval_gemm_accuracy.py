@@ -1,19 +1,8 @@
 import argparse
+import json
 from pathlib import Path
 
-import json
 import torch
-
-from utils import (
-    DEVICE,
-    dump_tensor,
-    get_device_type,
-    get_device_name,
-    get_tensor_name,
-    load_tensor,
-    merge_excels,
-    save_to_excel,
-)
 from metrics import (
     cosine_similarity,
     max_abs_error,
@@ -21,7 +10,16 @@ from metrics import (
     relative_error,
     ulp_error,
 )
-
+from utils import (
+    DEVICE,
+    dump_tensor,
+    get_device_name,
+    get_device_type,
+    get_tensor_name,
+    load_tensor,
+    merge_excels,
+    save_to_excel,
+)
 
 FUNC_NAME = "gemm"
 
@@ -87,14 +85,12 @@ def benchmark(seed, report_dir_path, load_config_path=None, dump_dir_path=None):
                 dump_tensor(out, dump_dir, dump_file)
 
             if load_config_path is not None:
-                load_file = get_tensor_name(
-                    load_config.get("device_type"), FUNC_NAME, dtype, shape
-                )
+                load_file = get_tensor_name(load_config.get("device_type"), FUNC_NAME, dtype, shape)
                 out_load = load_tensor(load_dir, load_file)
                 ulp_gpu = ulp_error(out, out_load)
 
                 gpu_result = {
-                    "func": f"{FUNC_NAME.upper()} ({device_name} vs {load_config.get("device_name")})",
+                    "func": f"{FUNC_NAME.upper()} ({device_name} vs {load_config.get('device_name')})",
                     "dtype": str(dtype).split(".")[-1],
                     "shape": str(shape),
                     "RelError": item(relative_error(out_load, out)),
@@ -116,11 +112,7 @@ def benchmark(seed, report_dir_path, load_config_path=None, dump_dir_path=None):
     save_to_excel(results_with_gpu, report_with_gpu)
 
     benchmark_reports = [report_with_cpu]
-    if (
-        load_config_path
-        and load_config.get("report_path")
-        and Path(load_config.get("report_path")).exists()
-    ):
+    if load_config_path and load_config.get("report_path") and Path(load_config.get("report_path")).exists():
         benchmark_reports.append(Path(load_config.get("report_path")))
     if Path(report_with_gpu).exists():
         benchmark_reports.append(report_with_gpu)
@@ -137,6 +129,4 @@ if __name__ == "__main__":
     parser.add_argument("--seed", default=42, type=int)
 
     args = parser.parse_args()
-    benchmark(
-        args.seed, args.report_dir_path, args.load_config_path, args.dump_dir_path
-    )
+    benchmark(args.seed, args.report_dir_path, args.load_config_path, args.dump_dir_path)

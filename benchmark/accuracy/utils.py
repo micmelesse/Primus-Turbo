@@ -1,7 +1,6 @@
 import pandas as pd
 import torch
 
-
 DEVICE = "cuda:0"
 
 
@@ -20,11 +19,7 @@ def dump_tensor(tensor, dir_path, file_name):
 
 
 def get_device_name():
-    return (
-        torch.cuda.get_device_name(0).split()[2]
-        if is_ROCM()
-        else torch.cuda.get_device_name(0).split()[1]
-    )
+    return torch.cuda.get_device_name(0).split()[2] if is_ROCM() else torch.cuda.get_device_name(0).split()[1]
 
 
 def get_device_type():
