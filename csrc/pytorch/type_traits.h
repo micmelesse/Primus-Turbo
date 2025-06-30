@@ -3,7 +3,11 @@
 #include "ck/utility/data_type.hpp"
 #include <torch/extension.h>
 
+#include "primus_turbo/dtype.h"
+
 namespace primus_turbo::pytorch {
+
+using namespace primus_turbo::dtype;
 
 // ************************************************ //
 
@@ -13,12 +17,19 @@ namespace primus_turbo::pytorch {
 // Map torch::ScalarType -> CK type
 template <torch::ScalarType scalar_type> struct TorchToCKType;
 
-// TODO: FP8 Type. OCP
 template <> struct TorchToCKType<torch::kFloat8_e4m3fnuz> {
     using type = ck::f8_t;
 };
 
+template <> struct TorchToCKType<torch::kFloat8_e4m3fn> {
+    using type = ck::f8_t;
+};
+
 template <> struct TorchToCKType<torch::kFloat8_e5m2fnuz> {
+    using type = ck::bf8_t;
+};
+
+template <> struct TorchToCKType<torch::kFloat8_e5m2> {
     using type = ck::bf8_t;
 };
 
@@ -31,7 +42,7 @@ template <> struct TorchToCKType<torch::kBFloat16> {
 };
 
 template <> struct TorchToCKType<torch::kFloat> {
-    using type = float;
+    using type = float32;
 };
 // ************************************************ //
 
