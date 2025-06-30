@@ -26,6 +26,13 @@
 #define PRIMUS_TURBO_DEVICE inline
 #endif
 
+// Compile-time device-side flag
+#if defined(__HIP_DEVICE_COMPILE__)
+#define PRIMUS_TURBO_DEVICE_COMPILE 1
+#else
+#define PRIMUS_TURBO_DEVICE_COMPILE 0
+#endif
+
 //
 // Universal warp size constant (AMD = 64)
 //
