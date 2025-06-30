@@ -63,7 +63,7 @@
         }                                                                                          \
     } break;                                                                                       \
     default:                                                                                       \
-        PRIMUS_ERROR("Invalid type.");                                                             \
+        PRIMUS_TURBO_ERROR("Invalid type.");                                                       \
     }
 */
 
@@ -94,7 +94,7 @@
             { __VA_ARGS__ }                                                       \
         } break;                                                                  \
         default:                                                                  \
-            PRIMUS_ERROR("Invalid output type.");                                 \
+            PRIMUS_TURBO_ERROR("Invalid output type.");                           \
         }                                                                         \
     }()
 
@@ -113,7 +113,7 @@
             { __VA_ARGS__ }                                                       \
         } break;                                                                  \
         default:                                                                  \
-            PRIMUS_ERROR("Only float8 types are supported.");                     \
+            PRIMUS_TURBO_ERROR("Only float8 types are supported.");               \
         }                                                                         \
     }()
 
@@ -144,7 +144,7 @@
             { __VA_ARGS__ }                                                  \
         } break;                                                             \
         default:                                                             \
-            PRIMUS_ERROR("Invalid input type.");                             \
+            PRIMUS_TURBO_ERROR("Invalid input type.");                       \
         }                                                                    \
     }()
 
