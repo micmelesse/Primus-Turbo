@@ -139,6 +139,14 @@ template <typename... Ts> inline std::string concat_strings(const Ts &...args) {
         }                                                                                          \
     } while (false)
 
+#define PRIMUS_CHECK_HIPBLASLT(expr)                                                               \
+    do {                                                                                           \
+        const hipblasStatus_t status_PRIMUS_CHECK_HIPBLAS = (expr);                                \
+        if (status_PRIMUS_CHECK_HIPBLAS != HIPBLAS_STATUS_SUCCESS) {                               \
+            PRIMUS_ERROR("HIPBLASLT Error: ", std::to_string((int) status_PRIMUS_CHECK_HIPBLAS));  \
+        }                                                                                          \
+    } while (false)
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename T> constexpr T DIVUP(const T &x, const T &y) {

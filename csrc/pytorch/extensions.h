@@ -16,6 +16,8 @@
 
 namespace primus_turbo::pytorch {
 
+/* Quantize */
+
 at::Tensor fp8_quantize(const at::Tensor input, const at::Tensor scale,
                         const at::ScalarType dest_dtype);
 
@@ -28,9 +30,13 @@ at::Tensor fp8_dequantize(const at::Tensor input, const at::Tensor scale_inv,
 at::Tensor fp8_dequantize_meta(const at::Tensor input, const at::Tensor scale_inv,
                                const at::ScalarType dest_dtype);
 
-torch::Tensor gemm(torch::Tensor a, torch::Tensor b);
+/* GEMM */
 
-torch::Tensor gemm_meta(torch::Tensor a, torch::Tensor b);
+at::Tensor gemm(const at::Tensor A, const at::Tensor B, at::ScalarType out_dtype, const bool transA,
+                const bool transB);
+
+at::Tensor gemm_meta(const at::Tensor A, const at::Tensor B, at::ScalarType out_dtype,
+                     const bool transA, const bool transB);
 
 torch::Tensor gemm_fp8_blockwise(torch::Tensor &a, torch::Tensor &a_scales, torch::Tensor &b,
                                  torch::Tensor &b_scales, torch::Tensor &c, const bool transA,

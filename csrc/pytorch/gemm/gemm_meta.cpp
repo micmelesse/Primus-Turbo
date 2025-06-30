@@ -2,13 +2,12 @@
 
 namespace primus_turbo::pytorch {
 
-// This is a demo for testing csrc lib
-torch::Tensor gemm_meta(torch::Tensor a, torch::Tensor b) {
-    TORCH_CHECK(a.dim() == 2 && b.dim() == 2, "gemm expects both tensors to be 2D");
-    TORCH_CHECK(a.sizes()[1] == b.sizes()[0], "matrix size mismatch");
-    const int64_t m = a.sizes()[0];
-    const int64_t n = b.sizes()[1];
-    return at::empty({m, n}, a.options().device(at::kMeta));
+at::Tensor gemm_meta(const at::Tensor A, const at::Tensor B, at::ScalarType out_dtype,
+                     const bool transA, bool transB) {
+    const int64_t m = transA ? A.size(1) : A.size(0);
+    const int64_t n = transB ? B.size(0) : B.size(1);
+
+    return at::empty({m, n}, torch::dtype(out_dtype).device(at::kMeta));
 }
 
 torch::Tensor gemm_fp8_blockwise_meta(torch::Tensor &a, torch::Tensor &a_scales, torch::Tensor &b,
