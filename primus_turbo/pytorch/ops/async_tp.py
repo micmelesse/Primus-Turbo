@@ -151,86 +151,6 @@ def fused_all_gather_matmul(
     return A, [unflatten(output) for output in outputs]
 
 
-# def fused_matmul_reduce_scatter(
-#     A: torch.Tensor,
-#     B: torch.Tensor,
-#     layout: str,
-#     reduce_op: str,
-#     scatter_dim: int,
-#     group_name: str,
-#     *,
-#     output: Optional[torch.Tensor] = None,
-#     rs_out: Optional[torch.Tensor] = None,
-#     out_dtype: Optional[torch.dtype] = None,
-# ) -> torch.Tensor:
-#     # check input
-#     if A.dim() < 2:
-#         raise ValueError("A_shard must be a matrix")
-#     if scatter_dim < 0 or scatter_dim >= A.dim():
-#         raise ValueError("Invalid gather_dim")
-#     if B.dim() != 2:
-#         raise ValueError("B must be a matrix")
-#     if reduce_op == "sum":
-#         reduce_fn = partial(torch.sum, dim=0)
-#     elif reduce_op == "avg":
-#         reduce_fn = partial(torch.mean, dim=0)
-#     else:
-#         raise ValueError("reduce_op must be sum or avg")
-#     if layout[0] == "T":
-#         raise ValueError("layout must be NN or NT")
-#     if out_dtype is None:
-#         out_dtype = A.dtype
-
-#     B = B if layout[1] == "T" else B.T.contiguous()
-#     group = c10d._resolve_process_group(group_name)
-#     rs_out_shape = [*A.shape[:-1], B.shape[0]]
-#     rs_out_shape[scatter_dim] //= group.size()
-
-#     x = A.movedim(scatter_dim, 0)
-#     leading_dims = [group.size()] + list(x.shape[:-1])
-#     leading_dims[1] //= group.size()
-#     x = x.flatten(0, -2)
-
-#     if rs_out is not None:
-#         if rs_out.dtype != A.dtype:
-#             raise ValueError(
-#                 f"Invalid dtype: rs_out ({rs_out.dtype}) is different with A ({A.dtype})!"
-#             )
-#         if rs_out.numel() != reduce(operator.mul, rs_out_shape, 1):
-#             raise ValueError(
-#                 f"Invalid shape: rs_out ({rs_out.shape}) is not unexpected as ({rs_out_shape})!"
-#             )
-#         rs_out = rs_out.view(rs_out_shape)
-
-#     if output is not None:
-#         if output.dtype != A.dtype:
-#             raise ValueError(
-#                 f"Invalid dtype: output ({output.dtype}) is different with A ({A.dtype})!"
-#             )
-
-#         if output.numel() != rs_out.numel() * group.size():
-#             raise ValueError(f"output size must equal group size * rs_out size.")
-#         output = output.view(-1, B.shape[0])
-
-#     with torch.profiler.record_function("blockwise_fused_matmul_scatter_out"):
-#         stacked_partials = gemm_rs_impl._blockwise_fused_matmul_scatter_out_impl(
-#             input=x,
-#             weight=B,
-#             group_name=group_name,
-#             output=output,
-#             out_dtype=out_dtype,
-#         )
-#         # torch.save(stacked_partials, f"stacked_{torch.distributed.get_rank()}.pt")
-#     rs_output = reduce_fn(
-#         stacked_partials.view(*leading_dims, -1)
-#         .movedim(1, scatter_dim + 1)
-#         .movedim(0, scatter_dim),
-#         dim=scatter_dim,
-#     )
-#     if rs_out is not None:
-#         rs_out.copy_(rs_output)
-#     return rs_output
-
 def fused_matmul_reduce_scatter(
     A: torch.Tensor,
     B: torch.Tensor,
@@ -239,47 +159,91 @@ def fused_matmul_reduce_scatter(
     scatter_dim: int,
     group_name: str,
     *,
-    return_out: bool = False,
     output: Optional[torch.Tensor] = None,
     rs_out: Optional[torch.Tensor] = None,
     out_dtype: Optional[torch.dtype] = None,
 ) -> torch.Tensor:
-
+    # check input
     if A.dim() < 2:
         raise ValueError("A_shard must be a matrix")
     if scatter_dim < 0 or scatter_dim >= A.dim():
         raise ValueError("Invalid gather_dim")
     if B.dim() != 2:
         raise ValueError("B must be a matrix")
-    if reduce_op not in ["sum", "avg"]:
+    if reduce_op == "sum":
+        reduce_fn = partial(torch.sum, dim=0)
+    elif reduce_op == "avg":
+        reduce_fn = partial(torch.mean, dim=0)
+    else:
         raise ValueError("reduce_op must be sum or avg")
+    if layout[0] == "T":
+        raise ValueError("layout must be NN or NT")
+    if out_dtype is None:
+        out_dtype = A.dtype
 
-    # check input
-    B = B if layout[1] == "T" else B.T
+    B = B if layout[1] == "T" else B.T.contiguous()
+    group = c10d._resolve_process_group(group_name)
+    rs_out_shape = [*A.shape[:-1], B.shape[0]]
+    rs_out_shape[scatter_dim] //= group.size()
 
     x = A.movedim(scatter_dim, 0)
+    leading_dims = [group.size()] + list(x.shape[:-1])
+    leading_dims[1] //= group.size()
     x = x.flatten(0, -2)
+    M, K = x.shape
+    N = B.shape[0]
 
-    if rs_out is None:
-        group = c10d._resolve_process_group(group_name)
-        rs_out = x.new_empty(
-            x.shape[0] // group.size(), B.shape[0], dtype=out_dtype or A.dtype
+    if (
+        (M // group.size() < 256)
+        or (N < 256)
+        or (K < 256)
+        or (M % 256)
+        or (N % 256)
+        or (K % 256)
+    ):
+        raise ValueError(
+            f"M, N, and K must be divisible by 256, and M divided by group size must not be less than 256."
         )
-    if return_out and output is None:
-        output = x.new_empty(x.shape[0], B.shape[0], dtype=out_dtype or A.dtype)
+
+    if rs_out is not None:
+        if rs_out.dtype != A.dtype:
+            raise ValueError(
+                f"Invalid dtype: rs_out ({rs_out.dtype}) is different with A ({A.dtype})!"
+            )
+        if rs_out.numel() != reduce(operator.mul, rs_out_shape, 1):
+            raise ValueError(
+                f"Invalid shape: rs_out ({rs_out.shape}) is not unexpected as ({rs_out_shape})!"
+            )
+        rs_out = rs_out.view(rs_out_shape)
+
+    if output is not None:
+        if output.dtype != A.dtype:
+            raise ValueError(
+                f"Invalid dtype: output ({output.dtype}) is different with A ({A.dtype})!"
+            )
+
+        if output.numel() != rs_out.numel() * group.size():
+            raise ValueError(f"output size must equal group size * rs_out size.")
+        output = output.view(-1, B.shape[0])
 
     with torch.profiler.record_function("blockwise_fused_matmul_scatter_out"):
-        gemm_rs_impl._blockwise_fused_matmul_scatter_out_impl(
+        stacked_partials = gemm_rs_impl._blockwise_fused_matmul_scatter_out_impl(
             input=x,
             weight=B,
             group_name=group_name,
-            reduce_op=reduce_op,
             output=output,
-            rs_out=rs_out
+            out_dtype=out_dtype,
         )
 
-    return (
-        rs_out.movedim(0, scatter_dim)
-        if not return_out
-        else (rs_out.movedim(0, scatter_dim), output.movedim(0, scatter_dim))
+    rs_output = (
+        reduce_fn(
+            stacked_partials.float().view(*leading_dims, -1),
+            dim=0,
+        )
+        .movedim(0, scatter_dim)
+        .to(out_dtype)
     )
+
+    if rs_out is not None:
+        rs_out.copy_(rs_output)
+    return rs_output
