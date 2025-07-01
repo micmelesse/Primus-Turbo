@@ -88,6 +88,14 @@ def build_torch_extension():
         "-amdgpu-function-calls=false",
     ]
 
+    # Device Arch
+    # TODO: Add ENV Setting
+    # TODO: ROCM Version support
+    # nvcc_flags += [
+    #     "--offload-arch=gfx942",
+    #     "--offload-arch=gfx950",
+    # ]
+
     max_jobs = int(os.getenv("MAX_JOBS", "4"))
     nvcc_flags.append(f"-parallel-jobs={max_jobs}")
 

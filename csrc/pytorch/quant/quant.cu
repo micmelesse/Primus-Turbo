@@ -30,11 +30,11 @@ inline bool is_torch_fp8(const at::ScalarType dtype) {
 
 at::Tensor fp8_quantize(const at::Tensor input, const at::Tensor scale,
                         const at::ScalarType dest_dtype) {
-    PRIMUS_CHECK(input.scalar_type() == at::kBFloat16 || input.scalar_type() == at::kHalf ||
-                 input.scalar_type() == at::kFloat);
-    PRIMUS_CHECK(scale.scalar_type() == at::kFloat);
-    PRIMUS_CHECK(scale.ndimension() == 1);
-    PRIMUS_CHECK(is_torch_fp8(dest_dtype));
+    PRIMUS_TURBO_CHECK(input.scalar_type() == at::kBFloat16 || input.scalar_type() == at::kHalf ||
+                       input.scalar_type() == at::kFloat);
+    PRIMUS_TURBO_CHECK(scale.scalar_type() == at::kFloat);
+    PRIMUS_TURBO_CHECK(scale.ndimension() == 1);
+    PRIMUS_TURBO_CHECK(is_torch_fp8(dest_dtype));
 
     auto stream = at::hip::getCurrentHIPStreamMasqueradingAsCUDA();
     auto device = input.device();
@@ -57,11 +57,11 @@ at::Tensor fp8_quantize(const at::Tensor input, const at::Tensor scale,
 
 at::Tensor fp8_dequantize(const at::Tensor input, const at::Tensor scale_inv,
                           const at::ScalarType dest_dtype) {
-    PRIMUS_CHECK(is_torch_fp8(input.scalar_type()));
-    PRIMUS_CHECK(scale_inv.scalar_type() == at::kFloat);
-    PRIMUS_CHECK(scale_inv.ndimension() == 1);
-    PRIMUS_CHECK(dest_dtype == at::kBFloat16 || dest_dtype == at::kHalf ||
-                 dest_dtype == at::kFloat);
+    PRIMUS_TURBO_CHECK(is_torch_fp8(input.scalar_type()));
+    PRIMUS_TURBO_CHECK(scale_inv.scalar_type() == at::kFloat);
+    PRIMUS_TURBO_CHECK(scale_inv.ndimension() == 1);
+    PRIMUS_TURBO_CHECK(dest_dtype == at::kBFloat16 || dest_dtype == at::kHalf ||
+                       dest_dtype == at::kFloat);
 
     auto stream = at::cuda::getCurrentCUDAStream();
     auto device = input.device();
