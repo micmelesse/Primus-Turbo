@@ -14,7 +14,10 @@
 #include <stdexcept>
 #include <vector>
 
+#include "primus_turbo/arch.h"
 #include "primus_turbo/dtype.h"
+#include "primus_turbo/macros.h"
+#include "primus_turbo/platform.h"
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 namespace primus_turbo {
@@ -73,69 +76,6 @@ template <> struct BytesToType<1> {
 };
 
 } // namespace primus_turbo
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-constexpr uint32_t THREADS_PER_WARP = 64;
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-namespace primus_turbo {
-
-/*! \brief Convert to C-style or C++-style string */
-template <typename T, typename = typename std::enable_if<std::is_arithmetic<T>::value>::type>
-inline std::string to_string_like(const T &val) {
-    return std::to_string(val);
-}
-
-inline const std::string &to_string_like(const std::string &val) noexcept {
-    return val;
-}
-
-constexpr const char *to_string_like(const char *val) noexcept {
-    return val;
-}
-
-/*! \brief Convert arguments to strings and concatenate */
-template <typename... Ts> inline std::string concat_strings(const Ts &...args) {
-    std::string str;
-    str.reserve(1024); // Assume strings are <1 KB
-    (..., (str += to_string_like(args)));
-    return str;
-}
-
-} // namespace primus_turbo
-
-#define PRIMUS_ERROR(...)                                                                          \
-    do {                                                                                           \
-        throw ::std::runtime_error(                                                                \
-            ::primus_turbo::concat_strings(__FILE__ ":", __LINE__, " in function ", __func__,      \
-                                           ": ", ::primus_turbo::concat_strings(__VA_ARGS__)));    \
-    } while (false)
-
-#define PRIMUS_CHECK(expr, ...)                                                                    \
-    do {                                                                                           \
-        if (!(expr)) {                                                                             \
-            PRIMUS_ERROR("Assertion failed: " #expr ". ",                                          \
-                         ::primus_turbo::concat_strings(__VA_ARGS__));                             \
-        }                                                                                          \
-    } while (false)
-
-#define PRIMUS_CHECK_HIP(expr)                                                                     \
-    do {                                                                                           \
-        const hipError_t status_PRIMUS_CHECK_HIP = (expr);                                         \
-        if (status_PRIMUS_CHECK_HIP != hipSuccess) {                                               \
-            PRIMUS_ERROR("HIP Error: ", hipGetErrorString(status_PRIMUS_CHECK_HIP));               \
-        }                                                                                          \
-    } while (false)
-
-#define PRIMUS_CHECK_HIPBLASLT(expr)                                                               \
-    do {                                                                                           \
-        const hipblasStatus_t status_PRIMUS_CHECK_HIPBLAS = (expr);                                \
-        if (status_PRIMUS_CHECK_HIPBLAS != HIPBLAS_STATUS_SUCCESS) {                               \
-            PRIMUS_ERROR("HIPBLASLT Error: ", std::to_string((int) status_PRIMUS_CHECK_HIPBLAS));  \
-        }                                                                                          \
-    } while (false)
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
