@@ -5,7 +5,7 @@ from torch.library import triton_op, wrap_triton
 from primus_turbo.triton.gemm.gemm_kernel import gemm_triton_kernel
 
 
-def gemm_triton_imlp(a: torch.Tensor, b: torch.Tensor, layout: str = "NN") -> torch.Tensor:
+def gemm_triton_impl(a: torch.Tensor, b: torch.Tensor, layout: str = "NN") -> torch.Tensor:
     return torch.ops.primus_turbo.gemm_triton.default(a, b, layout)
 
 
