@@ -76,6 +76,9 @@ class BlockwiseFP8GemmFunction(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_out):
+        if not grad_out.is_contiguous():
+            grad_out = grad_out.contiguous()
+
         x, w_fp8, w_scales = ctx.saved_tensors
         block_size = ctx.block_size
         dtype = ctx.dtype
