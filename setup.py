@@ -101,11 +101,14 @@ def build_torch_extension():
 
     # Include
     ck_include_dir = Path(PROJECT_ROOT / "3rdparty" / "composable_kernel" / "include")
-    csrc_source_files = Path(PROJECT_ROOT / "csrc" / "pytorch")
+    kernels_source_files = Path(PROJECT_ROOT / "csrc" / "kernels")
+    pytorch_csrc_source_files = Path(PROJECT_ROOT / "csrc" / "pytorch")
 
     # CPP
-    sources = [csrc_source_files / "bindings_pytorch.cpp"] + all_files_in_dir(
-        csrc_source_files, name_extensions=["cpp", "cc", "cu"]
+    sources = (
+        [pytorch_csrc_source_files / "bindings_pytorch.cpp"]
+        + all_files_in_dir(pytorch_csrc_source_files, name_extensions=["cpp", "cc", "cu"])
+        + all_files_in_dir(kernels_source_files, name_extensions=["cpp", "cc", "cu"])
     )
 
     return CUDAExtension(

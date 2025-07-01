@@ -1,31 +1,22 @@
 import torch
 
-from primus_turbo.pytorch.kernels.gemm.gemm_triton_impl import gemm_triton_imlp
-
 __all__ = ["gemm"]
 
 
-class GemmFunction(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, a, b):
-        ctx.save_for_backward(a, b)
-        return gemm_triton_imlp(a, b)
+def gemm(A: torch.Tensor, B: torch.Tensor, out_dtype: torch.dtype, layout: str) -> torch.Tensor:
+    assert layout in ("TN", "NN", "NT"), f"GEMM layout {layout} not supported."
+    transa = layout[0] == "T"
+    transb = layout[1] == "T"
 
-    @staticmethod
-    def backward(ctx, grad_output):
-        a, b = ctx.saved_tensors
-        grad_a = gemm_triton_imlp(grad_output, b, "NT") if ctx.needs_input_grad[0] else None
-        grad_b = gemm_triton_imlp(a, grad_output, "TN") if ctx.needs_input_grad[1] else None
-        return grad_a, grad_b
+    args = (
+        A,
+        B,
+        out_dtype,
+        transa,
+        transb,
+    )
 
+    # TODO(ruibzhan): support more backends.
+    out = torch.ops.primus_turbo_cpp_extension.hipblaslt_gemm(*args)
 
-# TODO: out
-# @torch.compile(fullgraph=True, mode="max-autotune")
-def gemm(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
-    """ """
-    return GemmFunction.apply(a, b)
-
-
-# def gemm_fp8():
-#     """ """
-#     pass
+    return out

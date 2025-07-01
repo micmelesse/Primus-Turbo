@@ -8,7 +8,7 @@ from tests.test_utils import get_tolerances
 @pytest.mark.parametrize("bias", [True, False])
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
 @pytest.mark.parametrize("enable_torch_compile", [True, False])
-def test_linear_forward(bias, dtype, enable_torch_compile):
+def test_linear_accuracy(bias, dtype, enable_torch_compile):
     if not torch.cuda.is_available():
         pytest.skip("CUDA not available")
     torch.manual_seed(42)

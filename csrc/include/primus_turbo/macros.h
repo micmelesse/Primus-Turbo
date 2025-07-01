@@ -53,3 +53,12 @@ template <typename... Ts> inline std::string concat_strings(const Ts &...args) {
             PRIMUS_TURBO_ERROR("HIP Error: ", hipGetErrorString(status_PRIMUS_TURBO_CHECK_HIP));   \
         }                                                                                          \
     } while (false)
+
+#define PRIMUS_TURBO_CHECK_HIPBLAS(expr)                                                           \
+    do {                                                                                           \
+        const hipblasStatus_t status_PRIMUS_CHECK_HIPBLAS = (expr);                                \
+        if (status_PRIMUS_CHECK_HIPBLAS != HIPBLAS_STATUS_SUCCESS) {                               \
+            PRIMUS_TURBO_ERROR("HIPBLASLT Error: ",                                                \
+                               std::to_string((int) status_PRIMUS_CHECK_HIPBLAS));                 \
+        }                                                                                          \
+    } while (false)
