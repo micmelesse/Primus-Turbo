@@ -7,7 +7,8 @@ namespace primus_turbo::pytorch {
 /********************************************/
 
 TORCH_LIBRARY(primus_turbo_cpp_extension, m) {
-    m.def("gemm(Tensor A, Tensor B, ScalarType out_dtype, bool transA, bool transB) -> Tensor");
+    m.def("hipblaslt_gemm(Tensor A, Tensor B, ScalarType out_dtype, bool transA, bool transB) -> "
+          "Tensor");
     m.def("gemm_fp8_blockwise("
           "Tensor a, Tensor a_scales, "
           "Tensor b, Tensor b_scales, "
@@ -20,14 +21,14 @@ TORCH_LIBRARY(primus_turbo_cpp_extension, m) {
 }
 
 TORCH_LIBRARY_IMPL(primus_turbo_cpp_extension, CUDA, m) {
-    m.impl("gemm", gemm);
+    m.impl("hipblaslt_gemm", hipblaslt_gemm);
     m.impl("gemm_fp8_blockwise", gemm_fp8_blockwise);
     m.impl("fp8_quantize", fp8_quantize);
     m.impl("fp8_dequantize", fp8_dequantize);
 }
 
 TORCH_LIBRARY_IMPL(primus_turbo_cpp_extension, Meta, m) {
-    m.impl("gemm", gemm_meta);
+    m.impl("hipblaslt_gemm", hipblaslt_gemm_meta);
     m.impl("gemm_fp8_blockwise", gemm_fp8_blockwise_meta);
     m.impl("fp8_quantize", fp8_quantize_meta);
     m.impl("fp8_dequantize", fp8_dequantize_meta);

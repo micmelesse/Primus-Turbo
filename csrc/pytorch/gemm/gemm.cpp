@@ -33,8 +33,8 @@ static inline bool is_floating_point_dtype(at::ScalarType dtype) {
     return dtype == at::kHalf || dtype == at::kBFloat16 || dtype == at::kFloat;
 }
 
-at::Tensor gemm(const at::Tensor A, const at::Tensor B, const at::ScalarType out_dtype,
-                const bool transA, const bool transB) {
+at::Tensor hipblaslt_gemm(const at::Tensor A, const at::Tensor B, const at::ScalarType out_dtype,
+                          const bool transA, const bool transB) {
     PRIMUS_TURBO_CHECK(is_16bit_floating_point_dtype(A.scalar_type()));
     PRIMUS_TURBO_CHECK(is_16bit_floating_point_dtype(B.scalar_type()));
     PRIMUS_TURBO_CHECK(A.scalar_type() == B.scalar_type(), "A and B dtype mismatch");
@@ -87,7 +87,7 @@ at::Tensor gemm(const at::Tensor A, const at::Tensor B, const at::ScalarType out
     // clang-format off
     // NOTE: hipblaslt expects tensor in col-major but torch Tensor is in row-major.
     // Swapping A&B that are essentially computing C^T = B^T @ A^T.
-    hipblaslt_gemm(
+    hipblaslt_gemm_impl(
         static_cast<const void *>(B.data_ptr()), B_type, ldb, trans_operation_B,
         static_cast<const void *>(A.data_ptr()), A_type, lda, trans_operation_A,
         static_cast<void *>(C.data_ptr()), C_type, ldd,

@@ -32,11 +32,11 @@ at::Tensor fp8_dequantize_meta(const at::Tensor input, const at::Tensor scale_in
 
 /* GEMM */
 
-at::Tensor gemm(const at::Tensor A, const at::Tensor B, at::ScalarType out_dtype, const bool transA,
-                const bool transB);
+at::Tensor hipblaslt_gemm(const at::Tensor A, const at::Tensor B, at::ScalarType out_dtype,
+                          const bool transA, const bool transB);
 
-at::Tensor gemm_meta(const at::Tensor A, const at::Tensor B, at::ScalarType out_dtype,
-                     const bool transA, const bool transB);
+at::Tensor hipblaslt_gemm_meta(const at::Tensor A, const at::Tensor B, at::ScalarType out_dtype,
+                               const bool transA, const bool transB);
 
 torch::Tensor gemm_fp8_blockwise(torch::Tensor &a, torch::Tensor &a_scales, torch::Tensor &b,
                                  torch::Tensor &b_scales, torch::Tensor &c, const bool transA,

@@ -2,8 +2,8 @@
 
 namespace primus_turbo::pytorch {
 
-at::Tensor gemm_meta(const at::Tensor A, const at::Tensor B, at::ScalarType out_dtype,
-                     const bool transA, bool transB) {
+at::Tensor hipblaslt_gemm_meta(const at::Tensor A, const at::Tensor B, at::ScalarType out_dtype,
+                               const bool transA, bool transB) {
     const int64_t m = transA ? A.size(1) : A.size(0);
     const int64_t n = transB ? B.size(0) : B.size(1);
 

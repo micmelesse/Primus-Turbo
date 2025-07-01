@@ -16,6 +16,7 @@ def gemm(A: torch.Tensor, B: torch.Tensor, out_dtype: torch.dtype, layout: str) 
         transb,
     )
 
-    out = torch.ops.primus_turbo_cpp_extension.gemm(*args)
+    # TODO(ruibzhan): support more backends.
+    out = torch.ops.primus_turbo_cpp_extension.hipblaslt_gemm(*args)
 
     return out
