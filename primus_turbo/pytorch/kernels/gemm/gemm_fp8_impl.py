@@ -2,6 +2,7 @@ from typing import Tuple
 
 import torch
 import triton
+from torch.library import custom_op, triton_op, wrap_triton
 
 from primus_turbo.triton.gemm.gemm_fp8_kernel import (
     gemm_fp8_blockwise_nn_kernel,
@@ -18,6 +19,7 @@ def ceil_div(a, b):
     return (a + b - 1) // b
 
 
+@triton_op("primus_turbo::quant_fp8_blockwise_for_weight_impl", mutates_args=())
 def quant_fp8_blockwise_for_weight_impl(
     w: torch.Tensor,
     dtype: torch.dtype,
@@ -51,7 +53,7 @@ def quant_fp8_blockwise_for_weight_impl(
         device=w.device,
     )
     grid = (B, triton.cdiv(M, block_size), triton.cdiv(N, block_size))
-    quant_fp8_blockwise_for_weight_kernel[grid](
+    wrap_triton(quant_fp8_blockwise_for_weight_kernel)[grid](
         w,
         w_fp8,
         w_scales,
@@ -67,6 +69,32 @@ def quant_fp8_blockwise_for_weight_impl(
     return w_fp8, w_scales
 
 
+@quant_fp8_blockwise_for_weight_impl.register_fake
+def quant_fp8_blockwise_for_weight_impl_meta(
+    w: torch.Tensor,
+    dtype: torch.dtype,
+    block_size: int = 128,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    assert w.dim() in (2, 3)
+    ori_dims = w.dim()
+    if ori_dims == 2:
+        B, M, N = 1, *w.shape
+        w = w.unsqueeze(0)
+    else:
+        B, M, N = w.shape
+    w_fp8 = torch.empty((B, M, N), dtype=dtype, device=w.device)
+    w_scales = torch.empty(
+        (B, ceil_div(M, block_size), ceil_div(N, block_size)),
+        dtype=torch.float32,
+        device=w.device,
+    )
+    if ori_dims == 2:
+        w_fp8 = w_fp8.squeeze(0)
+        w_scales = w_scales.squeeze(0)
+    return w_fp8, w_scales
+
+
+@triton_op("primus_turbo::quant_fp8_blockwise_for_act_grad_impl", mutates_args=())
 def quant_fp8_blockwise_for_act_grad_impl(
     x: torch.Tensor,
     dtype: torch.dtype,
@@ -91,7 +119,7 @@ def quant_fp8_blockwise_for_act_grad_impl(
     x_fp8_col = torch.empty(M, N, dtype=dtype, device=x.device)
     x_scales_col = torch.empty(ceil_div(M, block_size), N, dtype=torch.float32, device=x.device)
     grid = (triton.cdiv(M, block_size), triton.cdiv(N, block_size))
-    quant_fp8_blockwise_for_act_grad_kernel[grid](
+    wrap_triton(quant_fp8_blockwise_for_act_grad_kernel)[grid](
         x,
         x_fp8_row,
         x_scales_row,
@@ -105,7 +133,26 @@ def quant_fp8_blockwise_for_act_grad_impl(
     return x_fp8_row, x_scales_row, x_fp8_col, x_scales_col
 
 
+@quant_fp8_blockwise_for_act_grad_impl.register_fake
+def quant_fp8_blockwise_for_act_grad_impl_meta(
+    x: torch.Tensor,
+    dtype: torch.dtype,
+    block_size: int = 128,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    M, N = x.shape
+    x_fp8_row = torch.empty(M, N, dtype=dtype, device=x.device)
+    x_scales_row = torch.empty(M, ceil_div(N, block_size), dtype=torch.float32, device=x.device)
+    x_fp8_col = torch.empty(M, N, dtype=dtype, device=x.device)
+    x_scales_col = torch.empty(ceil_div(M, block_size), N, dtype=torch.float32, device=x.device)
+    return x_fp8_row, x_scales_row, x_fp8_col, x_scales_col
+
+
 # For FWD NT
+# TODO: avoid cache miss?
+gemm_fp8_blockwise_nt_kernel_wrapped = wrap_triton(gemm_fp8_blockwise_nt_kernel)
+
+
+@custom_op("primus_turbo::gemm_fp8_blockwise_nt_impl", mutates_args=(), device_types="cuda")
 def gemm_fp8_blockwise_nt_impl(
     a: torch.Tensor,
     b: torch.Tensor,
@@ -133,11 +180,29 @@ def gemm_fp8_blockwise_nt_impl(
             triton.cdiv(M, META["BLOCK_SIZE_M"]),
             triton.cdiv(N, META["BLOCK_SIZE_N"]),
         )
-        gemm_fp8_blockwise_nt_kernel[grid](a, b, out, a_scales, b_scales, M, N, K, BLOCK_SIZE_K=block_size)
+        gemm_fp8_blockwise_nt_kernel_wrapped[grid](
+            a, b, out, a_scales, b_scales, M, N, K, BLOCK_SIZE_K=block_size
+        )
+    return out
+
+
+@gemm_fp8_blockwise_nt_impl.register_fake
+def gemm_fp8_blockwise_nt_impl_meta(
+    a: torch.Tensor,
+    b: torch.Tensor,
+    a_scales: torch.Tensor,
+    b_scales: torch.Tensor,
+    out_dtype: torch.dtype,
+    block_size: int = 128,
+) -> torch.Tensor:
+    M, K = a.shape
+    N, K1 = b.shape
+    out = torch.empty(M, N, dtype=out_dtype, device=a.device)
     return out
 
 
 # For DGrad NN
+@triton_op("primus_turbo::gemm_fp8_blockwise_nn_impl", mutates_args=())
 def gemm_fp8_blockwise_nn_impl(
     a: torch.Tensor,
     b: torch.Tensor,
@@ -161,11 +226,29 @@ def gemm_fp8_blockwise_nn_impl(
         triton.cdiv(M, META["BLOCK_SIZE_M"]),
         triton.cdiv(N, META["BLOCK_SIZE_N"]),
     )
-    gemm_fp8_blockwise_nn_kernel[grid](a, b, out, a_scales, b_scales, M, N, K, BLOCK_SIZE_K=block_size)
+    wrap_triton(gemm_fp8_blockwise_nn_kernel)[grid](
+        a, b, out, a_scales, b_scales, M, N, K, BLOCK_SIZE_K=block_size
+    )
+    return out
+
+
+@gemm_fp8_blockwise_nn_impl.register_fake
+def gemm_fp8_blockwise_nn_impl_meta(
+    a: torch.Tensor,
+    b: torch.Tensor,
+    a_scales: torch.Tensor,
+    b_scales: torch.Tensor,
+    out_dtype: torch.dtype,
+    block_size: int = 128,
+) -> torch.Tensor:
+    M, K = a.shape
+    K1, N = b.shape
+    out = torch.empty(M, N, dtype=out_dtype, device=a.device)
     return out
 
 
 # For WGrad TN
+@triton_op("primus_turbo::gemm_fp8_blockwise_tn_impl", mutates_args=())
 def gemm_fp8_blockwise_tn_impl(
     a: torch.Tensor,  # [k, m]
     b: torch.Tensor,  # [k, n]
@@ -189,5 +272,22 @@ def gemm_fp8_blockwise_tn_impl(
         triton.cdiv(M, META["BLOCK_SIZE_M"]),
         triton.cdiv(N, META["BLOCK_SIZE_N"]),
     )
-    gemm_fp8_blockwise_tn_kernel[grid](a, b, out, a_scales, b_scales, M, N, K, BLOCK_SIZE_K=block_size)
+    wrap_triton(gemm_fp8_blockwise_tn_kernel)[grid](
+        a, b, out, a_scales, b_scales, M, N, K, BLOCK_SIZE_K=block_size
+    )
+    return out
+
+
+@gemm_fp8_blockwise_tn_impl.register_fake
+def gemm_fp8_blockwise_tn_impl_meta(
+    a: torch.Tensor,  # [k, m]
+    b: torch.Tensor,  # [k, n]
+    a_scales: torch.Tensor,  # [k//block_size, m]
+    b_scales: torch.Tensor,  # [k//block_size, n]
+    out_dtype: torch.dtype,
+    block_size: int = 128,
+) -> torch.Tensor:
+    K, M = a.shape
+    K1, N = b.shape
+    out = torch.empty(M, N, dtype=out_dtype, device=a.device)
     return out
