@@ -187,6 +187,7 @@ def gemm_fp8_blockwise_tn_kernel(
     tl.store(c_ptrs, accumulator.to(c_ptr.dtype.element_ty), mask=mask)
 
 
+"""
 @triton.jit
 def gemm_fp8_blockwise_kernel(
     a_ptr,
@@ -251,3 +252,4 @@ def gemm_fp8_blockwise_kernel(
         accumulator.to(c_ptr.dtype.element_ty),
         mask=(offs_cm[:, None] < M) & (offs_cn[None, :] < N),
     )
+"""

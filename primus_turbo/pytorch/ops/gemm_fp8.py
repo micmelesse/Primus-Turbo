@@ -73,14 +73,6 @@ class BlockwiseFP8GemmFunction(torch.autograd.Function):
 
         # Perform NT GEMM in quantized domain:
         # out = x_fp8_row @ w_fp8.T → shape [M, N]
-        # out = gemm_fp8_blockwise_nt_impl(
-        #     x_fp8_row,
-        #     w_fp8,
-        #     x_scales_row,
-        #     w_scales,
-        #     out_dtype=x.dtype,
-        #     block_size=block_size,
-        # )
         out = gemm_fp8_blockwise_impl(
             x_fp8_row,
             w_fp8,
@@ -131,14 +123,6 @@ class BlockwiseFP8GemmFunction(torch.autograd.Function):
         # DGrad NN:
         # grad_x = grad_out @ weight
         # [m, k] = [m, n] * [n, k]
-        # grad_x = gemm_fp8_blockwise_nn_impl(
-        #     grad_out_fp8_row,
-        #     w_fp8,
-        #     grad_out_scales_row,
-        #     w_scales,
-        #     out_dtype=grad_out.dtype,
-        #     block_size=block_size,
-        # )
         grad_x = gemm_fp8_blockwise_impl(
             grad_out_fp8_row,
             w_fp8,
@@ -155,14 +139,6 @@ class BlockwiseFP8GemmFunction(torch.autograd.Function):
         # WGrad TN:
         # grad_w = grad_out.T @ x
         # [n,k] = [m, n] * [m, k]
-        # grad_w = gemm_fp8_blockwise_tn_impl(
-        #     grad_out_fp8_col,
-        #     x_fp8_col,
-        #     grad_out_scales_col,
-        #     x_scales_col,
-        #     out_dtype=grad_out.dtype,
-        #     block_size=block_size,
-        # )
         grad_w = gemm_fp8_blockwise_impl(
             grad_out_fp8_col,
             x_fp8_col,
