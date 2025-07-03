@@ -19,6 +19,20 @@ def ceil_div(a, b):
     return (a + b - 1) // b
 
 
+def get_gemm_logical_shape(
+    a: torch.Tensor, b: torch.Tensor, transA: bool, transB: bool
+) -> Tuple[int, int, int]:
+    assert (
+        a.ndim == 2 and b.ndim == 2
+    ), f"Expected both a and b to be 2D tensors, but got a.ndim={a.ndim}, b.ndim={b.ndim}"
+    M = a.shape[1] if transA else a.shape[0]
+    Ka = a.shape[0] if transA else a.shape[1]
+    Kb = b.shape[1] if transB else b.shape[0]
+    N = b.shape[0] if transB else b.shape[1]
+    assert Ka == Kb, f"GEMM K mismatch: A has K={Ka}, B has K={Kb}"
+    return M, N, Ka
+
+
 @triton_op("primus_turbo::quant_fp8_blockwise_for_weight_impl", mutates_args=())
 def quant_fp8_blockwise_for_weight_impl(
     w: torch.Tensor,
@@ -291,3 +305,75 @@ def gemm_fp8_blockwise_tn_impl_meta(
     K1, N = b.shape
     out = torch.empty(M, N, dtype=out_dtype, device=a.device)
     return out
+
+
+@custom_op("primus_turbo::gemm_fp8_blockwise_impl", mutates_args=(), device_types="cuda")
+def gemm_fp8_blockwise_impl(
+    a: torch.Tensor,
+    b: torch.Tensor,
+    a_scales: torch.Tensor,
+    b_scales: torch.Tensor,
+    out_dtype: torch.dtype,
+    scale_group_size_m: int,
+    scale_group_size_n: int,
+    scale_group_size_k: int,
+    transA: bool,
+    transB: bool,
+) -> torch.Tensor:
+    """
+    Blockwise FP8 GEMM.
+    """
+    assert a.is_contiguous() and b.is_contiguous(), "Inputs must be contiguous"
+    assert a_scales.is_contiguous() and b_scales.is_contiguous(), "Scales must be contiguous"
+
+    M, N, K = get_gemm_logical_shape(a, b, transA, transB)
+    c = torch.empty(M, N, dtype=out_dtype, device=a.device)
+
+    grid = lambda META: (
+        triton.cdiv(M, META["BLOCK_SIZE_M"]),
+        triton.cdiv(N, META["BLOCK_SIZE_N"]),
+    )
+    if transA == False and transB == True:
+        # NT
+        if (N % 128 == 0 and K % 128 == 0) and (
+            scale_group_size_m == 1 and scale_group_size_n == 128 and scale_group_size_k == 128
+        ):
+            c = torch.ops.primus_turbo_cpp_extension.gemm_fp8_blockwise(
+                a, a_scales, b, b_scales, c, False, True, scale_group_size_k
+            )
+        else:
+            wrap_triton(gemm_fp8_blockwise_nt_kernel)[grid](
+                a, b, c, a_scales, b_scales, M, N, K, BLOCK_SIZE_K=scale_group_size_k
+            )
+    elif transA == False and transB == False:
+        # NN
+        wrap_triton(gemm_fp8_blockwise_nn_kernel)[grid](
+            a, b, c, a_scales, b_scales, M, N, K, BLOCK_SIZE_K=scale_group_size_k
+        )
+    elif transA == True and transB == False:
+        # TN
+        wrap_triton(gemm_fp8_blockwise_tn_kernel)[grid](
+            a, b, c, a_scales, b_scales, M, N, K, BLOCK_SIZE_K=scale_group_size_k
+        )
+    else:
+        raise NotImplementedError(f"Unsupported transA={transA}, transB={transB}")
+
+    return c
+
+
+@gemm_fp8_blockwise_impl.register_fake
+def gemm_fp8_blockwise_impl_meta(
+    a: torch.Tensor,
+    b: torch.Tensor,
+    a_scales: torch.Tensor,
+    b_scales: torch.Tensor,
+    out_dtype: torch.dtype,
+    scale_group_size_m: int,
+    scale_group_size_n: int,
+    scale_group_size_k: int,
+    transA: bool,
+    transB: bool,
+) -> torch.Tensor:
+    M, N, _ = get_gemm_logical_shape(a, b, transA, transB)
+    c = torch.empty(M, N, dtype=out_dtype, device=a.device)
+    return c

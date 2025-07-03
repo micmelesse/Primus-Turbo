@@ -4,9 +4,7 @@ import torch
 
 from primus_turbo.pytorch.core.float8 import Format, MXQuantConfig, ScalingGranularity
 from primus_turbo.pytorch.kernels.gemm.gemm_fp8_impl import (
-    gemm_fp8_blockwise_nn_impl,
-    gemm_fp8_blockwise_nt_impl,
-    gemm_fp8_blockwise_tn_impl,
+    gemm_fp8_blockwise_impl,
     quant_fp8_blockwise_for_act_grad_impl,
     quant_fp8_blockwise_for_weight_impl,
 )
@@ -75,13 +73,25 @@ class BlockwiseFP8GemmFunction(torch.autograd.Function):
 
         # Perform NT GEMM in quantized domain:
         # out = x_fp8_row @ w_fp8.T → shape [M, N]
-        out = gemm_fp8_blockwise_nt_impl(
+        # out = gemm_fp8_blockwise_nt_impl(
+        #     x_fp8_row,
+        #     w_fp8,
+        #     x_scales_row,
+        #     w_scales,
+        #     out_dtype=x.dtype,
+        #     block_size=block_size,
+        # )
+        out = gemm_fp8_blockwise_impl(
             x_fp8_row,
             w_fp8,
             x_scales_row,
             w_scales,
             out_dtype=x.dtype,
-            block_size=block_size,
+            scale_group_size_m=1,
+            scale_group_size_n=block_size,
+            scale_group_size_k=block_size,
+            transA=False,
+            transB=True,
         )
 
         # Save tensors for backward
@@ -121,25 +131,49 @@ class BlockwiseFP8GemmFunction(torch.autograd.Function):
         # DGrad NN:
         # grad_x = grad_out @ weight
         # [m, k] = [m, n] * [n, k]
-        grad_x = gemm_fp8_blockwise_nn_impl(
+        # grad_x = gemm_fp8_blockwise_nn_impl(
+        #     grad_out_fp8_row,
+        #     w_fp8,
+        #     grad_out_scales_row,
+        #     w_scales,
+        #     out_dtype=grad_out.dtype,
+        #     block_size=block_size,
+        # )
+        grad_x = gemm_fp8_blockwise_impl(
             grad_out_fp8_row,
             w_fp8,
             grad_out_scales_row,
             w_scales,
             out_dtype=grad_out.dtype,
-            block_size=block_size,
+            scale_group_size_m=1,
+            scale_group_size_n=block_size,
+            scale_group_size_k=block_size,
+            transA=False,
+            transB=False,
         )
 
         # WGrad TN:
         # grad_w = grad_out.T @ x
         # [n,k] = [m, n] * [m, k]
-        grad_w = gemm_fp8_blockwise_tn_impl(
+        # grad_w = gemm_fp8_blockwise_tn_impl(
+        #     grad_out_fp8_col,
+        #     x_fp8_col,
+        #     grad_out_scales_col,
+        #     x_scales_col,
+        #     out_dtype=grad_out.dtype,
+        #     block_size=block_size,
+        # )
+        grad_w = gemm_fp8_blockwise_impl(
             grad_out_fp8_col,
             x_fp8_col,
             grad_out_scales_col,
             x_scales_col,
             out_dtype=grad_out.dtype,
-            block_size=block_size,
+            scale_group_size_m=1,
+            scale_group_size_n=1,
+            scale_group_size_k=block_size,
+            transA=True,
+            transB=False,
         )
 
         if orig_shape is not None:
