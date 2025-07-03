@@ -2,12 +2,7 @@ from typing import Optional
 
 import torch
 
-from primus_turbo.pytorch.core.float8 import (
-    Float8QuantConfig,
-    Format,
-    ScalingGranularity,
-    ScalingStrategy,
-)
+from primus_turbo.pytorch.core.float8 import MXQuantConfig
 from primus_turbo.pytorch.ops.gemm_fp8 import gemm_fp8_blockwise
 
 __all__ = ["MXLinear"]
@@ -21,24 +16,19 @@ class MXLinear(torch.nn.Linear):
         in_features: int,
         out_features: int,
         bias: bool = True,
-        config: Optional[Float8QuantConfig] = None,
+        config: Optional[MXQuantConfig] = None,
         **kwargs,
     ):
         super().__init__(in_features, out_features, bias, **kwargs)
         if config is None:
-            config = Float8QuantConfig(
-                dtype=Format.E4M3,
-                granularity=ScalingGranularity.BLOCKWISE,
-                strategy=ScalingStrategy.DYNAMIC,
-                block_size=128,
-            )
+            config = MXQuantConfig()
         self.config = config
 
     def forward(self, x):
-        # TODO send config
         out = gemm_fp8_blockwise(
             x,
             self.weight,
+            self.config,
         )
         if self.bias is not None:
             out = out + self.bias
@@ -49,17 +39,12 @@ class MXLinear(torch.nn.Linear):
     def from_float(
         cls,
         mod,
-        config: Optional[Float8QuantConfig] = None,
+        config: Optional[MXQuantConfig] = None,
     ):
         if config is None:
-            config = Float8QuantConfig(
-                dtype=Format.E4M3,
-                granularity=ScalingGranularity.BLOCKWISE,
-                strategy=ScalingStrategy.DYNAMIC,
-                block_size=128,
-            )
+            config = MXQuantConfig()
         assert isinstance(mod, torch.nn.Linear), f"unsupported type(mod) {type(mod)}"
-        assert isinstance(config, Float8QuantConfig)
+        assert isinstance(config, MXQuantConfig)
         mod.__class__ = MXLinear
         mod.config = config
         return mod

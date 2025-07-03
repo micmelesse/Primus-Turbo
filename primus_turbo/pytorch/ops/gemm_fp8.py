@@ -1,6 +1,8 @@
+from typing import Optional
+
 import torch
 
-from primus_turbo.pytorch.core.float8 import float8_e4m3
+from primus_turbo.pytorch.core.float8 import Format, MXQuantConfig, ScalingGranularity
 from primus_turbo.pytorch.kernels.gemm.gemm_fp8_impl import (
     gemm_fp8_blockwise_nn_impl,
     gemm_fp8_blockwise_nt_impl,
@@ -13,6 +15,7 @@ from primus_turbo.pytorch.kernels.quantize import quant_fp8_blockwise_impl
 __all__ = ["gemm_fp8_blockwise"]
 
 
+# TODO: opt and refact
 class BlockwiseFP8GemmFunction(torch.autograd.Function):
     """
     Autograd function for FP8 blockwise GEMM.
@@ -37,8 +40,8 @@ class BlockwiseFP8GemmFunction(torch.autograd.Function):
     Inputs:
         x (Tensor): Input tensor of shape [M, K], typically bf16/fp16.
         weight (Tensor): Weight tensor of shape [N, K], typically bf16/fp16.
-        block_size (int): Block size for quantization. Default: 128.
-        dtype (torch.dtype): FP8 quantization dtype. Default: turbo.float8_e4m3.
+        config (MXQuantConfig): Quantization configuration, specifying dtype, block size,
+            scaling strategy, and granularity.
 
     Returns:
         out (Tensor): Output tensor of shape [M, N], same dtype as `x`.
@@ -49,9 +52,17 @@ class BlockwiseFP8GemmFunction(torch.autograd.Function):
         ctx,
         x: torch.Tensor,
         weight: torch.Tensor,
-        block_size: int = 128,
-        dtype=float8_e4m3,
+        config: MXQuantConfig,
     ):
+        # Check
+        assert config != None
+        assert config.granularity == ScalingGranularity.BLOCKWISE
+        assert config.block_size != None
+        assert config.dtype != Format.HYBRID
+        block_size = config.block_size
+        dtype = config.dtype.value.fwd_dtype
+
+        # TODO: move to low level and clean
         orig_shape = x.shape  # [B, M, K] or [M, K]
         need_reshape = x.ndim == 3
         if need_reshape:
@@ -75,8 +86,7 @@ class BlockwiseFP8GemmFunction(torch.autograd.Function):
 
         # Save tensors for backward
         ctx.save_for_backward(x, w_fp8, w_scales)
-        ctx.block_size = block_size
-        ctx.dtype = dtype
+        ctx.config = config
         ctx.orig_shape = orig_shape if need_reshape else None
 
         if need_reshape:
@@ -89,8 +99,9 @@ class BlockwiseFP8GemmFunction(torch.autograd.Function):
             grad_out = grad_out.contiguous()
 
         x, w_fp8, w_scales = ctx.saved_tensors
-        block_size = ctx.block_size
-        dtype = ctx.dtype
+        config = ctx.config
+        block_size = config.block_size
+        dtype = config.dtype.value.bwd_dtype
         orig_shape = ctx.orig_shape
 
         need_reshape = grad_out.ndim == 3
@@ -136,26 +147,33 @@ class BlockwiseFP8GemmFunction(torch.autograd.Function):
         return grad_x, grad_w, None, None
 
 
-def gemm_fp8_blockwise(x, weight, block_size=128, dtype=float8_e4m3):
+# TODO: weight support Float8Tensor
+def gemm_fp8_blockwise(
+    x,
+    weight,
+    config: Optional[MXQuantConfig] = None,
+):
     """
     Blockwise GEMM using FP8 quantization.
 
     This function applies blockwise FP8 quantization to both the input `x` and the `weight`,
-    performs matrix multiplication in the FP8 domain, and output the result in a higher
-    precision (e.g., bf16 or fp16).
+    performs matrix multiplication in the FP8 domain, and returns the result in the original
+    input precision (e.g., bf16 or fp16).
 
     Args:
         x (torch.Tensor): Input tensor of shape [M, K], typically in bf16 or fp16.
         weight (torch.Tensor): Weight tensor of shape [N, K], typically in bf16 or fp16.
-        block_size (int): Block size used for quantization. Default: 128.
-        dtype (torch.dtype): FP8 dtype to use for quantization. Default: turbo.float8_e4m3.
+        config (MXQuantConfig, optional): Quantization configuration that controls FP8 dtype,
+            scaling strategy, granularity, and block size. If None, uses default MXQuantConfig.
 
     Returns:
-        torch.Tensor: Result tensor of shape [M, N], in the same dtype as input.
+        torch.Tensor: Output tensor of shape [M, N], in the same dtype as `x`.
 
     Example:
         >>> x = torch.randn(512, 1024, dtype=torch.bfloat16).cuda()
         >>> w = torch.randn(768, 1024, dtype=torch.bfloat16).cuda()
         >>> y = gemm_fp8_blockwise(x, w)
     """
-    return BlockwiseFP8GemmFunction.apply(x, weight, block_size, dtype)
+    if config is None:
+        config = MXQuantConfig()
+    return BlockwiseFP8GemmFunction.apply(x, weight, config)

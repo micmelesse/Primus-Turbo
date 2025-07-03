@@ -95,4 +95,14 @@ class Float8QuantConfig:
     dtype: Format = Format.E4M3
     granularity: ScalingGranularity = ScalingGranularity.TENSORWISE
     strategy: ScalingStrategy = ScalingStrategy.DYNAMIC
-    block_size: Optional[int] = None  # for blockwise quantization
+    block_size: Optional[int] = None  # Default: not used for tensorwise/rowwise
+
+    def __post_init__(self):
+        if self.granularity == ScalingGranularity.BLOCKWISE and self.block_size is None:
+            raise ValueError("block_size must be set when granularity is BLOCKWISE")
+
+
+@dataclass
+class MXQuantConfig(Float8QuantConfig):
+    granularity: ScalingGranularity = ScalingGranularity.BLOCKWISE
+    block_size: int = 128  # Override: block_size required for blockwise
