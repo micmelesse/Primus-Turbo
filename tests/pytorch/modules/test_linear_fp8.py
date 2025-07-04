@@ -14,12 +14,13 @@ from tests.test_utils import compute_snr, get_tolerances
 @pytest.mark.parametrize("M", [4096])
 @pytest.mark.parametrize("NK", [(4096, 4096)])
 @pytest.mark.parametrize("bias", [True, False])
-def test_mxlinear(ori_dtype, dtype, block_size, M, NK, bias):
+@pytest.mark.parametrize("enable_torch_compile", [True, False])
+def test_mxlinear(ori_dtype, dtype, block_size, M, NK, bias, enable_torch_compile):
     N, K = NK
     device = "cuda:0"
 
     print(
-        f"\nM={M}, N={N}, K={K}, ori_dtype={ori_dtype}, dtype={dtype}, block_size={block_size}, bias={bias}"
+        f"\nM={M}, N={N}, K={K}, ori_dtype={ori_dtype}, dtype={dtype}, block_size={block_size}, bias={bias}, Compile={enable_torch_compile}"
     )
 
     x1 = torch.randn((M, K), dtype=ori_dtype, device=device, requires_grad=True)
@@ -46,6 +47,8 @@ def test_mxlinear(ori_dtype, dtype, block_size, M, NK, bias):
     config = MXQuantConfig(dtype=dtype, block_size=block_size)
     MXLinear.from_float(model, config)
     assert isinstance(model, MXLinear)
+    if enable_torch_compile:
+        model = torch.compile(model, fullgraph=True, mode="max-autotune")
 
     out = model(x2)
     out.backward(grad_out)
