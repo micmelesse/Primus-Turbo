@@ -5,7 +5,6 @@ import torch
 from primus_turbo.pytorch.core.float8 import Format, MXQuantConfig, ScalingGranularity
 from primus_turbo.pytorch.kernels.gemm.gemm_fp8_impl import (
     gemm_fp8_blockwise_impl,
-    quant_fp8_blockwise_for_act_grad_impl,
     quant_fp8_blockwise_for_weight_impl,
 )
 from primus_turbo.pytorch.kernels.quantize import quant_fp8_blockwise_impl
@@ -113,10 +112,8 @@ class BlockwiseFP8GemmFunction(torch.autograd.Function):
         # Quantize grad_out in both row-wise and column-wise directions:
         # - row-wise: for dgrad (grad_x)
         # - col-wise: for wgrad (grad_w)
-        grad_out_fp8_row, grad_out_scales_row, grad_out_fp8_col, grad_out_scales_col = (
-            quant_fp8_blockwise_for_act_grad_impl(grad_out, dtype, block_size)
-        )
-
+        grad_out_fp8_row, grad_out_scales_row = quant_fp8_blockwise_impl(grad_out, dtype, -1, block_size)
+        grad_out_fp8_col, grad_out_scales_col = quant_fp8_blockwise_impl(grad_out, dtype, -2, block_size)
         # TODO: dequant + quant kernel
         x_fp8_col, x_scales_col = quant_fp8_blockwise_impl(x, dtype, axis=0, block_size=block_size)
 

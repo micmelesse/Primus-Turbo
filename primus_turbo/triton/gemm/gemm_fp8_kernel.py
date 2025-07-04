@@ -93,8 +93,8 @@ def gemm_fp8_blockwise_nn_kernel(
     pid_m = tl.program_id(axis=0)
     pid_n = tl.program_id(axis=1)
 
-    offs_m = (pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)) % M
-    offs_n = (pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)) % N
+    offs_m = tl.cast((pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)) % M, tl.int64)
+    offs_n = tl.cast((pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)) % N, tl.int64)
     offs_k = tl.arange(0, BLOCK_SIZE_K)
 
     k_tile_nums = tl.cdiv(K, BLOCK_SIZE_K)
@@ -120,8 +120,8 @@ def gemm_fp8_blockwise_nn_kernel(
         offs_k += BLOCK_SIZE_K
 
     # Store
-    offs_m = pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
-    offs_n = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
+    offs_m = tl.cast(pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M), tl.int64)
+    offs_n = tl.cast(pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N), tl.int64)
     c_ptrs = c_ptr + offs_m[:, None] * N + offs_n[None, :]
     mask = (offs_m[:, None] < M) & (offs_n[None, :] < N)
     tl.store(c_ptrs, accumulator.to(c_ptr.dtype.element_ty), mask=mask)
