@@ -18,7 +18,6 @@ class BlockwiseFP8GemmFunction(torch.autograd.Function):
     Autograd function for FP8 blockwise GEMM.
 
     This class implements the forward and backward pass for a GEMM using blockwise FP8 quantization.
-    It is not intended to be used directly — use `gemm_fp8_blockwise` instead.
 
     Forward:
         - Quantize input `x` row-wise into FP8 blockwise.
@@ -26,7 +25,7 @@ class BlockwiseFP8GemmFunction(torch.autograd.Function):
         - Perform matrix multiplication: Y = x @ weight.T (NT layout).
         - Output result in high precision (same dtype as `x`).
 
-    Backward Pass:
+    Backward:
         - Quantize `grad_out` both row-wise and column-wise for dgrad/wgrad respectively.
         - Re-quantize input `x` column-wise for use in wgrad.
         - Compute:
@@ -35,7 +34,7 @@ class BlockwiseFP8GemmFunction(torch.autograd.Function):
         - Both gradients are returned in high precision.
 
     Inputs:
-        x (Tensor): Input tensor of shape [M, K], typically bf16/fp16.
+        x (Tensor): Input tensor of shape [B0,...,Bn, M, K], typically bf16/fp16.
         weight (Tensor): Weight tensor of shape [N, K], typically bf16/fp16.
         config (MXQuantConfig): Quantization configuration, specifying dtype, block size,
             scaling strategy, and granularity.
@@ -56,14 +55,14 @@ class BlockwiseFP8GemmFunction(torch.autograd.Function):
         assert config.granularity == ScalingGranularity.BLOCKWISE
         assert config.block_size != None
         assert config.dtype != Format.HYBRID
+        assert x.ndim >= 2, "Input tensor x must have at least 2 dimensions."
+        assert weight.ndim == 2, "Weight tensor must be 2-dimensional."
+
         block_size = config.block_size
         dtype = config.dtype.value.fwd_dtype
 
-        # TODO: move to low level and clean
-        orig_shape = x.shape  # [B, M, K] or [M, K]
-        need_reshape = x.ndim == 3
-        if need_reshape:
-            x = x.view(-1, x.shape[-1])  # → [B*M, K]
+        *batch_shape, M, K = x.shape
+        x = x.view(-1, K)  # flatten shape [BM, K]
 
         # Quantize input activation (row): shape [M, K] → FP8
         x_fp8_row, x_scales_row = quant_fp8_blockwise_impl(x, dtype, axis=1, block_size=block_size)
@@ -84,14 +83,11 @@ class BlockwiseFP8GemmFunction(torch.autograd.Function):
             transA=False,
             transB=True,
         )
+        out = out.view(*batch_shape, M, -1)  # restore shape
 
         # Save tensors for backward
         ctx.save_for_backward(x, w_fp8, w_scales)
         ctx.config = config
-        ctx.orig_shape = orig_shape if need_reshape else None
-
-        if need_reshape:
-            out = out.view(orig_shape[0], orig_shape[1], -1)  # [B, M, N]
         return out
 
     @staticmethod
@@ -103,11 +99,9 @@ class BlockwiseFP8GemmFunction(torch.autograd.Function):
         config = ctx.config
         block_size = config.block_size
         dtype = config.dtype.value.bwd_dtype
-        orig_shape = ctx.orig_shape
 
-        need_reshape = grad_out.ndim == 3
-        if need_reshape:
-            grad_out = grad_out.view(-1, grad_out.shape[-1])  # → [B*M, N]
+        *batch_shape, M, N = grad_out.shape
+        grad_out = grad_out.view(-1, N)
 
         # Quantize grad_out in both row-wise and column-wise directions:
         # - row-wise: for dgrad (grad_x)
@@ -149,8 +143,7 @@ class BlockwiseFP8GemmFunction(torch.autograd.Function):
             transB=False,
         )
 
-        if orig_shape is not None:
-            grad_x = grad_x.view(orig_shape)  # [B, M, K]
+        grad_x = grad_x.view(*batch_shape, M, -1)
         return grad_x, grad_w, None, None
 
 
