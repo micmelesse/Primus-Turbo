@@ -6,8 +6,8 @@ from triton_dist.kernels.amd.gemm_reduce_scatter import (
     matmul_fuse_scatter,
 )
 
-from .amd_symmetric_memory import get_amd_symm_mem_workspace
 from primus_turbo.triton.reduce.reduce_kernel import kernel_consumer_reduce_bf16
+from .amd_symmetric_memory import get_amd_symm_mem_workspace
 
 
 def ring_reduce_after_scatter(
@@ -21,9 +21,7 @@ def ring_reduce_after_scatter(
     M, N = scatter_out.shape
     M_per_rank = M // num_ranks
     if output is None:
-        output = torch.empty(
-            (M_per_rank, N), dtype=scatter_out.dtype, device=scatter_out.device
-        )
+        output = torch.empty((M_per_rank, N), dtype=scatter_out.dtype, device=scatter_out.device)
 
     REDUCE_AVG = True if reduce_op == "avg" else False
     grid = lambda META: (triton.cdiv(M_per_rank * N, META["BLOCK_SIZE"]),)
@@ -72,11 +70,7 @@ def _blockwise_fused_matmul_scatter_out_impl(
     )
 
     symm_mem.barrier()
-
-    matmul_fuse_scatter(
-        input, weight, scatter_bufs_ptr, rank, num_ranks, transpose_weight=False
-    )
-
+    matmul_fuse_scatter(input, weight, scatter_bufs_ptr, rank, num_ranks, transpose_weight=False)
     symm_mem.barrier()
 
     scatter_out = scatter_bufs[rank][:M]
