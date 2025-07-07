@@ -166,7 +166,7 @@ class FusedMatmulReduceScatterTestBase(MultiProcessTestCase):
         )
 
     @skip_if_lt_x_gpu(2)
-    @parametrize("M,K,N", [(8192, 8192, 8192), (8192, 8192, 14336)])
+    @parametrize("M,K,N", [(8192, 8192, 8192), (8192, 28672, 8192)])
     @parametrize("batch_size", [1, 4])
     @parametrize("dtype", [torch.bfloat16])
     def test_llama3_70b_fused_matmul_reduce_scatter(

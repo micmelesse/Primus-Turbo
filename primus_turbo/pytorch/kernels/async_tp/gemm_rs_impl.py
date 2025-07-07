@@ -1,20 +1,59 @@
 import torch
 import torch.distributed.distributed_c10d as c10d
 
+import triton
+import triton.language as tl
 from triton_dist.kernels.amd.gemm_reduce_scatter import (
     matmul_fuse_scatter,
 )
 
 from .amd_symmetric_memory import get_amd_symm_mem_workspace
+from primus_turbo.triton.reduce.reduce_kernel import kernel_consumer_reduce_bf16
+
+
+def ring_reduce_after_scatter(
+    rank,
+    num_ranks,
+    reduce_op,
+    scatter_out,  # [M, N]
+    output,
+    stream,
+):
+    M, N = scatter_out.shape
+    M_per_rank = M // num_ranks
+    if output is None:
+        output = torch.empty(
+            (M_per_rank, N), dtype=scatter_out.dtype, device=scatter_out.device
+        )
+ 
+    REDUCE_AVG = True if reduce_op == "avg" else False
+    grid = lambda META: (triton.cdiv(M_per_rank * N, META["BLOCK_SIZE"]),)
+    with torch.cuda.stream(stream):
+        kernel_consumer_reduce_bf16[grid](
+            scatter_out,
+            output,
+            M_per_rank,
+            N,
+            rank=rank,
+            num_ranks=num_ranks,
+            REDUCE_AVG=REDUCE_AVG,
+            BLOCK_SIZE=2048,
+            num_warps=2,
+        )
+
+    return output
 
 
 def _blockwise_fused_matmul_scatter_out_impl(
     input: torch.Tensor,
     weight: torch.Tensor,
     group_name: str,
+    reduce_op: str,
     *,
     output: torch.Tensor,
-    out_dtype: torch.dtype
+    rs_output: torch.Tensor,
+    out_dtype: torch.dtype,
+    stream: torch.cuda.Stream
 ):
 
     M = input.shape[0]
@@ -42,6 +81,16 @@ def _blockwise_fused_matmul_scatter_out_impl(
     symm_mem.barrier()
 
     scatter_out = scatter_bufs[rank][:M]
+
+    rs_output = ring_reduce_after_scatter(
+        rank,
+        num_ranks,
+        reduce_op,
+        scatter_out,  # [M, N]
+        rs_output,
+        stream,
+    )
+
     if output is not None:
         output.copy_(scatter_out)
-    return scatter_out
+    return rs_output
