@@ -27,7 +27,7 @@ class CausalLMDataset(Dataset):
         return f"CausalLMDataset(total_tokens={len(self.token_ids)}, num_samples={len(self)})"
 
 
-def load_and_tokenize(tokenizer, dataset_name: str, split: str, max_samples: int, context_length: int):
+def load_and_tokenize(tokenizer, dataset_name: str, split: str, max_samples: int):
     if dataset_name == "wikitext":
         dataset = load_dataset("wikitext", "wikitext-2-raw-v1", split=split)
         text_key = "text"
@@ -49,16 +49,9 @@ def load_and_tokenize(tokenizer, dataset_name: str, split: str, max_samples: int
         raise ValueError(f"Unsupported dataset: {dataset_name}")
     # Tokenize
     token_ids = []
-    for text in tqdm(texts, desc=f"Tokenizing ({split})", ncols=80):
-        enc = tokenizer(
-            text,
-            return_attention_mask=False,
-            return_token_type_ids=False,
-            return_tensors=None,
-            truncation=True,
-            max_length=context_length + 1,
-        )
-        token_ids.extend(enc["input_ids"])
+    for text in tqdm(texts, desc=f"Encoding ({split})", ncols=80):
+        ids = tokenizer.encode(text, add_special_tokens=True)
+        token_ids.extend(ids)
 
     return token_ids
 
@@ -76,14 +69,12 @@ def get_dataloaders(
         config.dataset_name,
         "train",
         max_train_samples,
-        config.context_length,
     )
     val_ids = load_and_tokenize(
         tokenizer,
         config.dataset_name,
         "validation",
         max_val_samples,
-        config.context_length,
     )
 
     train_dataset = CausalLMDataset(train_ids, config.context_length)

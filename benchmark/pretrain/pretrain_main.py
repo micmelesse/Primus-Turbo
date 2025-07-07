@@ -80,17 +80,20 @@ if __name__ == "__main__":
         dataset_name="c4",  # c4 , wikitext
         batch_size=4,
         context_length=8192,
-        max_steps=1000,
+        max_steps=200,
         warmup_steps=100,
         lr=3e-4,
+        grad_accum_nums=4,
     )
+    print(config.to_dict())
+
     # === Model ===
     model = LlamaBasicModel(config.hf_config).cuda()
     # model = LlamaTurboModel(config.hf_config).cuda()
     print(model)
 
     # === Data ===
-    train_loader, val_loader = get_dataloaders(config, max_train_samples=50000, max_val_samples=5000)
+    train_loader, val_loader = get_dataloaders(config, max_train_samples=100000, max_val_samples=5000)
 
     # === Trainer ===
     trainer = Trainer(

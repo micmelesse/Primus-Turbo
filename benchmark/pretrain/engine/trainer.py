@@ -37,6 +37,7 @@ class Trainer:
         self.writer = SummaryWriter()
 
         self.max_steps = config.max_steps + 1
+        self.grad_accum_nums = config.grad_accum_nums
 
         self.loss_fn = cross_entropy_loss
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=config.lr)
@@ -57,20 +58,24 @@ class Trainer:
 
     def train_step(self):
         self.optimizer.zero_grad()
+        total_loss = 0.0
 
-        input_ids, labels = self.train_iter.next()
-        input_ids = input_ids.cuda()
-        labels = labels.cuda()
+        for _ in range(self.grad_accum_nums):
+            input_ids, labels = self.train_iter.next()
+            input_ids = input_ids.cuda()
+            labels = labels.cuda()
 
-        with autocast("cuda", dtype=self.config.torch_dtype) if self.use_amp else nullcontext():
-            pred = self.model(input_ids)
-            loss = self.loss_fn(pred, labels)
+            with autocast("cuda", dtype=self.config.torch_dtype) if self.use_amp else nullcontext():
+                pred = self.model(input_ids)
+                loss = self.loss_fn(pred, labels)
 
-        loss.backward()
+            loss.backward()
+            total_loss += loss.detach().item()
+
         self.optimizer.step()
         self.scheduler.step()
 
-        return loss.detach().item()
+        return total_loss
 
     def train(self):
         print_interval = 10
