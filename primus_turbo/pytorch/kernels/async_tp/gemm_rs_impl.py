@@ -2,7 +2,6 @@ import torch
 import torch.distributed.distributed_c10d as c10d
 
 import triton
-import triton.language as tl
 from triton_dist.kernels.amd.gemm_reduce_scatter import (
     matmul_fuse_scatter,
 )
@@ -25,7 +24,7 @@ def ring_reduce_after_scatter(
         output = torch.empty(
             (M_per_rank, N), dtype=scatter_out.dtype, device=scatter_out.device
         )
- 
+
     REDUCE_AVG = True if reduce_op == "avg" else False
     grid = lambda META: (triton.cdiv(M_per_rank * N, META["BLOCK_SIZE"]),)
     with torch.cuda.stream(stream):

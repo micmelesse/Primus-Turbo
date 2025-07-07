@@ -168,7 +168,7 @@ def fused_matmul_reduce_scatter(
     communication:
         C_total = torch.matmul(A, B)
         C = reduce_scatter_tensor(C, "avg", scatter_dim, group)
-        
+
 
     Optimal stride order for A - if A.movedim(scatter_dim, 0) is
     contiguous, no extra copy is required for input layout transformation.
@@ -203,11 +203,7 @@ def fused_matmul_reduce_scatter(
         raise ValueError("Invalid gather_dim")
     if B.dim() != 2:
         raise ValueError("B must be a matrix")
-    if reduce_op == "sum":
-        reduce_fn = partial(torch.sum, dim=0)
-    elif reduce_op == "avg":
-        reduce_fn = partial(torch.mean, dim=0)
-    else:
+    if reduce_op not in ["sum", "avg"]:
         raise ValueError("reduce_op must be sum or avg")
     if layout[0] == "T":
         raise ValueError("layout must be NN or NT")
@@ -265,7 +261,7 @@ def fused_matmul_reduce_scatter(
             output=output,
             rs_output=rs_out,
             out_dtype=out_dtype,
-            stream=torch.cuda.current_stream()
+            stream=torch.cuda.current_stream(),
         )
 
     return rs_output.view(*leading_dims, -1).movedim(0, scatter_dim)
