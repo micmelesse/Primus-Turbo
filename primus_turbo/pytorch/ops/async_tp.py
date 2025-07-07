@@ -243,7 +243,7 @@ def fused_matmul_reduce_scatter(
             )
         if rs_out.numel() != reduce(operator.mul, leading_dims, 1) * N:
             raise ValueError(
-                f"Invalid shape: rs_out ({rs_out.shape}) is not unexpected as ({*leading_dims}, {N})!"
+                f"Invalid shape: rs_out ({rs_out.shape}) is not unexpected as ({leading_dims}, {N})!"
             )
 
     if output is not None:
