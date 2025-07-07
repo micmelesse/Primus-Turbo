@@ -57,6 +57,11 @@ class BasicAttention(torch.nn.Module):
         attn_output = attn_output.view(bs, seqlen, -1)
         return self.wo(attn_output)
 
+    def init_weights(self, init_std: float):
+        for linear in (self.wq, self.wk, self.wv):
+            nn.init.trunc_normal_(linear.weight, mean=0.0, std=0.02)
+        nn.init.trunc_normal_(self.wo.weight, mean=0.0, std=init_std)
+
 
 class BasicMLP(torch.nn.Module):
     def __init__(
@@ -70,6 +75,11 @@ class BasicMLP(torch.nn.Module):
 
     def forward(self, x):
         return self.w2(F.silu(self.w1(x)) * self.w3(x))
+
+    def init_weights(self, init_std: float):
+        nn.init.trunc_normal_(self.w1.weight, mean=0.0, std=0.02)
+        for linear in (self.w2, self.w3):
+            nn.init.trunc_normal_(linear.weight, mean=0.0, std=init_std)
 
 
 class BasicTransformerBlock(torch.nn.Module):
@@ -85,6 +95,9 @@ class BasicTransformerBlock(torch.nn.Module):
         self.attention_norm = nn.RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.mlp_norm = nn.RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
+        # TODO:
+        self.weight_init_std = 0.02 / (2 * (layer_id + 1)) ** 0.5
+
     def forward(
         self,
         x: torch.Tensor,
@@ -93,6 +106,12 @@ class BasicTransformerBlock(torch.nn.Module):
         h = x + self.attention(self.attention_norm(x), freqs_cis)
         out = h + self.mlp(self.mlp_norm(h))
         return out
+
+    def init_weights(self):
+        for norm in (self.attention_norm, self.mlp_norm):
+            norm.reset_parameters()
+        self.attention.init_weights(self.weight_init_std)
+        self.mlp.init_weights(self.weight_init_std)
 
 
 class LlamaBasicModel(nn.Module):
@@ -103,7 +122,7 @@ class LlamaBasicModel(nn.Module):
         super().__init__()
         self.config = config
 
-        self.embed = nn.Embedding(config.vocab_size, config.hidden_size)
+        self.tok_embed = nn.Embedding(config.vocab_size, config.hidden_size)
 
         # TODO: persistent = False
         self.register_buffer(
@@ -117,15 +136,11 @@ class LlamaBasicModel(nn.Module):
             persistent=True,
         )
 
-        self.layers = torch.nn.ModuleDict()
         # Only test 4 layers for now
-        for layer_id in range(4):
-            self.layers[str(layer_id)] = BasicTransformerBlock(
-                layer_id,
-                config,
-            )
+        self.layers = nn.ModuleList([BasicTransformerBlock(layer_id, config) for layer_id in range(4)])
         self.norm = nn.RMSNorm(config.hidden_size)
         self.output = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+        self.init_weights()
 
     def _precompute_freqs_cis(self, hidden_size, n_heads, max_seq_len, rope_theta) -> torch.Tensor:
         return precompute_freqs_cis(
@@ -134,10 +149,30 @@ class LlamaBasicModel(nn.Module):
             rope_theta,
         )
 
-    def forward(self, input_ids):
-        x = self.embed(input_ids)  # (bs, seqlen, hidden)
+    def init_weights(self):
+        if self.tok_embed is not None:
+            nn.init.normal_(self.tok_embed.weight)
+        for layer in self.layers:
+            if layer is not None:
+                layer.init_weights()
+        if self.norm is not None:
+            self.norm.reset_parameters()
 
-        for layer in self.layers.values():
+        final_out_std = self.config.hidden_size**-0.5
+        cutoff_factor = 3
+        if self.output is not None:
+            nn.init.trunc_normal_(
+                self.output.weight,
+                mean=0.0,
+                std=final_out_std,
+                a=-cutoff_factor * final_out_std,
+                b=cutoff_factor * final_out_std,
+            )
+
+    def forward(self, input_ids):
+        x = self.tok_embed(input_ids)  # (bs, seqlen, hidden)
+
+        for layer in self.layers:
             x = layer(x, self.freqs_cis)
 
         x = self.norm(x)

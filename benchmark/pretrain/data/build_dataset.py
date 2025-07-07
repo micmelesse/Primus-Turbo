@@ -56,7 +56,7 @@ def load_and_tokenize(tokenizer, dataset_name: str, split: str, max_samples: int
 
 def get_dataloaders(
     config,
-    max_train_samples=50000,
+    max_train_samples=500000,
     max_val_samples=1000,
 ):
     tokenizer = AutoTokenizer.from_pretrained(config.model_path, use_fast=True)

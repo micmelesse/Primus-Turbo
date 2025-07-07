@@ -1,10 +1,14 @@
+import time
 from contextlib import nullcontext
 
 import torch
 from torch.amp import autocast
 from torch.utils.tensorboard import SummaryWriter
-from tqdm import tqdm
 from transformers import get_scheduler
+
+
+def get_time_str():
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 
 
 def cross_entropy_loss(pred: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
@@ -32,11 +36,10 @@ class Trainer:
         self.val_loader = val_loader
         self.writer = SummaryWriter()
 
-        self.max_steps = config.max_steps
-        self.step = 0
+        self.max_steps = config.max_steps + 1
 
         self.loss_fn = cross_entropy_loss
-        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=1e-4)
+        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=config.lr)
 
         self.scheduler = get_scheduler(
             name="linear",
@@ -73,11 +76,11 @@ class Trainer:
         print_interval = 10
         eval_interval = 100
 
-        for step in tqdm(range(self.max_steps), desc="Training"):
+        for step in range(1, self.max_steps + 1):
             loss = self.train_step()
 
             if step % print_interval == 0:
-                print(f"[Step {step}] Loss: {loss:.4f}")
+                print(f"[{get_time_str()}] [Step {step:06d}] : loss={loss:.4f}")
                 self.writer.add_scalar("train/loss", loss, step)
 
             if self.val_loader and step % eval_interval == 0:

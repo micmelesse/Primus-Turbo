@@ -32,6 +32,7 @@ def build_config(
     context_length: int = 8192,
     max_steps: int = 1000,
     warmup_steps: int = 10,
+    lr: float = 3e-4,
     **kwargs,
 ):
     hf_config = LlamaConfig.from_pretrained(model_path)
@@ -52,6 +53,7 @@ def build_config(
         context_length=context_length,
         max_steps=max_steps,
         warmup_steps=warmup_steps,
+        lr=lr,
         torch_dtype=torch_dtype,
         **kwargs,
     )
@@ -62,11 +64,12 @@ if __name__ == "__main__":
     # === Cfg ===
     config = build_config(
         model_path="meta-llama/Llama-3.1-8B-Instruct",
-        dataset_name="wikitext",
+        dataset_name="wikitext",  # c4 , wikitext
         batch_size=4,
         context_length=8192,
-        max_steps=200,
-        warmup_steps=10,
+        max_steps=50,
+        warmup_steps=100,
+        lr=3e-4,
     )
     # === Model ===
     model = LlamaBasicModel(config.hf_config).cuda()
