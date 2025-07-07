@@ -1,3 +1,5 @@
+from itertools import islice
+
 import torch
 from datasets import load_dataset
 from torch.utils.data import DataLoader, Dataset
@@ -29,15 +31,22 @@ def load_and_tokenize(tokenizer, dataset_name: str, split: str, max_samples: int
     if dataset_name == "wikitext":
         dataset = load_dataset("wikitext", "wikitext-2-raw-v1", split=split)
         text_key = "text"
+        texts = [sample[text_key] for sample in dataset if sample[text_key].strip()]
+        texts = texts[:max_samples]
+
     elif dataset_name == "c4":
-        dataset = load_dataset("c4", "en", split=split)
+        dataset = load_dataset("allenai/c4", "en", split=split, streaming=True)
         text_key = "text"
+
+        def filtered_texts():
+            for sample in dataset:
+                if sample[text_key].strip():
+                    yield sample[text_key]
+
+        texts = list(islice(filtered_texts(), max_samples))
+
     else:
         raise ValueError(f"Unsupported dataset: {dataset_name}")
-
-    texts = [sample[text_key] for sample in dataset if sample[text_key].strip()]
-    texts = texts[:max_samples]
-
     # Tokenize
     token_ids = []
     for text in tqdm(texts, desc=f"Tokenizing ({split})", ncols=80):

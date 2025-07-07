@@ -77,10 +77,10 @@ if __name__ == "__main__":
     # === Cfg ===
     config = build_config(
         model_path="meta-llama/Llama-3.1-8B-Instruct",
-        dataset_name="wikitext",  # c4 , wikitext
+        dataset_name="c4",  # c4 , wikitext
         batch_size=4,
         context_length=8192,
-        max_steps=500,
+        max_steps=1000,
         warmup_steps=100,
         lr=3e-4,
     )
@@ -90,7 +90,7 @@ if __name__ == "__main__":
     print(model)
 
     # === Data ===
-    train_loader, val_loader = get_dataloaders(config, max_train_samples=50000000, max_val_samples=1000)
+    train_loader, val_loader = get_dataloaders(config, max_train_samples=50000, max_val_samples=5000)
 
     # === Trainer ===
     trainer = Trainer(
