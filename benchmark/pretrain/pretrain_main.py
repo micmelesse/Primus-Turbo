@@ -2,11 +2,23 @@ import os
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
+import random
+
+import numpy as np
 import torch
 from data.build_dataset import get_dataloaders
 from engine.trainer import Trainer
 from models.basic_llama import LlamaBasicModel
 from transformers import LlamaConfig
+
+
+def set_seed(seed: int = 42):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 
 # TODO:
@@ -60,6 +72,7 @@ def build_config(
 
 
 if __name__ == "__main__":
+    set_seed(42)
 
     # === Cfg ===
     config = build_config(
@@ -67,15 +80,17 @@ if __name__ == "__main__":
         dataset_name="wikitext",  # c4 , wikitext
         batch_size=4,
         context_length=8192,
-        max_steps=50,
+        max_steps=500,
         warmup_steps=100,
         lr=3e-4,
     )
     # === Model ===
     model = LlamaBasicModel(config.hf_config).cuda()
+    # model = LlamaTurboModel(config.hf_config).cuda()
+    print(model)
 
     # === Data ===
-    train_loader, val_loader = get_dataloaders(config)
+    train_loader, val_loader = get_dataloaders(config, max_train_samples=50000000, max_val_samples=1000)
 
     # === Trainer ===
     trainer = Trainer(
