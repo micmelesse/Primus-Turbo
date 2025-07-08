@@ -15,6 +15,8 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.12"]
+    env:
+      PRIMUS_TURBO_WORKDIR: /apps/tas/0_public/primus_turbo_k8s_ci
     steps:
       - run: echo "🎉 Begin Primus-Turbo Python Lint."
       - run: echo "🐧 This job is now running on a ${{ runner.os }} server hosted by GitHub!"
@@ -52,7 +54,7 @@ jobs:
 
   run-unittest:
     needs: code-lint
-    runs-on: run-ut
+    runs-on: primus-turbo-runner-set
     steps:
       - run: echo "🎉 Begin Primus-Turbo Unit Test."
       - name: Change owner
@@ -71,15 +73,15 @@ jobs:
       - name: Set ut log path
         run: |
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            echo "UT_LOG_PATH=$GITHUB_WORKSPACE/ut_out/pr-${{ github.event.pull_request.number }}" >> $GITHUB_ENV
+            echo "UT_LOG_PATH=${PRIMUS_TURBO_WORKDIR}/ut_out/pr-${{ github.event.pull_request.number }}" >> $GITHUB_ENV
           elif [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
-            echo "UT_LOG_PATH=$GITHUB_WORKSPACE/ut_out/latest" >> $GITHUB_ENV
+            echo "UT_LOG_PATH=${PRIMUS_TURBO_WORKDIR}/ut_out/latest" >> $GITHUB_ENV
           elif [[ "${{ github.event_name }}" == "release" ]]; then
             TAG_NAME=${{ github.ref }}  # refs/tags/v1.0.0
             TAG="${TAG_NAME#refs/tags/}" # v1.0.0
-            echo "UT_LOG_PATH=$GITHUB_WORKSPACE/ut_out/$TAG" >> $GITHUB_ENV
+            echo "UT_LOG_PATH=${PRIMUS_TURBO_WORKDIR}/ut_out/$TAG" >> $GITHUB_ENV
           else
-            echo "UT_LOG_PATH=$GITHUB_WORKSPACE/ut_out/others" >> $GITHUB_ENV
+            echo "UT_LOG_PATH=${PRIMUS_TURBO_WORKDIR}/ut_out/others" >> $GITHUB_ENV
           fi
       - name: Run unit tests
         run: |
@@ -88,11 +90,6 @@ jobs:
             echo "UT_LOG_PATH dir exists. Deleting..."
             rm -rf "${{ env.UT_LOG_PATH }}"
           fi
-          docker exec -e UT_LOG_PATH="${{ env.UT_LOG_PATH }}" \
-                      primus_turbo_github_runner bash -c \
-                      "
-                      cd $GITHUB_WORKSPACE &&
-                      pip3 install -r requirements.txt &&
-                      python3 setup.py develop &&
-                      pytest -v tests/ --log-cli-level=INFO
-                      "
+          pip3 install -r requirements.txt &&
+          python3 setup.py develop &&
+          pytest -v tests/ --log-cli-level=INFO
