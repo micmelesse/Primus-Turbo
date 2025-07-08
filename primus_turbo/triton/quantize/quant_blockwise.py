@@ -26,8 +26,8 @@ def quant_fp8_blockwise_kernel(
 ):
     pid_m = tl.program_id(axis=0)
     pid_n = tl.program_id(axis=1)
-    offs_m = pid_m * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
-    offs_n = pid_n * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+    offs_m = tl.cast(pid_m * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE), tl.int64)
+    offs_n = tl.cast(pid_n * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE), tl.int64)
     mask = (offs_m[:, None] < M) & (offs_n[None, :] < N)
 
     # Load [BLOCK_SIZE, BLOCK_SIZE]
@@ -183,8 +183,8 @@ def quant_fp8_blockwise_for_act_grad_kernel(
 ):
     pid_m = tl.program_id(axis=0)
     pid_n = tl.program_id(axis=1)
-    offs_m = pid_m * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
-    offs_n = pid_n * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
+    offs_m = tl.cast(pid_m * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE), tl.int64)
+    offs_n = tl.cast(pid_n * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE), tl.int64)
     mask = (offs_m[:, None] < M) & (offs_n[None, :] < N)
 
     # Load [BLOCK_SIZE, BLOCK_SIZE]
