@@ -9,13 +9,14 @@ from .basic_llama import (
     BasicTransformerBlock,
     LlamaBasicModel,
 )
+from .build_model import register_model
 from .rope import apply_rotary_emb
 
 
-class TurboAttention(BasicAttention):
+class Attention(BasicAttention):
     def __init__(self, config):
         super().__init__(config)
-        self.sdpa = turbo.modules.TurboAttention(causal=True)
+        self.sdpa = turbo.modules.TurboAttention(causal=True, use_fp8=True, backend_type="triton")
 
     def forward(
         self,
@@ -36,17 +37,18 @@ class TurboAttention(BasicAttention):
         return self.wo(attn_output)
 
 
-class TurboTransformerBlock(BasicTransformerBlock):
+class TransformerBlock(BasicTransformerBlock):
     def __init__(self, layer_id: int, config):
         super().__init__(layer_id, config)
-        self.attention = TurboAttention(config)
+        self.attention = Attention(config)
         self.mlp = BasicMLP(config)
 
 
+@register_model("llama", "turbo")
 class LlamaTurboModel(LlamaBasicModel):
     def __init__(self, config):
         super().__init__(config)
         self.config = config
         # Only test 4 layers for now
-        self.layers = nn.ModuleList([TurboTransformerBlock(layer_id, config) for layer_id in range(4)])
+        self.layers = nn.ModuleList([TransformerBlock(layer_id, config) for layer_id in range(4)])
         self.init_weights()

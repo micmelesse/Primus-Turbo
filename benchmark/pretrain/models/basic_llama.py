@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from flash_attn import flash_attn_func
 from transformers import LlamaConfig
 
+from .build_model import register_model
 from .rope import apply_rotary_emb, precompute_freqs_cis
 
 
@@ -114,6 +115,7 @@ class BasicTransformerBlock(torch.nn.Module):
         self.mlp.init_weights(self.weight_init_std)
 
 
+@register_model("llama", "torch")
 class LlamaBasicModel(nn.Module):
     def __init__(
         self,
