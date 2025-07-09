@@ -13,7 +13,9 @@ def _lax_implements(
     def decorator(func):
         for p in primitives:
             if not isinstance(p, Primitive):
-                raise ValueError()
+                raise ValueError(
+                    f"lax implement only for jax.core.Primitive instance, but received {type(p)}"
+                )
             global_table[p] = partial(func, p)
         return func
 
