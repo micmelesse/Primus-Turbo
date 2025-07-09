@@ -200,11 +200,15 @@ def auto_detect_backends() -> List[str]:
 
     if not _backends:
         try:
+            import torch  # noqa
+
             _backends.append("pytorch")
         except ImportError:
             pass
 
         try:
+            import jax  # noqa
+
             _backends.append("jax")
         except ImportError:
             pass
