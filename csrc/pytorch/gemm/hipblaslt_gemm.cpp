@@ -1,4 +1,4 @@
-#include "primus_turbo/gemm.h"
+#include "primus_turbo/hipblaslt_gemm.h"
 
 #include "../extensions.h"
 
@@ -21,28 +21,57 @@ static hipDataType get_hipblaslt_dtype(const at::ScalarType t) {
     case at::kFloat8_e5m2:
         return HIP_R_8F_E5M2;
     default:
-        AT_ERROR("Invalid type");
+        PRIMUS_TURBO_ERROR("Invalid type");
     }
+}
+
+static inline bool is_8bit_floating_point_dtype(at::ScalarType dtype) {
+    return dtype == at::kFloat8_e4m3fnuz || dtype == at::kFloat8_e4m3fn ||
+           dtype == at::kFloat8_e5m2fnuz || dtype == at::kFloat8_e5m2;
+}
+
+static inline bool is_16bit_floating_point_dtype(at::ScalarType dtype) {
+    return dtype == at::kHalf || dtype == at::kBFloat16;
 }
 
 static inline bool is_floating_point_dtype(at::ScalarType dtype) {
     return dtype == at::kHalf || dtype == at::kBFloat16 || dtype == at::kFloat;
 }
 
-at::Tensor hipblaslt_gemm(at::Tensor A, at::Tensor B, const at::ScalarType out_dtype, bool transA,
-                          bool transB, bool transC) {
-    PRIMUS_TURBO_CHECK(is_floating_point_dtype(A.scalar_type()));
-    PRIMUS_TURBO_CHECK(is_floating_point_dtype(B.scalar_type()));
-    PRIMUS_TURBO_CHECK(A.scalar_type() == B.scalar_type(), "A and B dtype mismatch");
-    PRIMUS_TURBO_CHECK(is_floating_point_dtype(out_dtype));
+at::Tensor hipblaslt_gemm(at::Tensor A, at::Tensor scaleA_inv, at::Tensor B, at::Tensor scaleB_inv,
+                          const at::ScalarType out_dtype, bool transA, bool transB, bool transC) {
+    const bool use_fp8 = is_8bit_floating_point_dtype(A.scalar_type()) &&
+                         is_8bit_floating_point_dtype(B.scalar_type());
+    // dtype check
+    if (use_fp8) {
+        // FP8
+        PRIMUS_TURBO_CHECK(is_8bit_floating_point_dtype(A.scalar_type()));
+        PRIMUS_TURBO_CHECK(is_8bit_floating_point_dtype(B.scalar_type()));
+        PRIMUS_TURBO_CHECK(is_16bit_floating_point_dtype(out_dtype));
+        PRIMUS_TURBO_CHECK(scaleA_inv.scalar_type() == at::kFloat);
+        PRIMUS_TURBO_CHECK(scaleB_inv.scalar_type() == at::kFloat);
+    } else {
+        PRIMUS_TURBO_CHECK(is_floating_point_dtype(A.scalar_type()));
+        PRIMUS_TURBO_CHECK(is_floating_point_dtype(B.scalar_type()));
+        PRIMUS_TURBO_CHECK(A.scalar_type() == B.scalar_type(), "A and B dtype mismatch");
+        PRIMUS_TURBO_CHECK(is_floating_point_dtype(out_dtype));
+    }
 
+    // contiguous check
     PRIMUS_TURBO_CHECK(A.is_contiguous(), "A must be contiguous");
     PRIMUS_TURBO_CHECK(B.is_contiguous(), "B must be contiguous");
 
+    // shape check
     PRIMUS_TURBO_CHECK(A.dim() == 2 && B.dim() == 2, "A, B must be 2D tensors");
+    if (use_fp8) {
+        // NOTE: only support tensorwise
+        PRIMUS_TURBO_CHECK(scaleA_inv.ndimension() == 1);
+        PRIMUS_TURBO_CHECK(scaleB_inv.ndimension() == 1);
+    }
 
     if (transC) {
         std::swap(A, B);
+        std::swap(scaleA_inv, scaleB_inv);
         std::tie(transA, transB) = std::make_tuple(!transB, !transA);
     }
 
@@ -67,11 +96,6 @@ at::Tensor hipblaslt_gemm(at::Tensor A, at::Tensor B, const at::ScalarType out_d
         lda = m;
         ldb = n;
         ldd = n;
-    } else if (transA && transB) { // TT
-        PRIMUS_TURBO_CHECK(A.size(0) == B.size(1), "tensor size mismatch");
-        lda = m;
-        ldb = k;
-        ldd = n;
     } else {
         PRIMUS_TURBO_ERROR("Not support layout.");
     }
@@ -94,11 +118,16 @@ at::Tensor hipblaslt_gemm(at::Tensor A, at::Tensor B, const at::ScalarType out_d
     // NOTE: hipblaslt expects tensor in col-major but torch Tensor is in row-major.
     // Swapping A&B that are essentially computing C^T = B^T @ A^T.
     hipblaslt_gemm_impl(
-        static_cast<const void *>(B.data_ptr()), B_type, ldb, trans_operation_B,
-        static_cast<const void *>(A.data_ptr()), A_type, lda, trans_operation_A,
+        static_cast<const void *>(B.data_ptr()), B_type, ldb,
+        use_fp8 ? static_cast<const void*>(scaleB_inv.data_ptr()) : nullptr,
+        trans_operation_B,
+        static_cast<const void *>(A.data_ptr()), A_type, lda,
+        use_fp8 ? static_cast<const void*>(scaleA_inv.data_ptr()) : nullptr,
+        trans_operation_A,
         static_cast<void *>(C.data_ptr()), C_type, ldd,
         n, m, k,
         static_cast<void *>(workspace.data_ptr()), workspace_size,
+        use_fp8,
         handle, stream);
     // clang-format on
 

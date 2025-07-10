@@ -8,10 +8,12 @@ from tests.test_utils import get_tolerances
 @pytest.mark.parametrize("m", [1, 16, 128, 256, 512, 1024, 2048])
 @pytest.mark.parametrize("n", [1, 16, 129, 512, 1024, 2048, 4096])
 @pytest.mark.parametrize("k", [1, 16, 127, 255, 512, 1024, 2048])
-@pytest.mark.parametrize("transA", [False, True])
-@pytest.mark.parametrize("transB", [False, True])
+@pytest.mark.parametrize("layout", ["TN", "NN", "NT"])
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
-def test_gemm(m, n, k, transA, transB, dtype):
+def test_gemm(m, n, k, layout, dtype):
+    transA = layout[0] == "T"
+    transB = layout[1] == "T"
+
     if not torch.cuda.is_available():
         pytest.skip("CUDA not available")
     device = "cuda"

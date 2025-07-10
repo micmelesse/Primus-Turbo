@@ -1,6 +1,6 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import NamedTuple, Optional, Tuple
+from typing import Dict, NamedTuple, Optional, Tuple
 
 import torch
 
@@ -92,17 +92,39 @@ class ScalingStrategy(Enum):
 
 @dataclass
 class Float8QuantConfig:
-    dtype: Format = Format.E4M3
+    format: Dict[str, Format] = field(
+        default_factory=lambda: {
+            "x": Format.E4M3,
+            "y": Format.E4M3,
+            "out": Format.HYBRID,
+        }
+    )
     granularity: ScalingGranularity = ScalingGranularity.TENSORWISE
     strategy: ScalingStrategy = ScalingStrategy.DYNAMIC
     block_size: Optional[int] = None  # Default: not used for tensorwise/rowwise
 
     def __post_init__(self):
+        for key in ("x", "y", "out"):
+            assert key in self.format.keys()
+
         if self.granularity == ScalingGranularity.BLOCKWISE and self.block_size is None:
             raise ValueError("block_size must be set when granularity is BLOCKWISE")
 
 
 @dataclass
 class MXQuantConfig(Float8QuantConfig):
+    format: Dict[str, Format] = field(
+        default_factory=lambda: {
+            "x": Format.E4M3,
+            "y": Format.E4M3,
+            "out": Format.E4M3,
+        }
+    )
     granularity: ScalingGranularity = ScalingGranularity.BLOCKWISE
     block_size: int = 128  # Override: block_size required for blockwise
+
+    def __post_init__(self):
+        super().__post_init__()
+
+        for key in ("x", "y", "out"):
+            assert self.format[key] == Format.E4M3

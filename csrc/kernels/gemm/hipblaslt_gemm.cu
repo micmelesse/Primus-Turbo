@@ -1,6 +1,6 @@
 #include "primus_turbo/common.h"
 
-#include "primus_turbo/gemm.h"
+#include "primus_turbo/hipblaslt_gemm.h"
 
 namespace primus_turbo {
 
@@ -16,12 +16,17 @@ int64_t get_hipblaslt_workspace_size_in_byte() {
 }
 
 void hipblaslt_gemm_impl(const void *A, const hipDataType A_type, const int64_t lda,
-                         hipblasOperation_t transA, const void *B, const hipDataType B_type,
-                         const int64_t ldb, hipblasOperation_t transB, void *D,
-                         const hipDataType D_type, const int64_t ldd, const int64_t m,
-                         const int64_t n, const int64_t k, void *workspace,
-                         const int64_t workspace_size, hipblasLtHandle_t handle,
-                         hipStream_t stream) {
+                         const void *scaleA_inv, hipblasOperation_t transA, const void *B,
+                         const hipDataType B_type, const int64_t ldb, const void *scaleB_inv,
+                         hipblasOperation_t transB, void *D, const hipDataType D_type,
+                         const int64_t ldd, const int64_t m, const int64_t n, const int64_t k,
+                         void *workspace, const int64_t workspace_size, const bool use_fp8,
+                         hipblasLtHandle_t handle, hipStream_t stream) {
+    if (use_fp8) {
+        PRIMUS_TURBO_CHECK(scaleA_inv != nullptr);
+        PRIMUS_TURBO_CHECK(scaleB_inv != nullptr);
+    }
+
     const hipDataType C_type = D_type;
 
     hipblasLtMatmulDesc_t       operation_desc = nullptr;
@@ -44,6 +49,15 @@ void hipblaslt_gemm_impl(const void *A, const hipDataType A_type, const int64_t 
         operation_desc, HIPBLASLT_MATMUL_DESC_TRANSB, &transB, sizeof(transB)));
     PRIMUS_TURBO_CHECK_HIPBLAS(hipblasLtMatmulDescSetAttribute(
         operation_desc, HIPBLASLT_MATMUL_DESC_EPILOGUE, &epilogue, sizeof(epilogue)));
+
+    if (use_fp8) {
+        PRIMUS_TURBO_CHECK_HIPBLAS(
+            hipblasLtMatmulDescSetAttribute(operation_desc, HIPBLASLT_MATMUL_DESC_A_SCALE_POINTER,
+                                            &scaleA_inv, sizeof(scaleA_inv)));
+        PRIMUS_TURBO_CHECK_HIPBLAS(
+            hipblasLtMatmulDescSetAttribute(operation_desc, HIPBLASLT_MATMUL_DESC_B_SCALE_POINTER,
+                                            &scaleB_inv, sizeof(scaleB_inv)));
+    }
 
     int                                           algo_count = 1;
     std::vector<hipblasLtMatmulHeuristicResult_t> algos;
