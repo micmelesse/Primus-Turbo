@@ -90,5 +90,7 @@ def _tiled_fused_matmul_scatter_out_impl(
 @lru_cache
 def get_scatter_buf_ptrs(scatter_bufs_ptr_cpu):
     return torch.tensor(
-        list(scatter_bufs_ptr_cpu), device=torch.cuda.current_device(), requires_grad=False,
+        list(scatter_bufs_ptr_cpu),
+        device=torch.cuda.current_device(),
+        requires_grad=False,
     )
