@@ -3,7 +3,7 @@ import triton.language as tl
 
 
 @triton.jit
-def kernel_consumer_reduce_bf16(
+def kernel_consumer_reduce_async_tp(
     c_ptr,  # [M, N]
     out_ptr,  # [M_per_rank, N]
     # shape of matrix
@@ -15,6 +15,11 @@ def kernel_consumer_reduce_bf16(
     # tile size
     BLOCK_SIZE: tl.constexpr,
 ):
+    """
+    Only used within asyncTP scenarios to enable overlap between matmul and reduce_scatter.
+    Currently supporting bf16 and fp16 data types.
+    """
+
     pid = tl.program_id(axis=0)
     offs = pid * BLOCK_SIZE + tl.arange(0, BLOCK_SIZE)
     offs = tl.where(offs < M_per_rank * N, offs, 0)

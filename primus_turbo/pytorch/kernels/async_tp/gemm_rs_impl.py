@@ -1,3 +1,5 @@
+from functools import lru_cache
+
 import torch
 import torch.distributed.distributed_c10d as c10d
 import triton
@@ -5,7 +7,7 @@ from triton_dist.kernels.amd.gemm_reduce_scatter import (
     matmul_fuse_scatter,
 )
 
-from primus_turbo.triton.reduce.reduce_kernel import kernel_consumer_reduce_bf16
+from primus_turbo.triton.reduce.reduce_kernel import kernel_consumer_reduce_async_tp
 
 from .amd_symmetric_memory import get_amd_symm_mem_workspace
 
@@ -26,7 +28,7 @@ def ring_reduce_after_scatter(
     REDUCE_AVG = True if reduce_op == "avg" else False
     grid = lambda META: (triton.cdiv(M_per_rank * N, META["BLOCK_SIZE"]),)
     with torch.cuda.stream(stream):
-        kernel_consumer_reduce_bf16[grid](
+        kernel_consumer_reduce_async_tp[grid](
             scatter_out,
             output,
             M_per_rank,
@@ -41,7 +43,7 @@ def ring_reduce_after_scatter(
     return output
 
 
-def _blockwise_fused_matmul_scatter_out_impl(
+def _tiled_fused_matmul_scatter_out_impl(
     input: torch.Tensor,
     weight: torch.Tensor,
     group_name: str,
@@ -63,11 +65,7 @@ def _blockwise_fused_matmul_scatter_out_impl(
     p2p_workspace_size_req = M * N * input.element_size()
     symm_mem = get_amd_symm_mem_workspace(group_name, min_size=p2p_workspace_size_req)
     scatter_bufs = [symm_mem.get_buffer(i, [M, N], out_dtype) for i in range(num_ranks)]
-    scatter_bufs_ptr = torch.tensor(
-        [t.data_ptr() for t in scatter_bufs],
-        device=torch.cuda.current_device(),
-        requires_grad=False,
-    )
+    scatter_bufs_ptr = get_scatter_buf_ptrs((t.data_ptr() for t in scatter_bufs))
 
     symm_mem.barrier()
     matmul_fuse_scatter(input, weight, scatter_bufs_ptr, rank, num_ranks, transpose_weight=False)
@@ -87,3 +85,10 @@ def _blockwise_fused_matmul_scatter_out_impl(
     if output is not None:
         output.copy_(scatter_out)
     return rs_output
+
+
+@lru_cache
+def get_scatter_buf_ptrs(scatter_bufs_ptr_cpu):
+    return torch.tensor(
+        list(scatter_bufs_ptr_cpu), device=torch.cuda.current_device(), requires_grad=False,
+    )

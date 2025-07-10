@@ -220,7 +220,7 @@ def fused_matmul_reduce_scatter(
     M, K = x.shape
     N = B.shape[0]
 
-    if (M // group.size() < 256) or (N < 256) or (K < 256) or (M % 256) or (N % 256) or (K % 256):
+    if (M // group.size() < 256) or (M % 256) or (N % 256) or (K % 256):
         raise ValueError(
             f"M, N, and K must be divisible by 256, and M divided by group size must not be less than 256."
         )
@@ -242,7 +242,7 @@ def fused_matmul_reduce_scatter(
         output = output.view(-1, B.shape[0])
 
     with torch.profiler.record_function("blockwise_fused_matmul_scatter_out"):
-        rs_output = gemm_rs_impl._blockwise_fused_matmul_scatter_out_impl(
+        rs_output = gemm_rs_impl._tiled_fused_matmul_scatter_out_impl(
             input=x,
             weight=B,
             group_name=group_name,
