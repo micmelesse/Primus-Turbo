@@ -1,11 +1,13 @@
+import operator
+from functools import reduce
 from typing import List, Optional, Tuple
 
 import torch
 import torch.distributed.distributed_c10d as c10d
 
-from primus_turbo.pytorch.kernels.async_tp import ag_gemm_impl
+from primus_turbo.pytorch.kernels.async_tp import ag_gemm_impl, gemm_rs_impl
 
-__all__ = ["fused_all_gather_matmul"]
+__all__ = ["fused_all_gather_matmul", "fused_matmul_reduce_scatter"]
 
 
 def fused_all_gather_matmul(
@@ -117,7 +119,11 @@ def fused_all_gather_matmul(
 
     if outputs is None:
         outputs = [
-            A_shard.new_empty(A_shard_flat.shape[0] * group.size(), B.shape[1], dtype=out_dtype or B.dtype)
+            A_shard.new_empty(
+                A_shard_flat.shape[0] * group.size(),
+                B.shape[1],
+                dtype=out_dtype or B.dtype,
+            )
             for B, out_dtype in zip(Bs, out_dtypes)
         ]
 
@@ -143,3 +149,108 @@ def fused_all_gather_matmul(
 
     A = unflatten(A_out) if return_A else None
     return A, [unflatten(output) for output in outputs]
+
+
+def fused_matmul_reduce_scatter(
+    A: torch.Tensor,
+    B: torch.Tensor,
+    layout: str,
+    reduce_op: str,
+    scatter_dim: int,
+    group_name: str,
+    *,
+    output: Optional[torch.Tensor] = None,
+    rs_out: Optional[torch.Tensor] = None,
+    out_dtype: Optional[torch.dtype] = None,
+) -> torch.Tensor:
+    """
+    Perform the following logic with micro-pipelined computation and
+    communication:
+        C_total = torch.matmul(A, B)
+        C = reduce_scatter_tensor(C, "avg", scatter_dim, group)
+
+
+    Optimal stride order for A - if A.movedim(scatter_dim, 0) is
+    contiguous, no extra copy is required for input layout transformation.
+    Otherwise A needs to be copied once.
+
+    Parameters:
+        A (torch.Tensor): input tensor of gemm.
+        B (torch.Tensor): weight tensor of gemm.
+        layout (str): the layout of A B tensor 'NN' or 'NT'
+        reduce_op(str): reduce method 'avg' or 'sum'
+        scatter_dim (int): C's scatter dim
+        group_name (str): tp group's name
+
+    Keyword Arguments:
+        output(torch.Tensor, optional): the output tensor of matmul and scatter. Defaults to None.
+        rs_out(torch.Tensor, optional): the output tensor of reduce. Defaults to None.
+        output_dtype(torch.dtype, optional): the output dtype of matmul and reduce. Defaults to None.
+
+    Return:
+        torch.Tensor: the output tensor of mutmul_reduce_scatter.
+
+    Example:
+        >>> A = torch.randn(2, 3)
+        >>> B = torch.randn(3, 3)
+        >>> tp_group = torch.distributed.new_group(...)
+        >>> rs_output = primus_turbo.pytorch.ops.fused_matmul_reduce_scatter(A, B, 'NN', 'sum', 0, tp_group.group_name)
+    """
+    # check input
+    if A.dim() < 2:
+        raise ValueError("A_shard must be a matrix")
+    if scatter_dim < 0 or scatter_dim >= A.dim():
+        raise ValueError("Invalid gather_dim")
+    if B.dim() != 2:
+        raise ValueError("B must be a matrix")
+    if reduce_op not in ["sum", "avg"]:
+        raise ValueError("reduce_op must be sum or avg")
+    if layout[0] == "T":
+        raise ValueError("layout must be NN or NT")
+    if out_dtype is None:
+        out_dtype = A.dtype
+
+    B = B if layout[1] == "T" else B.T.contiguous()
+    group = c10d._resolve_process_group(group_name)
+
+    x = A.movedim(scatter_dim, 0)
+    leading_dims = list(x.shape[:-1])
+    leading_dims[0] //= group.size()
+    x = x.flatten(0, -2)
+    M, K = x.shape
+    N = B.shape[0]
+
+    if (M // group.size() < 256) or (M % 256) or (N % 256) or (K % 256):
+        raise ValueError(
+            f"M, N, and K must be divisible by 256, and M divided by group size must not be less than 256."
+        )
+
+    if rs_out is not None:
+        if rs_out.dtype != A.dtype:
+            raise ValueError(f"Invalid dtype: rs_out ({rs_out.dtype}) is different with A ({A.dtype})!")
+        if rs_out.numel() != reduce(operator.mul, leading_dims, 1) * N:
+            raise ValueError(
+                f"Invalid shape: rs_out ({rs_out.shape}) is not unexpected as ({leading_dims}, {N})!"
+            )
+
+    if output is not None:
+        if output.dtype != A.dtype:
+            raise ValueError(f"Invalid dtype: output ({output.dtype}) is different with A ({A.dtype})!")
+
+        if output.numel() != rs_out.numel() * group.size():
+            raise ValueError(f"output size must equal group size * rs_out size.")
+        output = output.view(-1, B.shape[0])
+
+    with torch.profiler.record_function("blockwise_fused_matmul_scatter_out"):
+        rs_output = gemm_rs_impl._tiled_fused_matmul_scatter_out_impl(
+            input=x,
+            weight=B,
+            group_name=group_name,
+            reduce_op=reduce_op,
+            output=output,
+            rs_output=rs_out,
+            out_dtype=out_dtype,
+            stream=torch.cuda.current_stream(),
+        )
+
+    return rs_output.view(*leading_dims, -1).movedim(0, scatter_dim)
