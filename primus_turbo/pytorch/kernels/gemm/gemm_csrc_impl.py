@@ -1,8 +1,8 @@
 import torch
 
 
-def _empty_tensor():
-    return torch.Tensor()
+def _empty_tensor(device):
+    return torch.Tensor().to(device)
 
 
 def gemm_impl(
@@ -18,9 +18,9 @@ def gemm_impl(
 
     args = (
         A,
-        _empty_tensor(),
+        _empty_tensor(device=A.device),
         B,
-        _empty_tensor(),
+        _empty_tensor(device=B.device),
         out_dtype,
         transA,
         transB,

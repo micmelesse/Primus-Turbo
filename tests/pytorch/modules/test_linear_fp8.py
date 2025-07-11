@@ -44,7 +44,7 @@ def test_mxlinear(ori_dtype, dtype, block_size, M, NK, bias, enable_torch_compil
     x2.grad = None
 
     # MX
-    config = MXQuantConfig(dtype=dtype, block_size=block_size)
+    config = MXQuantConfig(block_size=block_size)
     MXLinear.from_float(model, config)
     assert isinstance(model, MXLinear)
     if enable_torch_compile:
