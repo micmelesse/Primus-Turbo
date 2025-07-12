@@ -1,3 +1,4 @@
+import glob
 import os
 import platform
 import re
@@ -6,6 +7,8 @@ from pathlib import Path
 
 from setuptools import find_packages, setup
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
+
+# from primus_turbo.utils.hip_extension import HIPExtension
 
 PROJECT_ROOT = Path(os.path.dirname(__file__)).resolve()
 DEFAULT_HIPCC = "/opt/rocm/bin/hipcc"
@@ -50,13 +53,17 @@ def read_version():
     raise RuntimeError("Cannot find version.")
 
 
-def build_torch_extension():
+def find_shared_lib(name: str) -> str:
+    so_files = glob.glob(str(PROJECT_ROOT / "build" / "lib.*" / f"{name}*.so"))
+    if not so_files:
+        raise FileNotFoundError(f"{name}.so not found after build")
+    print(f"[Primus-Turbo Setup] Found shared lib: {so_files[0]}")
+    return so_files[0]
+
+
+def get_common_flags():
     arch = platform.machine().lower()
-
-    libraries = ["hipblas"]
-
     extra_link_args = [
-        "-Wl,-rpath,$ORIGIN/../../torch/lib",
         "-Wl,-rpath,/opt/rocm/lib",
         f"-L/usr/lib/{arch}-linux-gnu",
     ]
@@ -66,7 +73,6 @@ def build_torch_extension():
         "-fvisibility=hidden",
     ]
 
-    # TODO: consider rocm version
     nvcc_flags = [
         "-O3",
         "-U__HIP_NO_HALF_OPERATORS__",
@@ -99,12 +105,32 @@ def build_torch_extension():
     max_jobs = int(os.getenv("MAX_JOBS", "4"))
     nvcc_flags.append(f"-parallel-jobs={max_jobs}")
 
-    # Include
-    ck_include_dir = Path(PROJECT_ROOT / "3rdparty" / "composable_kernel" / "include")
-    kernels_source_files = Path(PROJECT_ROOT / "csrc" / "kernels")
-    pytorch_csrc_source_files = Path(PROJECT_ROOT / "csrc" / "pytorch")
+    return {
+        "extra_link_args": extra_link_args,
+        "extra_compile_args": {
+            "cxx": cxx_flags,
+            "nvcc": nvcc_flags,
+        },
+    }
+
+
+# def build_csrc_kernels_extension():
+#     flags = get_common_flags()
+#     return HIPExtension(
+#     )
+
+
+def build_torch_extension():
+    # Link and Compile flags
+    extra_flags = get_common_flags()
+    extra_flags["extra_link_args"] = [
+        "-Wl,-rpath,$ORIGIN/../../torch/lib",
+        *extra_flags.get("extra_link_args", []),
+    ]
 
     # CPP
+    kernels_source_files = Path(PROJECT_ROOT / "csrc" / "kernels")
+    pytorch_csrc_source_files = Path(PROJECT_ROOT / "csrc" / "pytorch")
     sources = (
         [pytorch_csrc_source_files / "bindings_pytorch.cpp"]
         + all_files_in_dir(pytorch_csrc_source_files, name_extensions=["cpp", "cc", "cu"])
@@ -116,14 +142,11 @@ def build_torch_extension():
         sources=sources,
         include_dirs=[
             Path(PROJECT_ROOT / "csrc" / "include"),
-            ck_include_dir,
+            Path(PROJECT_ROOT / "3rdparty" / "composable_kernel" / "include"),
+            Path(PROJECT_ROOT / "csrc"),
         ],
-        libraries=libraries,
-        extra_link_args=extra_link_args,
-        extra_compile_args={
-            "cxx": cxx_flags,
-            "nvcc": nvcc_flags,
-        },
+        libraries=["hipblas"],
+        **extra_flags,
     )
 
 
