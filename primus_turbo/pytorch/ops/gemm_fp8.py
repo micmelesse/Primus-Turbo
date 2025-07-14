@@ -7,6 +7,8 @@ from primus_turbo.pytorch.core.float8 import (
     Format,
     MXQuantConfig,
     ScalingGranularity,
+    float8_e4m3,
+    float8_e5m2,
 )
 from primus_turbo.pytorch.kernels.gemm.gemm_fp8_impl import (
     gemm_fp8_blockwise_impl,
@@ -65,14 +67,10 @@ class BlockwiseFP8GemmFunction(torch.autograd.Function):
         assert config.block_size != None
         assert x.ndim >= 2, "Input tensor x must have at least 2 dimensions."
         assert weight.ndim == 2, "Weight tensor must be 2-dimensional."
-        assert (
-            config.format["x"] == Format.E4M3
-            and config.format["y"] == Format.E4M3
-            and config.format["out"] == Format.E4M3
-        )
+        assert config.format == Format.E4M3
 
-        x_dtype = config.format["x"].value.fwd_dtype
-        w_dtype = config.format["y"].value.fwd_dtype
+        x_dtype = float8_e4m3
+        w_dtype = float8_e4m3
 
         block_size = config.block_size
 
@@ -113,8 +111,9 @@ class BlockwiseFP8GemmFunction(torch.autograd.Function):
         x, w_fp8, w_scales = ctx.saved_tensors
         config = ctx.config
         block_size = config.block_size
-        out_dtype = config.format["out"].value.bwd_dtype
-        x_dtype = config.format["x"].value.bwd_dtype
+
+        out_dtype = float8_e4m3
+        x_dtype = float8_e4m3
 
         *batch_shape, M, N = grad_out.shape
         grad_out = grad_out.view(-1, N)
@@ -215,20 +214,21 @@ class TensorwiseFP8GemmFunction(torch.autograd.Function):
         config: Float8QuantConfig,
     ):
         assert config.granularity == ScalingGranularity.TENSORWISE
-        assert config.format["x"] == Format.E4M3 and config.format["y"] == Format.E4M3
+        assert config.format == Format.E4M3 or config.format == Format.HYBRID
 
-        x_scale, x_scale_inv = calc_scale_and_scale_inv(
-            x, torch.finfo(config.format["x"].value.fwd_dtype).max
+        x_dtype = float8_e4m3
+        y_dtype = float8_e4m3
+
+        x_scale, x_scale_inv = calc_scale_and_scale_inv(x, torch.finfo(x_dtype).max)
+        y_scale, y_scale_inv = calc_scale_and_scale_inv(y, torch.finfo(y_dtype).max)
+
+        x_fp8 = quant_fp8_tensorwise_impl(x, x_scale, x_dtype)
+        y_fp8 = quant_fp8_tensorwise_impl(y, y_scale, y_dtype)
+
+        # NN
+        out = gemm_fp8_tensorwise_impl(
+            x_fp8, x_scale_inv, False, y_fp8.T.contiguous(), y_scale_inv, True, out_dtype, False
         )
-        y_scale, y_scale_inv = calc_scale_and_scale_inv(
-            y, torch.finfo(config.format["y"].value.fwd_dtype).max
-        )
-
-        x_fp8 = quant_fp8_tensorwise_impl(x, x_scale, config.format["x"].value.fwd_dtype)
-        y_fp8 = quant_fp8_tensorwise_impl(y, y_scale, config.format["y"].value.fwd_dtype)
-
-        # NT
-        out = gemm_fp8_tensorwise_impl(x_fp8, x_scale_inv, False, y_fp8, y_scale_inv, True, out_dtype, False)
 
         ctx.save_for_backward(x_fp8, x_scale_inv, y_fp8, y_scale_inv)
 
@@ -242,20 +242,21 @@ class TensorwiseFP8GemmFunction(torch.autograd.Function):
         (x_fp8, x_scale_inv, y_fp8, y_scale_inv) = ctx.saved_tensors
         config = ctx.config
 
+        # For HYBRID format. data type of grad_out is e5m2.
+        grad_out_dtype = float8_e4m3 if config.format == Format.E4M3 else float8_e5m2
+
         grad_out_scale, grad_out_scale_inv = calc_scale_and_scale_inv(
-            grad_out, torch.finfo(config.format["out"].value.bwd_dtype).max
+            grad_out, torch.finfo(grad_out_dtype).max
         )
 
-        grad_out_fp8 = quant_fp8_tensorwise_impl(
-            grad_out, grad_out_scale, config.format["out"].value.bwd_dtype
-        )
+        grad_out_fp8 = quant_fp8_tensorwise_impl(grad_out, grad_out_scale, grad_out_dtype)
 
-        # NN
+        # NT
         x_grad = gemm_fp8_tensorwise_impl(
             grad_out_fp8,
             grad_out_scale_inv,
             False,
-            y_fp8.T.contiguous(),
+            y_fp8,
             y_scale_inv,
             True,
             ctx.out_dtype,
@@ -264,11 +265,11 @@ class TensorwiseFP8GemmFunction(torch.autograd.Function):
 
         # TN
         y_grad = gemm_fp8_tensorwise_impl(
-            grad_out_fp8.T.contiguous(),
-            grad_out_scale_inv,
-            False,
             x_fp8.T.contiguous(),
             x_scale_inv,
+            False,
+            grad_out_fp8.T.contiguous(),
+            grad_out_scale_inv,
             True,
             ctx.out_dtype,
             False,
@@ -286,8 +287,8 @@ def gemm_fp8_tensorwise(
     config: Union[Float8QuantConfig, None] = None,
 ) -> torch.Tensor:
     assert A.ndim == 2 and B.ndim == 2, "Only 2D tensors are supported"
-    # TODO(ruibzhan): We only support NT layout on gfx942.
-    assert not transA and transB, f"Only support NT layout on FP8 tensorwise GEMM."
+    # TODO(ruibzhan): We only support NN layout on gfx942.
+    assert not transA and not transB, f"Only support NN layout on FP8 tensorwise GEMM."
 
     if out_dtype is None:
         out_dtype = torch.result_type(A, B)

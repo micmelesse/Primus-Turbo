@@ -1,6 +1,6 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Dict, NamedTuple, Optional, Tuple
+from typing import Optional, Tuple
 
 import torch
 
@@ -54,29 +54,14 @@ except AttributeError:
 ###################################################
 
 
-class _FormatHelper(NamedTuple):
-    fwd_dtype: torch.dtype
-    bwd_dtype: torch.dtype
-
-
 class Format(Enum):
     """
     Supported FP8 formats.
-
-    Values
-    ------
-    E4M3 :
-          All FP8 tensors are in e4m3 format
-    E5M2 :
-          All FP8 tensors are in e5m2 format
-    HYBRID :
-            FP8 tensors in the forward pass are in e4m3 format,
-            FP8 tensors in the backward pass are in e5m2 format
     """
 
-    E4M3 = _FormatHelper(float8_e4m3, float8_e4m3)
-    E5M2 = _FormatHelper(float8_e5m2, float8_e5m2)
-    HYBRID = _FormatHelper(float8_e4m3, float8_e5m2)
+    E4M3 = auto()
+    E5M2 = auto()
+    HYBRID = auto()
 
 
 class ScalingGranularity(Enum):
@@ -92,39 +77,21 @@ class ScalingStrategy(Enum):
 
 @dataclass
 class Float8QuantConfig:
-    format: Dict[str, Format] = field(
-        default_factory=lambda: {
-            "x": Format.E4M3,
-            "y": Format.E4M3,
-            "out": Format.HYBRID,
-        }
-    )
+    format: Format = Format.E4M3
     granularity: ScalingGranularity = ScalingGranularity.TENSORWISE
     strategy: ScalingStrategy = ScalingStrategy.DYNAMIC
     block_size: Optional[int] = None  # Default: not used for tensorwise/rowwise
 
     def __post_init__(self):
-        for key in ("x", "y", "out"):
-            assert key in self.format.keys()
-
         if self.granularity == ScalingGranularity.BLOCKWISE and self.block_size is None:
             raise ValueError("block_size must be set when granularity is BLOCKWISE")
 
 
 @dataclass
 class MXQuantConfig(Float8QuantConfig):
-    format: Dict[str, Format] = field(
-        default_factory=lambda: {
-            "x": Format.E4M3,
-            "y": Format.E4M3,
-            "out": Format.E4M3,
-        }
-    )
+    format: Format = Format.E4M3
     granularity: ScalingGranularity = ScalingGranularity.BLOCKWISE
     block_size: int = 128  # Override: block_size required for blockwise
 
     def __post_init__(self):
         super().__post_init__()
-
-        for key in ("x", "y", "out"):
-            assert self.format[key] == Format.E4M3

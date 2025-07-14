@@ -81,12 +81,12 @@ def test_gemm_fp8_tensorwise(m, n, k, dtype):
     device = "cuda:0"
 
     x = torch.randn((m, k), dtype=dtype, device=device, requires_grad=True)
-    w = torch.randn((n, k), dtype=dtype, device=device, requires_grad=True)
+    w = torch.randn((k, n), dtype=dtype, device=device, requires_grad=True)
     x_ref = x.detach().clone().requires_grad_()
     w_ref = w.detach().clone().requires_grad_()
 
     # Ref
-    out_ref = x_ref @ w_ref.T
+    out_ref = x_ref @ w_ref
     grad_out = torch.randn_like(out_ref)
     out_ref.backward(grad_out)
     x_grad_ref = x_ref.grad
@@ -94,7 +94,7 @@ def test_gemm_fp8_tensorwise(m, n, k, dtype):
 
     # Config + FWD + BWD
     config = Float8QuantConfig()
-    out = gemm_fp8_tensorwise(x, w, False, True, dtype, config)
+    out = gemm_fp8_tensorwise(x, w, False, False, dtype, config)
     out.backward(grad_out)
     x_grad = x.grad
     w_grad = w.grad
