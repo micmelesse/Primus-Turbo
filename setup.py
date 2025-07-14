@@ -1,17 +1,45 @@
-import glob
 import os
 import platform
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
 from setuptools import find_packages, setup
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 
-# from primus_turbo.utils.hip_extension import HIPExtension
+from primus_turbo.utils.hip_extension import HIPExtension
 
 PROJECT_ROOT = Path(os.path.dirname(__file__)).resolve()
 DEFAULT_HIPCC = "/opt/rocm/bin/hipcc"
+
+
+class TurboBuildExt(BuildExtension):
+    KERNEL_EXT_NAME = "libprimus_turbo_kernels"
+
+    def get_ext_filename(self, ext_name: str) -> str:
+        filename = super().get_ext_filename(ext_name)
+        if ext_name == self.KERNEL_EXT_NAME:
+            filename = os.path.join(*filename.split(os.sep)[:-1], "libprimus_turbo_kernels.so")
+        return filename
+
+    def build_extension(self, ext):
+        super().build_extension(ext)
+
+        if ext.name == self.KERNEL_EXT_NAME:
+            built_path = Path(self.get_ext_fullpath(ext.name))
+            filename = built_path.name
+            #
+            src_dst_dir = PROJECT_ROOT / "primus_turbo" / "lib"
+            src_dst_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(built_path, src_dst_dir / filename)
+            #
+            build_dst_dir = Path(self.build_lib) / "primus_turbo" / "lib"
+            build_dst_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(built_path, build_dst_dir / filename)
+            print(f"[TurboBuildExt] Copied {filename} to:")
+            print(f"  - {src_dst_dir}")
+            print(f"  - {build_dst_dir}")
 
 
 def all_files_in_dir(path, name_extensions=[]):
@@ -51,14 +79,6 @@ def read_version():
             if match:
                 return match.group(1)
     raise RuntimeError("Cannot find version.")
-
-
-def find_shared_lib(name: str) -> str:
-    so_files = glob.glob(str(PROJECT_ROOT / "build" / "lib.*" / f"{name}*.so"))
-    if not so_files:
-        raise FileNotFoundError(f"{name}.so not found after build")
-    print(f"[Primus-Turbo Setup] Found shared lib: {so_files[0]}")
-    return so_files[0]
 
 
 def get_common_flags():
@@ -114,28 +134,37 @@ def get_common_flags():
     }
 
 
-# def build_csrc_kernels_extension():
-#     flags = get_common_flags()
-#     return HIPExtension(
-#     )
+def build_kernels_extension():
+    extra_flags = get_common_flags()
+    extra_flags["extra_link_args"] += [
+        "-shared",
+        "-Wl,-soname,libprimus_turbo_kernels.so",
+    ]
+
+    kernels_source_files = Path(PROJECT_ROOT / "csrc" / "kernels")
+    kernels_source = all_files_in_dir(kernels_source_files, name_extensions=["cpp", "cc", "cu"])
+    return HIPExtension(
+        name="libprimus_turbo_kernels",
+        include_dirs=[Path(PROJECT_ROOT / "csrc" / "include")],
+        sources=kernels_source,
+        libraries=["hipblas"],
+        **extra_flags,
+    )
 
 
 def build_torch_extension():
     # Link and Compile flags
     extra_flags = get_common_flags()
     extra_flags["extra_link_args"] = [
-        "-Wl,-rpath,$ORIGIN/../../torch/lib",
+        "-Wl,-rpath,$ORIGIN/../lib",
+        f"-L{PROJECT_ROOT / 'primus_turbo' / 'lib'}",
+        "-lprimus_turbo_kernels",
         *extra_flags.get("extra_link_args", []),
     ]
 
     # CPP
-    kernels_source_files = Path(PROJECT_ROOT / "csrc" / "kernels")
     pytorch_csrc_source_files = Path(PROJECT_ROOT / "csrc" / "pytorch")
-    sources = (
-        [pytorch_csrc_source_files / "bindings_pytorch.cpp"]
-        + all_files_in_dir(pytorch_csrc_source_files, name_extensions=["cpp", "cc", "cu"])
-        + all_files_in_dir(kernels_source_files, name_extensions=["cpp", "cc", "cu"])
-    )
+    sources = all_files_in_dir(pytorch_csrc_source_files, name_extensions=["cpp", "cc", "cu"])
 
     return CUDAExtension(
         name="primus_turbo.pytorch._C",
@@ -145,7 +174,6 @@ def build_torch_extension():
             Path(PROJECT_ROOT / "3rdparty" / "composable_kernel" / "include"),
             Path(PROJECT_ROOT / "csrc"),
         ],
-        libraries=["hipblas"],
         **extra_flags,
     )
 
@@ -161,10 +189,14 @@ if __name__ == "__main__":
     # Compile aiter before setting up the main package
     compile_aiter()
 
+    kernels_ext = build_kernels_extension()
+    torch_ext = build_torch_extension()
+
     setup(
         name="primus_turbo",
         version=read_version(),
-        packages=find_packages(),
-        ext_modules=[build_torch_extension()],
-        cmdclass={"build_ext": BuildExtension.with_options(use_ninja=True)},
+        packages=find_packages(exclude=["tests", "tests.*"]),
+        package_data={"primus_turbo": ["lib/*.so"]},
+        ext_modules=[kernels_ext, torch_ext],
+        cmdclass={"build_ext": TurboBuildExt.with_options(use_ninja=True)},
     )
