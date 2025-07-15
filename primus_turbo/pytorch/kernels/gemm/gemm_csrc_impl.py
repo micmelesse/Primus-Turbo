@@ -1,14 +1,34 @@
 import torch
 
 
-# Demo
-def gemm_csrc_impl(a: torch.Tensor, b: torch.Tensor, layout: str = "NN"):
-    assert layout in ["NN", "NT", "TN"], f"Unsupported layout: {layout}"
-    if layout == "NN":
-        a_mat, b_mat = a, b
-    elif layout == "NT":
-        a_mat, b_mat = a, b.transpose(-1, -2)
-    elif layout == "TN":
-        a_mat, b_mat = a.transpose(-1, -2), b
+def _empty_tensor(device):
+    return torch.Tensor().to(device)
 
-    return torch.ops.primus_turbo_cpp_extension.gemm(a_mat, b_mat)
+
+def gemm_impl(
+    A: torch.Tensor,
+    transA: bool,
+    B: torch.Tensor,
+    transB: bool,
+    out_dtype: torch.dtype,
+    transC: bool,
+    backend="hipblaslt",
+) -> torch.Tensor:
+    assert backend in ("hipblaslt")
+
+    args = (
+        A,
+        _empty_tensor(device=A.device),
+        B,
+        _empty_tensor(device=B.device),
+        out_dtype,
+        transA,
+        transB,
+        transC,
+    )
+
+    if backend == "hipblaslt":
+        # TODO(ruibzhan): support more backends.
+        out = torch.ops.primus_turbo_cpp_extension.hipblaslt_gemm(*args)
+
+    return out

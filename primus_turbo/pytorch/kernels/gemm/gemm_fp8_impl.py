@@ -231,3 +231,34 @@ def gemm_fp8_blockwise_impl_meta(
     M, N, _ = get_gemm_logical_shape(a, b, transA, transB)
     c = torch.empty(M, N, dtype=out_dtype, device=a.device)
     return c
+
+
+def gemm_fp8_tensorwise_impl(
+    A: torch.Tensor,
+    A_scale_inv: torch.Tensor,
+    transA: bool,
+    B: torch.Tensor,
+    B_scale_inv: torch.Tensor,
+    transB: bool,
+    out_dtype: torch.dtype,
+    transC: bool,
+    backend="hipblaslt",
+) -> torch.Tensor:
+    assert backend in ("hipblaslt")
+
+    args = (
+        A,
+        A_scale_inv,
+        B,
+        B_scale_inv,
+        out_dtype,
+        transA,
+        transB,
+        transC,
+    )
+
+    if backend == "hipblaslt":
+        # TODO(ruibzhan): support more backends.
+        out = torch.ops.primus_turbo_cpp_extension.hipblaslt_gemm(*args)
+
+    return out
