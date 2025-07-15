@@ -64,7 +64,7 @@ if __name__ == "__main__":
         context_length=8192,
         max_steps=500,
         warmup_steps=100,
-        lr=3e-4,
+        lr=1e-5,
         backend="torch",  # "torch", "turbo"
     )
 

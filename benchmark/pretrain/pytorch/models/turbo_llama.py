@@ -16,7 +16,7 @@ from .rope import apply_rotary_emb
 class Attention(BasicAttention):
     def __init__(self, config):
         super().__init__(config)
-        self.sdpa = turbo.modules.TurboAttention(causal=True, use_fp8=True, backend_type="triton")
+        self.sdpa = turbo.modules.TurboAttention(causal=True, use_fp8=False, backend_type="ck")
 
     def forward(
         self,
