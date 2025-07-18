@@ -46,4 +46,13 @@ torch::Tensor gemm_fp8_blockwise_meta(torch::Tensor &a, torch::Tensor &a_scales,
                                       torch::Tensor &b_scales, torch::Tensor &c, const bool transA,
                                       const bool transB, const int64_t block_size);
 
+/* Normalization */
+at::Tensor rmsnorm_fwd(const at::Tensor &input, const at::Tensor &gamma, const double eps);
+at::Tensor rmsnorm_fwd_meta(const at::Tensor &input, const at::Tensor &gamma, const double eps);
+
+std::vector<at::Tensor> rmsnorm_bwd(const at::Tensor &input, const at::Tensor &gamma,
+                                    const at::Tensor &grad_output, const double eps);
+std::vector<at::Tensor> rmsnorm_bwd_meta(const at::Tensor &input, const at::Tensor &gamma,
+                                         const at::Tensor &grad_output, const double eps);
+
 } // namespace primus_turbo::pytorch
