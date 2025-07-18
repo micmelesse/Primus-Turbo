@@ -3,11 +3,52 @@ from functools import lru_cache
 import torch
 import torch.distributed.distributed_c10d as c10d
 import triton
-from triton_dist.kernels.amd.gemm_reduce_scatter import matmul_fuse_scatter
 
+from primus_turbo.triton.async_tp.gemm_rs_kernel import (
+    kernel_gemm_rs_producer_fuse_scatter,
+)
 from primus_turbo.triton.reduce.reduce_kernel import kernel_consumer_reduce_async_tp
 
 from .amd_symmetric_memory import get_amd_symm_mem_workspace
+
+
+def matmul_fuse_scatter(a, b, scatter_bufs_ptr, rank, num_ranks, transpose_weight):
+    # Check constraints.
+    if transpose_weight:
+        assert a.shape[1] == b.shape[0], "Incompatible dimensions"
+        K, N = b.shape
+        stride_bk, stride_bn = b.stride(0), b.stride(1)
+    else:
+        assert a.shape[1] == b.shape[1], "Incompatible dimensions"
+        N, K = b.shape
+        stride_bk, stride_bn = b.stride(1), b.stride(0)
+    assert a.is_contiguous(), "Matrix A must be contiguous"
+    M, K = a.shape
+
+    alignment = 256
+    assert M % alignment == 0 and N % alignment == 0 and K % alignment == 0
+
+    # Allocates output.
+    def grid(META):
+        return (triton.cdiv(M, META["BLOCK_SIZE_M"]) * triton.cdiv(N, META["BLOCK_SIZE_N"]),)
+
+    compiled = kernel_gemm_rs_producer_fuse_scatter[grid](
+        a,
+        b,
+        scatter_bufs_ptr,  #
+        rank,
+        num_ranks,
+        M,
+        N,
+        K,  #
+        a.stride(0),
+        a.stride(1),  #
+        stride_bk,
+        stride_bn,  #
+        N,
+        1,  #
+    )
+    return compiled
 
 
 def ring_reduce_after_scatter(
@@ -24,7 +65,10 @@ def ring_reduce_after_scatter(
         output = torch.empty((M_per_rank, N), dtype=scatter_out.dtype, device=scatter_out.device)
 
     REDUCE_AVG = True if reduce_op == "avg" else False
-    grid = lambda META: (triton.cdiv(M_per_rank * N, META["BLOCK_SIZE"]),)
+
+    def grid(META):
+        return (triton.cdiv(M_per_rank * N, META["BLOCK_SIZE"]),)
+
     with torch.cuda.stream(stream):
         kernel_consumer_reduce_async_tp[grid](
             scatter_out,

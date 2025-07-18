@@ -36,7 +36,13 @@ TORCH_LIBRARY_IMPL(primus_turbo_cpp_extension, Meta, m) {
     m.impl("fp8_dequantize", fp8_dequantize_meta);
 }
 
-PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {}
+PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+    m.def(
+        "rendezvous_shmem",
+        [](const std::string &group_name, const std::vector<int64_t> &shape,
+           c10::ScalarType dtype) { return rendezvous_shmem(group_name, shape, dtype); },
+        py::arg("group_name"), py::arg("shape"), py::arg("dtype"));
+}
 
 /********************************************/
 
