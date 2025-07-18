@@ -50,5 +50,13 @@ torch::Tensor gemm_fp8_blockwise_meta(torch::Tensor &a, torch::Tensor &a_scales,
 std::vector<torch::Tensor> rendezvous_shmem(const std::string          &group_name,
                                             const std::vector<int64_t> &shape,
                                             c10::ScalarType             dtype);
+/* Normalization */
+at::Tensor rmsnorm_fwd(const at::Tensor &input, const at::Tensor &gamma, const double eps);
+at::Tensor rmsnorm_fwd_meta(const at::Tensor &input, const at::Tensor &gamma, const double eps);
+
+std::vector<at::Tensor> rmsnorm_bwd(const at::Tensor &input, const at::Tensor &gamma,
+                                    const at::Tensor &grad_output, const double eps);
+std::vector<at::Tensor> rmsnorm_bwd_meta(const at::Tensor &input, const at::Tensor &gamma,
+                                         const at::Tensor &grad_output, const double eps);
 
 } // namespace primus_turbo::pytorch
