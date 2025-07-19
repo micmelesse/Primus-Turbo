@@ -17,15 +17,15 @@ class SymmetricMemory {
 
     ~SymmetricMemory();
 
-    std::vector<void *> get_buffer_ptrs();
-    std::vector<void *> get_signal_pad_ptrs();
-    void              **get_buffer_ptrs_dev();
-    void              **get_signal_pad_ptrs_dev();
-    size_t              get_buffer_size();
-    size_t              get_signal_pad_size();
+    std::vector<void *> buffer_ptrs();
+    std::vector<void *> signal_pad_ptrs();
+    void              **buffer_ptrs_dev();
+    void              **signal_pad_ptrs_dev();
+    size_t              buffer_size();
+    size_t              signal_pad_size();
 
-    int get_rank();
-    int get_world_size();
+    int rank();
+    int world_size();
 
   private:
     std::vector<void *> buffers_;
@@ -44,8 +44,8 @@ class SymmetricMemoryManager {
 
     static SymmetricMemoryManager &Instance();
 
-    template <typename Communicator>
-    SymmetricMemory *GetSymmMem(size_t alloc_size, Communicator *comm);
+    template <typename Comm>
+    SymmetricMemory *GetSymmMem(size_t alloc_size, Communicator<Comm> *comm);
 
   private:
     SymmetricMemoryManager() = default;

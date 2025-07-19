@@ -2,14 +2,13 @@
 #include <vector>
 namespace primus_turbo::async_tp {
 
-template <typename Spec> class Communicator {
+template <typename Comm> class Communicator {
   public:
-    Spec       *derived() { return reinterpret_cast<Spec *>(this); }
-    const Spec *const_derived() const { return derived(); }
+    Comm       *derived() { return reinterpret_cast<Comm *>(this); }
+    const Comm *const_derived() const { return derived(); }
 
-    template <typename T> std::vector<T> AllGather(const T &obj) {
-        std::vector<T> result(world_size());
-        return derived()->AllGatherImpl(result.data(), &obj, sizeof(obj));
+    template <typename T> void AllGather(std::vector<T> &output, T &input) {
+        derived()->AllGatherImpl(output, input);
     }
 
     int rank() const { return derived()->rank(); }
