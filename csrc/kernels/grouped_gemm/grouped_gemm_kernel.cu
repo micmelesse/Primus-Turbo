@@ -1,16 +1,15 @@
+#include "grouped_gemm.h"
 #include "grouped_gemm.hpp"
-
-float invoke_gemm(int group_count, const std::vector<grouped_gemm_kargs> &args,
-                  hipStream_t stream) {
+namespace primus_turbo {
+void invoke_gemm(int group_count, const std::vector<grouped_gemm_kargs> &args, hipStream_t stream) {
     // Workspace memory allocated to hold the gemm descriptions.
     ck_tile::DeviceMem gemm_workspace;
     gemm_workspace.Realloc(get_workspace_size(args));
     float ave_time = 0;
     // Regular version of grouped gemm
-    ave_time = grouped_gemm<ADataType, BDataType, DsDataType, AccDataType, CDataType, ALayout,
-                            BLayout, DsLayout, CLayout, CDEElementWise>(
-        args, ck_tile::stream_config{stream}, gemm_workspace.GetDeviceBuffer());
-    return ave_time;
+    grouped_gemm<ADataType, BDataType, DsDataType, AccDataType, CDataType, ALayout, BLayout,
+                 DsLayout, CLayout, CDEElementWise>(args, ck_tile::stream_config{stream},
+                                                    gemm_workspace.GetDeviceBuffer());
 }
 
 template <typename ADataType, typename BDataType, typename CDataType, typename ALayout,
@@ -18,7 +17,7 @@ template <typename ADataType, typename BDataType, typename CDataType, typename A
 void ck_grouped_gemm_kernel(const ADataType *a_ptr, // a_ptr b_ptr c_ptr from gpu src
                             const BDataType *b_ptr, CDataType *c_ptr,
                             const int *seg_lens, // seg_lens from gpu src
-                            const int B, const int N, const int K) {
+                            const int B, const int N, const int K, hipStream_t stream) {
     int                           group_count = B;
     std::vector<ck_tile::index_t> stride_As;
     std::vector<ck_tile::index_t> stride_Bs;
@@ -85,5 +84,6 @@ void ck_grouped_gemm_kernel(const ADataType *a_ptr, // a_ptr b_ptr c_ptr from gp
                               stride_Cs[i]});
     }
     invoke_gemm<ADataType, BDataType, ck_tile::tuple<>, AccDataType, CDataType, ALayout, BLayout,
-                ck_tile::tuple<>, CLayout, false>(20, 100, group_count, gemm_descs);
+                ck_tile::tuple<>, CLayout, false>(group_count, gemm_descs, stream);
 }
+} // namespace primus_turbo

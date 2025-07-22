@@ -9,7 +9,7 @@
 #include "ck_tile/host/kernel_launch.hpp"
 #include "ck_tile/ops/elementwise/unary_element_wise_operation.hpp"
 #include "ck_tile/ops/gemm.hpp"
-
+namespace primus_turbo {
 #define CK_TILE_PIPELINE_COMPUTE_V3 1
 #define CK_TILE_PIPELINE_MEMORY 2
 #define CK_TILE_PIPELINE_COMPUTE_V4 3
@@ -53,33 +53,13 @@ using CDataType   = Types::CDataType;
 
 using grouped_gemm_kargs = ck_tile::GemmHostArgs</*NumDTensor = 0*/>;
 
-auto create_args(int argc, char *argv[]) {
-    ck_tile::ArgParser arg_parser;
-    arg_parser.insert("Ms", "", "M dimensions - empty by default.")
-        .insert("Ns", "", "N dimensions - empty by default.")
-        .insert("Ks", "", "K dimensions - empty by default.")
-        .insert("stride_As", "", "Tensor A strides - it is empty by default.")
-        .insert("stride_Bs", "", "Tensor B strides - it is empty by default.")
-        .insert("stride_Cs", "", "Tensor C strides - it is empty by default.")
-        .insert("a_layout", "R", "A tensor data layout - Row by default.")
-        .insert("b_layout", "C", "B tensor data layout - Row by default.")
-        .insert("c_layout", "R", "C tensor data layout - Row by default.")
-        .insert("validate", "1", "0. No validation, 1. Validation on CPU.")
-        .insert("warmup", "10", "number of iterations before benchmark the kernel.")
-        .insert("repeat", "100", "number of iterations to benchmark the kernel.")
-        .insert("group_count", "8", "group count.")
-        .insert("kbatch", "1", "kbatch for SplitK");
-
-    bool result = arg_parser.parse(argc, argv);
-    return std::make_tuple(result, arg_parser);
-}
-
 inline std::size_t get_workspace_size(const std::vector<grouped_gemm_kargs> &gemm_descs) {
     return gemm_descs.size() * sizeof(ck_tile::GemmTransKernelArg);
 }
 
 template <typename ADataType, typename BDataType, typename DsDataType, typename AccDataType,
           typename CDataType, typename ALayout, typename BLayout, typename DsLayout,
-          typename CLayout, bool Persistent, typename CDEElementWise>
-float grouped_gemm(const std::vector<grouped_gemm_kargs> &gemm_descs,
-                   const ck_tile::stream_config &s, void *kargs_ptr);
+          typename CLayout, typename CDEElementWise = ck_tile::element_wise::PassThrough>
+void grouped_gemm(const std::vector<grouped_gemm_kargs> &gemm_descs,
+                  const ck_tile::stream_config &s, void *kargs_ptr);
+} // namespace primus_turbo

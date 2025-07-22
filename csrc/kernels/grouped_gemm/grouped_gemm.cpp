@@ -15,20 +15,12 @@
 #include "ck_tile/ops/epilogue.hpp"
 #include "ck_tile/ops/gemm.hpp"
 #include "grouped_gemm.hpp"
-
-/*
-template <typename AType, typename BType, typename CType>
-void ck_gemm_fp8_blockwise_kernel(const AType *a_ptr, const float32 *a_scales_ptr,
-                                  const BType *b_ptr, const float32 *b_scales_ptr, CType *c_ptr,
-                                  const int32_t M, const int32_t N, const int32_t K,
-                                  const bool transA, const bool transB, hipStream_t stream)
-*/
-
+namespace primus_turbo {
 template <typename ADataType, typename BDataType, typename DsDataType, typename AccDataType,
           typename CDataType, typename ALayout, typename BLayout, typename DsLayout,
           typename CLayout, typename CDEElementWise = ck_tile::element_wise::PassThrough>
-float grouped_gemm(const std::vector<grouped_gemm_kargs> &gemm_descs,
-                   const ck_tile::stream_config &s, void *kargs_ptr) {
+void grouped_gemm(const std::vector<grouped_gemm_kargs> &gemm_descs,
+                  const ck_tile::stream_config &s, void *kargs_ptr) {
 #if (CK_TILE_PIPELINE_DEFAULT == CK_TILE_PIPELINE_MEMORY)
     // Memory friendly for Interwave scheduler
     constexpr ck_tile::index_t M_Tile = 128;
@@ -111,8 +103,6 @@ float grouped_gemm(const std::vector<grouped_gemm_kargs> &gemm_descs,
     const bool                has_hot_loop = BaseGemmPipeline::BlockHasHotloop(num_loop);
     const ck_tile::TailNumber tail_num     = BaseGemmPipeline::GetBlockLoopTailNum(num_loop);
 
-    float ave_time{0};
-
     const auto Run = [&](const auto has_hot_loop_, const auto tail_number_,
                          const auto memory_operation_) {
         constexpr bool has_hot_loop_v   = has_hot_loop_.value;
@@ -150,12 +140,10 @@ float grouped_gemm(const std::vector<grouped_gemm_kargs> &gemm_descs,
                       << std::endl;
         }
 
-        ave_time = ck_tile::launch_kernel(
-            s, ck_tile::make_kernel<blocks.x, kBlockPerCu>(
-                   Kernel{}, grids, blocks, 0,
-                   ck_tile::cast_pointer_to_constant_address_space(kargs_ptr), gemm_descs.size()));
-
-        return ave_time;
+        ck_tile::launch_kernel(s, ck_tile::make_kernel<blocks.x, kBlockPerCu>(
+                                      Kernel{}, grids, blocks, 0,
+                                      ck_tile::cast_pointer_to_constant_address_space(kargs_ptr),
+                                      gemm_descs.size()));
     };
 
     const auto RunSplitk = [&](const auto has_hot_loop_, const auto tail_number_) {
@@ -171,6 +159,5 @@ float grouped_gemm(const std::vector<grouped_gemm_kargs> &gemm_descs,
     };
 
     BaseGemmPipeline::TailHandler(RunSplitk, has_hot_loop, tail_num);
-
-    return ave_time;
 }
+} // namespace primus_turbo
