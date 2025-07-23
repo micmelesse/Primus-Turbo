@@ -40,8 +40,6 @@ void ck_grouped_gemm_kernel(const ADataType *a_ptr, // a_ptr b_ptr c_ptr from gp
         stride_Bs[i] = ck_tile::get_default_stride(K, N, stride_Bs[i], is_row_major(b_layout));
         stride_Cs[i] =
             ck_tile::get_default_stride(seg_lens[i], N, stride_Cs[i], is_row_major(c_layout));
-        // printf("stride_As[%d] = %d, stride_Bs[%d] = %d, stride_Cs[%d] = %d\n",
-        //        i, stride_As[i], i, stride_Bs[i], i, stride_Cs[i]);
     }
     std::vector<grouped_gemm_kargs> gemm_descs;
     gemm_descs.reserve(group_count);
