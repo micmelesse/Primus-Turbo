@@ -1,5 +1,5 @@
-#include "grouped_gemm.h"
 #include "grouped_gemm.hpp"
+#include "primus_turbo/grouped_gemm.h"
 namespace primus_turbo {
 void invoke_gemm(int group_count, const std::vector<grouped_gemm_kargs> &args, hipStream_t stream) {
     // Workspace memory allocated to hold the gemm descriptions.
