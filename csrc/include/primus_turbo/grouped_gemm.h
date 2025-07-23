@@ -2,6 +2,7 @@
 #include "primus_turbo/dtype.h"
 #include <cstdint>
 #include <hip/hip_runtime.h>
+#include "../kernels/grouped_gemm/grouped_gemm.hpp"
 namespace primus_turbo {
 
 template <typename ADataType, typename BDataType, typename CDataType, typename ALayout,

@@ -1,6 +1,10 @@
 #include "grouped_gemm.hpp"
 #include "primus_turbo/grouped_gemm.h"
 namespace primus_turbo {
+template <typename ADataType, typename BDataType, typename DsDataType, typename AccDataType,
+          typename CDataType, typename ALayout, typename BLayout, typename DsLayout,
+          typename CLayout, bool Persistent,
+          typename CDEElementWise = ck_tile::element_wise::PassThrough>
 void invoke_gemm(int group_count, const std::vector<grouped_gemm_kargs> &args, hipStream_t stream) {
     // Workspace memory allocated to hold the gemm descriptions.
     ck_tile::DeviceMem gemm_workspace;
@@ -81,6 +85,7 @@ void ck_grouped_gemm_kernel(const ADataType *a_ptr, // a_ptr b_ptr c_ptr from gp
                               {},
                               stride_Cs[i]});
     }
+    using AccDataType = float;
     invoke_gemm<ADataType, BDataType, ck_tile::tuple<>, AccDataType, CDataType, ALayout, BLayout,
                 ck_tile::tuple<>, CLayout, false>(group_count, gemm_descs, stream);
 }

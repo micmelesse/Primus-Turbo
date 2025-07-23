@@ -34,22 +34,22 @@ namespace primus_turbo {
 #error "unsupported CK_TILE_PIPELINE_DEFAULT value"
 #endif
 
-template <typename DataType> struct GemmTypeConfig;
+// template <typename DataType> struct GemmTypeConfig;
 
-template <> struct GemmTypeConfig<ck_tile::half_t> {
-    using ADataType   = ck_tile::half_t;
-    using BDataType   = ck_tile::half_t;
-    using CDataType   = ck_tile::half_t;
-    using AccDataType = float;
-};
+// template <> struct GemmTypeConfig<ck_tile::half_t> {
+//     using ADataType   = ck_tile::half_t;
+//     using BDataType   = ck_tile::half_t;
+//     using CDataType   = ck_tile::half_t;
+//     using AccDataType = float;
+// };
 
-using Types = GemmTypeConfig<ck_tile::half_t>;
+// using Types = GemmTypeConfig<ck_tile::half_t>;
 
-// Specific type aliases for easy access
-using ADataType   = Types::ADataType;
-using BDataType   = Types::BDataType;
-using AccDataType = Types::AccDataType;
-using CDataType   = Types::CDataType;
+// // Specific type aliases for easy access
+// using ADataType   = Types::ADataType;
+// using BDataType   = Types::BDataType;
+// using AccDataType = Types::AccDataType;
+// using CDataType   = Types::CDataType;
 
 using grouped_gemm_kargs = ck_tile::GemmHostArgs</*NumDTensor = 0*/>;
 
@@ -59,7 +59,7 @@ inline std::size_t get_workspace_size(const std::vector<grouped_gemm_kargs> &gem
 
 template <typename ADataType, typename BDataType, typename DsDataType, typename AccDataType,
           typename CDataType, typename ALayout, typename BLayout, typename DsLayout,
-          typename CLayout, typename CDEElementWise = ck_tile::element_wise::PassThrough>
+          typename CLayout, typename CDEElementWise>
 void grouped_gemm(const std::vector<grouped_gemm_kargs> &gemm_descs,
                   const ck_tile::stream_config &s, void *kargs_ptr);
 } // namespace primus_turbo
