@@ -1,6 +1,6 @@
+#include "../extensions.h"
 #include "../type_traits.h"
 #include "primus_turbo/grouped_gemm.h"
-#include "../extensions.h"
 namespace primus_turbo::pytorch {
 
 torch::Tensor grouped_gemm(torch::Tensor &a, torch::Tensor &b, torch::Tensor &c,
