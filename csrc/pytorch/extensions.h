@@ -59,9 +59,9 @@ std::vector<at::Tensor> rmsnorm_bwd(const at::Tensor &input, const at::Tensor &g
 std::vector<at::Tensor> rmsnorm_bwd_meta(const at::Tensor &input, const at::Tensor &gamma,
                                          const at::Tensor &grad_output, const double eps);
 
-torch::Tensor grouped_gemm(torch::Tensor &a, torch::Tensor &b, torch::Tensor &c,
-                           torch::Tensor &seg_lens, const bool transA, const bool transB);
+at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &c, at::Tensor &seg_lens,
+                        const bool transA, const bool transB);
 
-torch::Tensor grouped_gemm_meta(torch::Tensor &a, torch::Tensor &b, torch::Tensor &c,
-                                torch::Tensor &seg_lens, const bool transA, const bool transB);
+at::Tensor grouped_gemm_meta(at::Tensor &a, at::Tensor &b, at::Tensor &c, at::Tensor &seg_lens,
+                             const bool transA, const bool transB);
 } // namespace primus_turbo::pytorch
