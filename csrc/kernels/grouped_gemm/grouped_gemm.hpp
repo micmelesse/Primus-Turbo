@@ -9,7 +9,7 @@
 #include "ck_tile/host/kernel_launch.hpp"
 #include "ck_tile/ops/elementwise/unary_element_wise_operation.hpp"
 #include "ck_tile/ops/gemm.hpp"
-namespace primus_turbo {
+
 #define CK_TILE_PIPELINE_COMPUTE_V3 1
 #define CK_TILE_PIPELINE_MEMORY 2
 #define CK_TILE_PIPELINE_COMPUTE_V4 3
@@ -34,9 +34,11 @@ namespace primus_turbo {
 #error "unsupported CK_TILE_PIPELINE_DEFAULT value"
 #endif
 
-// template <typename DataType> struct GemmTypeConfig;
+template <typename DataType> struct GemmTypeConfig;
 
-// template <> struct GemmTypeConfig<ck_tile::half_t> {
+// template <>
+// struct GemmTypeConfig<ck_tile::half_t>
+// {
 //     using ADataType   = ck_tile::half_t;
 //     using BDataType   = ck_tile::half_t;
 //     using CDataType   = ck_tile::half_t;
@@ -45,11 +47,7 @@ namespace primus_turbo {
 
 // using Types = GemmTypeConfig<ck_tile::half_t>;
 
-// // Specific type aliases for easy access
-// using ADataType   = Types::ADataType;
-// using BDataType   = Types::BDataType;
-// using AccDataType = Types::AccDataType;
-// using CDataType   = Types::CDataType;
+// Specific type aliases for easy access
 
 using grouped_gemm_kargs = ck_tile::GemmHostArgs</*NumDTensor = 0*/>;
 
@@ -57,9 +55,7 @@ inline std::size_t get_workspace_size(const std::vector<grouped_gemm_kargs> &gem
     return gemm_descs.size() * sizeof(ck_tile::GemmTransKernelArg);
 }
 
-template <typename ADataType, typename BDataType, typename DsDataType, typename AccDataType,
-          typename CDataType, typename ALayout, typename BLayout, typename DsLayout,
-          typename CLayout, typename CDEElementWise>
-void grouped_gemm(const std::vector<grouped_gemm_kargs> &gemm_descs,
-                  const ck_tile::stream_config &s, void *kargs_ptr);
-} // namespace primus_turbo
+template <typename ADataType, typename BDataType, typename CDataType, typename AccDataType,
+          typename ALayout, typename BLayout, typename CLayout>
+float grouped_gemm_tileloop(const ck_tile::stream_config &s, const ck_tile::index_t num_groups,
+                            void *kargs_ptr, bool splitk = false);
