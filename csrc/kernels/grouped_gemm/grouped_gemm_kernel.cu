@@ -113,4 +113,9 @@ void ck_grouped_gemm_kernel(const ADataType *p_a, // p_a p_b p_c from gpu src
     //           << gb_per_sec << " GB/s, " << op_name << std::endl;
 }
 
+// 显式实例化模板函数，解决链接错误
+template void ck_grouped_gemm_kernel<float, float, float>(const float *, const float *, float *,
+                                                          const int *, const int, const int,
+                                                          const int);
+
 } // namespace primus_turbo
