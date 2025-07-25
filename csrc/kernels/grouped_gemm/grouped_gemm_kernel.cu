@@ -14,7 +14,7 @@ void ck_grouped_gemm_kernel(const ADataType *p_a, // p_a p_b p_c from gpu src
                             const BDataType *p_b, CDataType *p_c,
                             const int *p_seg_lens, // p_seg_lens from gpu src
                             const int B, const int N, const int K) {
-    // printf("ck_grouped_gemm_kernel");
+    printf("ck_grouped_gemm_kernel\n");
     using AccDataType = float;
 
     // Create gemm descriptors for grouped gemm
@@ -85,7 +85,6 @@ void ck_grouped_gemm_kernel(const ADataType *p_a, // p_a p_b p_c from gpu src
     HIP_CHECK_ERROR(hipMemcpyWithStream(kargs_ptr, kargs.data(),
                                         kargs.size() * sizeof(ck_tile::GemmTransKernelArg),
                                         hipMemcpyHostToDevice, stream.stream_id_));
-
     // Execute the grouped GEMM operation
     float ave_time =
         grouped_gemm_tileloop<ADataType, BDataType, CDataType, AccDataType, ALayout, BLayout,
