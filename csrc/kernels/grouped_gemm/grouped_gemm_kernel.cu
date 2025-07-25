@@ -3,26 +3,18 @@
 #include "primus_turbo/grouped_gemm.h"
 
 namespace primus_turbo {
-
-void ck_test() {
-    printf("ck_test\n");
-}
-
 template <typename Layout> static constexpr inline auto is_row_major(Layout layout_) {
     return ck_tile::bool_constant<std::is_same_v<ck_tile::remove_cvref_t<decltype(layout_)>,
                                                  ck_tile::tensor_layout::gemm::RowMajor>>{};
 }
 
-template <typename ADataType, typename BDataType, typename CDataType>
+template <typename ADataType, typename BDataType, typename CDataType, typename ALayout,
+          typename BLayout, typename CLayout>
 void ck_grouped_gemm_kernel(const ADataType *p_a, // p_a p_b p_c from gpu src
                             const BDataType *p_b, CDataType *p_c,
                             const int *p_seg_lens, // p_seg_lens from gpu src
                             const int B, const int N, const int K) {
-    // void ck_grouped_gemm_kernel(const ck_tile::half_t *p_a, // p_a p_b p_c from gpu src
-    //                             const ck_tile::half_t *p_b, ck_tile::half_t *p_c,
-    //                             const int *p_seg_lens, // p_seg_lens from gpu src
-    //                             const int B, const int N, const int K) {
-    printf("ck_grouped_gemm_kernel\n");
+    printf("ck_grouped_gemm_kernel");
     // using AccDataType = float;
 
     // // Create gemm descriptors for grouped gemm
@@ -113,9 +105,17 @@ void ck_grouped_gemm_kernel(const ADataType *p_a, // p_a p_b p_c from gpu src
     //           << gb_per_sec << " GB/s, " << op_name << std::endl;
 }
 
-// 显式实例化模板函数，解决链接错误
-template void ck_grouped_gemm_kernel<float, float, float>(const float *, const float *, float *,
-                                                          const int *, const int, const int,
-                                                          const int);
+using Row = ck_tile::tensor_layout::gemm::RowMajor;
+using Col = ck_tile::tensor_layout::gemm::ColumnMajor;
+template void
+ck_grouped_gemm_kernel<ck_tile::half_t, ck_tile::half_t, ck_tile::half_t, Row, Col, Row>(
+    const ck_tile::half_t *, const ck_tile::half_t *, ck_tile::half_t *, const int *, const int,
+    const int, const int);
+
+template void ck_grouped_gemm_kernel<ck_tile::bfloat16_t, ck_tile::bfloat16_t, ck_tile::bfloat16_t,
+                                     Row, Col, Row>(const ck_tile::bfloat16_t *,
+                                                    const ck_tile::bfloat16_t *,
+                                                    ck_tile::bfloat16_t *, const int *, const int,
+                                                    const int, const int);
 
 } // namespace primus_turbo
