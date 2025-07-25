@@ -56,7 +56,6 @@ if __name__ == "__main__":
     a = torch.randn((B * M, K), dtype=ori_dtype, device=device, requires_grad=True)
     b = torch.randn((B, N, K), dtype=ori_dtype, device=device, requires_grad=True)
     c = torch.randn((B * M, N), dtype=ori_dtype, device=device, requires_grad=True)
-    print(help(torch.ops.primus_turbo_cpp_extension))
 
     out = torch.ops.primus_turbo_cpp_extension.grouped_gemm(a, b, c, seg_lens, False, True)
-    # print(out.shape)
+    print(out.shape)

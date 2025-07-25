@@ -9,7 +9,7 @@
 #include "ck_tile/host/kernel_launch.hpp"
 #include "ck_tile/ops/elementwise/unary_element_wise_operation.hpp"
 #include "ck_tile/ops/gemm.hpp"
-
+namespace primus_turbo {
 #define CK_TILE_PIPELINE_COMPUTE_V3 1
 #define CK_TILE_PIPELINE_MEMORY 2
 #define CK_TILE_PIPELINE_COMPUTE_V4 3
@@ -59,3 +59,4 @@ template <typename ADataType, typename BDataType, typename CDataType, typename A
           typename ALayout, typename BLayout, typename CLayout>
 float grouped_gemm_tileloop(const ck_tile::stream_config &s, const ck_tile::index_t num_groups,
                             void *kargs_ptr, bool splitk = false);
+} // namespace primus_turbo

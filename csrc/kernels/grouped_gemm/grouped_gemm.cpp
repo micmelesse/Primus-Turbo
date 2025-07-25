@@ -11,10 +11,12 @@
 #include <tuple>
 
 #include "ck_tile/core.hpp"
+#include "ck_tile/core/numeric/half.hpp"
 #include "ck_tile/host.hpp"
 #include "ck_tile/ops/epilogue.hpp"
 #include "ck_tile/ops/gemm.hpp"
 #include "grouped_gemm.hpp"
+
 namespace primus_turbo {
 template <typename ADataType, typename BDataType, typename CDataType, typename AccDataType,
           typename ALayout, typename BLayout, typename CLayout>
@@ -139,4 +141,15 @@ float grouped_gemm_tileloop(const ck_tile::stream_config &s, const ck_tile::inde
 
     return ave_time;
 }
+
+using Row = ck_tile::tensor_layout::gemm::RowMajor;
+using Col = ck_tile::tensor_layout::gemm::ColumnMajor;
+
+template float
+grouped_gemm_tileloop<ck_tile::fp16_t, ck_tile::fp16_t, ck_tile::fp16_t, float, Row, Col, Row>(
+    const ck_tile::stream_config &, int, void *, bool);
+template float grouped_gemm_tileloop<ck_tile::bfloat16_t, ck_tile::bfloat16_t, ck_tile::bfloat16_t,
+                                     float, Row, Col, Row>(const ck_tile::stream_config &s,
+                                                           const ck_tile::index_t        num_groups,
+                                                           void *kargs_ptr, bool splitk);
 } // namespace primus_turbo
