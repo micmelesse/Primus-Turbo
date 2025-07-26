@@ -49,13 +49,23 @@ if __name__ == "__main__":
     N = 2048
     K = 4096
     ori_dtype = torch.float16
+    # ori_dtype = torch.float32
     device = "cuda"
     seg_lens = torch.zeros([B], dtype=torch.int32, device=device)
     seg_lens[0] = 512
     seg_lens[1] = B * M - seg_lens[0]
-    a = torch.randn((B * M, K), dtype=ori_dtype, device=device, requires_grad=True)
-    b = torch.randn((B, N, K), dtype=ori_dtype, device=device, requires_grad=True)
-    c = torch.randn((B * M, N), dtype=ori_dtype, device=device, requires_grad=True)
+    a = torch.ones((B * M, K), dtype=ori_dtype, device=device, requires_grad=False)
+    a[0:512, :] = 2  # 将前512行设为2
+    a[512:2048, :] = 3  # 将其余行设为3
+    # 修改b矩阵初始化：按照N,K为单位，B[0:M:K] = 1; B[1:M:K] = 2
+    b = torch.zeros((B, N, K), dtype=ori_dtype, device=device, requires_grad=False)
+    b[0, :, :] = 1  # B[0:N:K] = 1
+    b[1, :, :] = 2  # B[1:N:K] = 2
+
+    print(a)
+    print(b)
+    c = torch.zeros((B * M, N), dtype=ori_dtype, device=device, requires_grad=False)
 
     out = torch.ops.primus_turbo_cpp_extension.grouped_gemm(a, b, c, seg_lens, False, True)
-    print(out.shape)
+    print(out[0])
+    print(out[512])

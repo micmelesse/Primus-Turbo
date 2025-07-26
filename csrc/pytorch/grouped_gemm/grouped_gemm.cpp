@@ -9,9 +9,9 @@ at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &c, at::Tensor 
                         const bool transA, const bool transB) {
     using Row   = ck_tile::tensor_layout::gemm::RowMajor;
     using Col   = ck_tile::tensor_layout::gemm::ColumnMajor;
-    using AType = typename TorchToCKType<torch::kHalf>::type; // ck::half_t
-    using BType = AType;
-    using CType = AType;
+    using AType = ck_tile::half_t; // ck_tile::half_t
+    using BType = ck_tile::half_t;
+    using CType = ck_tile::half_t;
     const int B = b.size(0);
     const int N = b.size(1);
     const int K = b.size(2);

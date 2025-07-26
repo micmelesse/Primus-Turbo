@@ -64,9 +64,9 @@ __global__ void update_group_gemm_kargs(ck_tile::GemmTransKernelArg *kargs_ptr,
         for (int index = 0; index < B; index++) {
             const int M = p_seg_lens[index];
             // Update all fields in the group_karg structure
-            kargs_ptr[index].group_karg.a_ptr    = a_ptr;
-            kargs_ptr[index].group_karg.b_ptr    = b_ptr;
-            kargs_ptr[index].group_karg.e_ptr    = c_ptr; // e_ptr and c_ptr are union
+            kargs_ptr[index].group_karg.a_ptr    = cur_a;
+            kargs_ptr[index].group_karg.b_ptr    = cur_b;
+            kargs_ptr[index].group_karg.e_ptr    = cur_c; // e_ptr and c_ptr are union
             kargs_ptr[index].group_karg.M        = M;
             kargs_ptr[index].group_karg.N        = N;
             kargs_ptr[index].group_karg.K        = K;
