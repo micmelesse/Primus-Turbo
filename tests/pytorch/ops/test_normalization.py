@@ -68,15 +68,9 @@ if __name__ == "__main__":
     seg_lens[0] = 256
     seg_lens[1] = B * M - seg_lens[0]
     a = torch.randn((B * M, K), dtype=ori_dtype, device=device, requires_grad=False)
-    # a[0:512, :] = 2  # 将前512行设为2
-    # a[512:2048, :] = 3  # 将其余行设为3
-    # 修改b矩阵初始化：按照N,K为单位，B[0:M:K] = 1; B[1:M:K] = 2
-    b = torch.randn((B, N, K), dtype=ori_dtype, device=device, requires_grad=False)
-    # b[0, :, :] = 1  # B[0:N:K] = 1
-    # b[1, :, :] = 2  # B[1:N:K] = 2
 
-    print(a)
-    print(b)
+    b = torch.randn((B, N, K), dtype=ori_dtype, device=device, requires_grad=False)
+
     c = torch.zeros((B * M, N), dtype=ori_dtype, device=device, requires_grad=False)
 
     out = torch.ops.primus_turbo_cpp_extension.grouped_gemm(a, b, c, seg_lens, False, True)

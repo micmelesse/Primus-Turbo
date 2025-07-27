@@ -74,6 +74,7 @@ __global__ void update_group_gemm_kargs(ck_tile::GemmTransKernelArg *kargs_ptr,
             kargs_ptr[index].group_karg.stride_B = stride_B;
             kargs_ptr[index].group_karg.stride_E = stride_C; // stride_E and stride_C are union
             kargs_ptr[index].group_karg.k_batch  = k_batch;
+            // printf("M N K:%d %d %d\n", M, N, K);
             // Move pointers to next group
             cur_a += M * K;
             cur_b += K * N;
@@ -96,12 +97,10 @@ void ck_grouped_gemm_kernel(ck_tile::GemmTransKernelArg *kargs_ptr, const ADataT
     dim3 gridDims(1);
     update_group_gemm_kargs<<<gridDims, blockDims, 0, stream_id>>>(
         kargs_ptr, a_ptr, b_ptr, c_ptr, p_seg_lens, B, N, K, stride_A, stride_B, stride_C, k_batch);
-    const auto stream = ck_tile::stream_config{stream_id, true, 1, 20, 100};
+    const auto stream = ck_tile::stream_config{stream_id};
     // Execute the grouped GEMM operation
-    float ave_time =
-        grouped_gemm_tileloop<ADataType, BDataType, CDataType, AccDataType, ALayout, BLayout,
-                              CLayout>(stream, B, kargs_ptr, false /* splitk */);
-    std::cout << ave_time << std::endl;
+    grouped_gemm_tileloop<ADataType, BDataType, CDataType, AccDataType, ALayout, BLayout, CLayout>(
+        stream, B, kargs_ptr, false /* splitk */);
 }
 
 using Row = ck_tile::tensor_layout::gemm::RowMajor;
@@ -123,4 +122,19 @@ ck_grouped_gemm_kernel<ck_tile::bfloat16_t, ck_tile::bfloat16_t, ck_tile::bfloat
                             ck_tile::index_t stride_B, ck_tile::index_t stride_C,
                             ck_tile::index_t k_batch, hipStream_t stream_id);
 
+template void
+ck_grouped_gemm_kernel<ck_tile::half_t, ck_tile::half_t, ck_tile::half_t, Row, Row, Row>(
+    ck_tile::GemmTransKernelArg *kargs_ptr, const ck_tile::half_t *a_ptr,
+    const ck_tile::half_t *b_ptr, ck_tile::half_t *c_ptr, const int *p_seg_lens, ck_tile::index_t B,
+    ck_tile::index_t N, ck_tile::index_t K, ck_tile::index_t stride_A, ck_tile::index_t stride_B,
+    ck_tile::index_t stride_C, ck_tile::index_t k_batch, hipStream_t stream_id);
+
+template void
+ck_grouped_gemm_kernel<ck_tile::bfloat16_t, ck_tile::bfloat16_t, ck_tile::bfloat16_t, Row, Row,
+                       Row>(ck_tile::GemmTransKernelArg *kargs_ptr,
+                            const ck_tile::bfloat16_t *a_ptr, const ck_tile::bfloat16_t *b_ptr,
+                            ck_tile::bfloat16_t *c_ptr, const int *p_seg_lens, ck_tile::index_t B,
+                            ck_tile::index_t N, ck_tile::index_t K, ck_tile::index_t stride_A,
+                            ck_tile::index_t stride_B, ck_tile::index_t stride_C,
+                            ck_tile::index_t k_batch, hipStream_t stream_id);
 } // namespace primus_turbo
