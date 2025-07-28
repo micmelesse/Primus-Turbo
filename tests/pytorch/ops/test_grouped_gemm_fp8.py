@@ -100,21 +100,23 @@ if __name__ == "__main__":
             start += size
         return out
 
-    NT = False
-    NN = False
+    NT = True
+    NN = True
     TN = True
     ori_dtype = torch.bfloat16
     # ori_dtype = torch.float32
     device = "cuda"
 
     if NN is True:
-        B = 2
-        M = 256
+        B = 4
+        M = 512
         N = 1024
         K = 2048
         seg_lens = torch.zeros([B], dtype=torch.int32, device=device)
         seg_lens[0] = 256
-        seg_lens[1] = B * M - seg_lens[0]
+        seg_lens[1] = 768
+        seg_lens[2] = 768
+        seg_lens[3] = 256
         a = torch.randn((B * M, K), dtype=ori_dtype, device=device, requires_grad=False)
         b = torch.randn((B, K, N), dtype=ori_dtype, device=device, requires_grad=False)
         c = torch.zeros((B * M, N), dtype=ori_dtype, device=device, requires_grad=False)
@@ -124,13 +126,15 @@ if __name__ == "__main__":
         # print(out_ref[0])
         print("NN", cosine_similarity(out, out_ref), compute_snr(out, out_ref))
     if NT is True:
-        B = 2
-        M = 256
+        B = 4
+        M = 512
         N = 1024
         K = 2048
         seg_lens = torch.zeros([B], dtype=torch.int32, device=device)
         seg_lens[0] = 256
-        seg_lens[1] = B * M - seg_lens[0]
+        seg_lens[1] = 768
+        seg_lens[2] = 768
+        seg_lens[3] = 256
         a = torch.randn((B * M, K), dtype=ori_dtype, device=device, requires_grad=True)
         b = torch.randn((B, N, K), dtype=ori_dtype, device=device, requires_grad=True)
         c = torch.zeros((B * M, N), dtype=ori_dtype, device=device, requires_grad=True)
@@ -149,17 +153,85 @@ if __name__ == "__main__":
         x_grad = a.grad
         print(x_grad.shape)
         print("NT", cosine_similarity(out_fp8, out_ref), compute_snr(out_fp8, out_ref))
+
     if TN is True:
-        B = 2
+        B = 4
         M = 2048
         N = 1024
-        K = 256
+        K = 512
         seg_lens = torch.zeros([B], dtype=torch.int32, device=device)
         seg_lens[0] = 256
-        seg_lens[1] = B * K - seg_lens[0]
+        seg_lens[1] = 768
+        seg_lens[2] = 768
+        seg_lens[3] = 256
         a = torch.randn((B * K, M), dtype=ori_dtype, device=device, requires_grad=False)
         b = torch.randn((B * K, N), dtype=ori_dtype, device=device, requires_grad=False)
         c = torch.zeros((B, M, N), dtype=ori_dtype, device=device, requires_grad=False)
         out = torch.ops.primus_turbo_cpp_extension.grouped_gemm_variable_k(a, b, c, seg_lens, True, False)
         out_ref = grouped_gemm_variable_k_ref(a.clone(), b.clone(), seg_lens.clone())
         print("TN", cosine_similarity(out, out_ref), compute_snr(out, out_ref))
+
+# if __name__ == "__main__":
+#     torch.manual_seed(1234)
+
+#     from tests.test_utils import compute_snr, cosine_similarity
+
+#     def grouped_gemm_ref(a, b, seg_lens, trans_b=True):
+#         seg_lens = seg_lens.cpu().numpy()
+#         out = []
+#         start = 0
+#         for i, size in enumerate(seg_lens):
+#             rhs = b[i, :, :].t() if trans_b else b[i, :, :]
+#             out.append(a[start : start + size, :] @ rhs)
+#             start += size
+#         return torch.cat(out)
+
+#     # test_rmsnorm_ops()
+#     B = 2
+#     M = 256
+#     N = 1024
+#     K = 2048
+
+#     NT = True
+#     NN = True
+#     TN = False
+#     ori_dtype = torch.float16
+#     # ori_dtype = torch.float32
+#     device = "cuda"
+#     seg_lens = torch.zeros([B], dtype=torch.int32, device=device)
+#     seg_lens[0] = 256
+#     seg_lens[1] = B * M - seg_lens[0]
+#     if NN is True:
+#         a = torch.randn((B * M, K), dtype=ori_dtype, device=device, requires_grad=False)
+#         b = torch.randn((B, K, N), dtype=ori_dtype, device=device, requires_grad=False)
+#         c = torch.zeros((B * M, N), dtype=ori_dtype, device=device, requires_grad=False)
+#         out = torch.ops.primus_turbo_cpp_extension.grouped_gemm(a, b, c, seg_lens, False, False)
+#         out_ref = grouped_gemm_ref(a.clone(), b.clone(), seg_lens.clone(), False)
+#         # print(out[0])
+#         # print(out_ref[0])
+#         print("NN", cosine_similarity(out, out_ref), compute_snr(out, out_ref))
+#     if NT is True:
+#         a = torch.randn((B * M, K), dtype=ori_dtype, device=device, requires_grad=True)
+#         b = torch.randn((B, N, K), dtype=ori_dtype, device=device, requires_grad=True)
+#         c = torch.zeros((B * M, N), dtype=ori_dtype, device=device, requires_grad=True)
+#         out = torch.ops.primus_turbo_cpp_extension.grouped_gemm(a, b, c, seg_lens, False, True)
+#         out_ref = grouped_gemm_ref(a.clone(), b.clone(), seg_lens.clone(), True)
+#         # print(out[0])
+#         # print(out_ref[0])
+#         print("NT", cosine_similarity(out, out_ref), compute_snr(out, out_ref))
+
+#         block_size = 128
+#         out_fp8 = grouped_gemm_fp8_blockwise(
+#             a.clone(), b.clone(), seg_lens.clone(), block_size, dtype=ori_dtype
+#         )
+#         grad_out = torch.randn_like(out_ref)
+#         out_fp8.backward(grad_out)
+#         x_grad = a.grad
+#         print(x_grad.shape)
+#         print("NT", cosine_similarity(out_fp8, out_ref), compute_snr(out_fp8, out_ref))
+#     if TN is True:
+#         a = torch.randn((B * M, N), dtype=ori_dtype, device=device, requires_grad=False)
+#         b = torch.randn((B * K, N), dtype=ori_dtype, device=device, requires_grad=False)
+#         c = torch.zeros((B, N, K), dtype=ori_dtype, device=device, requires_grad=False)
+#         out = torch.ops.primus_turbo_cpp_extension.grouped_gemm_variable_k(a, b, c, seg_lens, True, False)
+#         print(out)
