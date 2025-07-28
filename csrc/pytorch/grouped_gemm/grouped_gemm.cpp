@@ -95,7 +95,7 @@ at::Tensor grouped_gemm_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &c,
     using Row = ck_tile::tensor_layout::gemm::RowMajor;
     using Col = ck_tile::tensor_layout::gemm::ColumnMajor;
 
-    const int                    B           = b.size(0);
+    const int64_t                B           = seg_lens.numel();
     const int                    group_count = B;
     auto                         stream      = at::cuda::getCurrentCUDAStream();
     void                        *temp_ptr    = ck_grouped_gemm_init(group_count, stream);
