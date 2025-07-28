@@ -1,24 +1,68 @@
 import torch
 
+from primus_turbo.pytorch.kernels.grouped_gemm.grouped_gemm_csrc_impl import (
+    grouped_gemm_csrc_impl,
+    grouped_gemm_csrc_init,
+    grouped_gemm_variable_k_csrc_impl,
+)
 
-# TODO:
+__all__ = ["grouped_gemm"]
+
+
 class GroupedGemmFunc(torch.autograd.Function):
     @staticmethod
     def forward(
         ctx,
-        a: torch.Tensor,  # [M, K],
+        a: torch.Tensor,  # [B * M, K],
         b: torch.Tensor,  # [B, N, K]
         seg_lens: torch.Tensor,  # [B,] int64
+        init_ptr: int = 0,
     ):
-        # TODO:
-        raise NotImplementedError("GroupedGemmFunc forward is not implemented")
+        B = b.size(0)
+        init_ptr_inner = init_ptr
+        if init_ptr == 0:
+            init_ptr_inner = grouped_gemm_csrc_init(B)
+        c = torch.zeros(a.size(0), b.size(1), dtype=a.dtype, device=a.device)  # [B * M, N]
+        out = grouped_gemm_csrc_impl(
+            a,
+            b,
+            c,
+            seg_lens,
+            transA=False,
+            transB=True,
+            init_ptr=init_ptr_inner,
+        )
+        ctx.save_for_backward(a, b, seg_lens)
+        ctx.init_ptr = init_ptr_inner
+        return (out, init_ptr_inner) if init_ptr == 0 else out
 
     @staticmethod
-    def backward(ctx):
-        # TODO:
-        raise NotImplementedError("GroupedGemmFunc backward is not implemented")
+    def backward(ctx, grad_out: torch.Tensor):
+        a, b, seg_lens = ctx.saved_tensors
+        init_ptr = ctx.init_ptr
+        grad_a = grouped_gemm_csrc_impl(
+            grad_out,
+            b,
+            seg_lens,
+            transA=False,
+            transB=False,
+            init_ptr=init_ptr,
+        )
+        grad_b = grouped_gemm_variable_k_csrc_impl(
+            a,
+            grad_out,
+            seg_lens,
+            transA=True,
+            transB=False,
+            init_ptr=init_ptr,
+        )
+        return (grad_a, grad_b, None, None)
 
 
-# TODO:
-def grouped_gemm(a, b, seg_lens):
-    return GroupedGemmFunc.apply(a, b, seg_lens)
+def grouped_gemm(
+    a: torch.Tensor,
+    b: torch.Tensor,
+    seg_lens: torch.Tensor,
+    init_ptr: int = 0,
+):
+    return GroupedGemmFunc.apply(a, b, seg_lens, init_ptr)
