@@ -64,4 +64,10 @@ at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &c, at::Tensor 
 
 at::Tensor grouped_gemm_meta(at::Tensor &a, at::Tensor &b, at::Tensor &c, at::Tensor &seg_lens,
                              const bool transA, const bool transB);
+
+at::Tensor grouped_gemm_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &c,
+                                   at::Tensor &seg_lens, const bool transA, const bool transB);
+
+at::Tensor grouped_gemm_variable_k_meta(at::Tensor &a, at::Tensor &b, at::Tensor &c,
+                                        at::Tensor &seg_lens, const bool transA, const bool transB);
 } // namespace primus_turbo::pytorch
