@@ -22,10 +22,12 @@ TORCH_LIBRARY(primus_turbo_cpp_extension, m) {
     m.def("fp8_dequantize(Tensor input, Tensor scale_inv, ScalarType dest_dtype) -> Tensor");
     m.def("rmsnorm_fwd(Tensor input, Tensor gamma, float eps) -> Tensor");
     m.def("rmsnorm_bwd(Tensor input, Tensor gamma, Tensor grad_out, float eps) -> Tensor[]");
-    m.def("grouped_gemm(Tensor a, Tensor b, Tensor c, Tensor seg_lens, bool transA, bool transB) "
+    m.def("init_grouped_gemm(int group_count) -> int", init_grouped_gemm);
+    m.def("grouped_gemm(Tensor a, Tensor b, Tensor c, Tensor seg_lens, bool transA, bool transB, "
+          "int temp_ptr) "
           "-> Tensor");
     m.def("grouped_gemm_variable_k(Tensor a, Tensor b, Tensor c, Tensor seg_lens, bool transA, "
-          "bool transB) -> Tensor");
+          "bool transB, int temp_ptr) -> Tensor");
 }
 
 TORCH_LIBRARY_IMPL(primus_turbo_cpp_extension, CUDA, m) {
@@ -35,6 +37,7 @@ TORCH_LIBRARY_IMPL(primus_turbo_cpp_extension, CUDA, m) {
     m.impl("fp8_dequantize", fp8_dequantize);
     m.impl("rmsnorm_fwd", rmsnorm_fwd);
     m.impl("rmsnorm_bwd", rmsnorm_bwd);
+    m.impl("init_grouped_gemm", init_grouped_gemm);
     m.impl("grouped_gemm", grouped_gemm);
     m.impl("grouped_gemm_variable_k", grouped_gemm_variable_k);
 }
@@ -46,6 +49,7 @@ TORCH_LIBRARY_IMPL(primus_turbo_cpp_extension, Meta, m) {
     m.impl("fp8_dequantize", fp8_dequantize_meta);
     m.impl("rmsnorm_fwd", rmsnorm_fwd_meta);
     m.impl("rmsnorm_bwd", rmsnorm_bwd_meta);
+    m.impl("init_grouped_gemm", init_grouped_gemm_meta);
     m.impl("grouped_gemm", grouped_gemm_meta);
     m.impl("grouped_gemm_variable_k", grouped_gemm_variable_k_meta);
 }

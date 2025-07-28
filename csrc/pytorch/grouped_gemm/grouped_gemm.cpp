@@ -5,8 +5,14 @@
 // #include "ck_tile/ops/common/tensor_layout.hpp"
 namespace primus_turbo::pytorch {
 
+int64_t init_grouped_gemm(const int64_t group_count) {
+    auto  stream = at::cuda::getCurrentCUDAStream();
+    void *ptr    = ck_grouped_gemm_init(group_count, stream);
+    return reinterpret_cast<int64_t>(ptr);
+}
+
 at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &c, at::Tensor &seg_lens,
-                        const bool transA, const bool transB) {
+                        const bool transA, const bool transB, int64_t temp_ptr) {
 
     TORCH_CHECK(a.dtype() == b.dtype() && b.dtype() == c.dtype(),
                 "All tensors must have the same dtype, got ", a.dtype(), ", ", b.dtype(), ", and ",
@@ -21,8 +27,8 @@ at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &c, at::Tensor 
     const int                    B           = b.size(0);
     const int                    group_count = B;
     auto                         stream      = at::cuda::getCurrentCUDAStream();
-    void                        *temp_ptr    = ck_grouped_gemm_init(group_count, stream);
-    ck_tile::GemmTransKernelArg *kargs_ptr   = static_cast<ck_tile::GemmTransKernelArg *>(temp_ptr);
+    ck_tile::GemmTransKernelArg *kargs_ptr =
+        reinterpret_cast<ck_tile::GemmTransKernelArg *>(temp_ptr);
 
     if (a.dtype() == at::kHalf) {
         using AType = ck_tile::half_t;
@@ -84,7 +90,8 @@ at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &c, at::Tensor 
 }
 
 at::Tensor grouped_gemm_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &c,
-                                   at::Tensor &seg_lens, const bool transA, const bool transB) {
+                                   at::Tensor &seg_lens, const bool transA, const bool transB,
+                                   int64_t temp_ptr) {
     TORCH_CHECK(a.dtype() == b.dtype() && b.dtype() == c.dtype(),
                 "All tensors must have the same dtype, got ", a.dtype(), ", ", b.dtype(), ", and ",
                 c.dtype());
@@ -98,8 +105,8 @@ at::Tensor grouped_gemm_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &c,
     const int64_t                B           = seg_lens.numel();
     const int                    group_count = B;
     auto                         stream      = at::cuda::getCurrentCUDAStream();
-    void                        *temp_ptr    = ck_grouped_gemm_init(group_count, stream);
-    ck_tile::GemmTransKernelArg *kargs_ptr   = static_cast<ck_tile::GemmTransKernelArg *>(temp_ptr);
+    ck_tile::GemmTransKernelArg *kargs_ptr =
+        reinterpret_cast<ck_tile::GemmTransKernelArg *>(temp_ptr);
 
     if (a.dtype() == at::kHalf) {
         using AType = ck_tile::half_t;
