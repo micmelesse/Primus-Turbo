@@ -1,19 +1,12 @@
 #pragma once
-#include <vector>
+#include <cstddef>
 namespace primus_turbo::async_tp {
 
-template <typename Comm> class Communicator {
+class Communicator {
   public:
-    Comm       *derived() { return reinterpret_cast<Comm *>(this); }
-    const Comm *const_derived() const { return derived(); }
-
-    template <typename T> void AllGather(std::vector<T> &output, T &input) {
-        derived()->AllGatherImpl(output, input);
-    }
-
-    int rank() const { return derived()->rank(); }
-
-    int world_size() const { return derived()->world_size(); }
+    virtual void AllGather(void *dst, void *src, size_t len) = 0;
+    virtual int  rank() const                                = 0;
+    virtual int  world_size() const                          = 0;
 };
 
 } // namespace primus_turbo::async_tp

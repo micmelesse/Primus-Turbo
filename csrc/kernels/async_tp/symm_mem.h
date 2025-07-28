@@ -7,7 +7,7 @@
 
 namespace primus_turbo::async_tp {
 
-static constexpr size_t signal_pad_size = 1024;
+static constexpr size_t kSignalPadSize = 1024;
 
 class SymmetricMemory {
 
@@ -17,12 +17,12 @@ class SymmetricMemory {
 
     ~SymmetricMemory();
 
-    std::vector<void *> buffer_ptrs();
-    std::vector<void *> signal_pad_ptrs();
-    void              **buffer_ptrs_dev();
-    void              **signal_pad_ptrs_dev();
-    size_t              buffer_size();
-    size_t              signal_pad_size();
+    template <typename T = void> std::vector<T *> buffer_ptrs();
+    std::vector<void *>                           signal_pad_ptrs();
+    void                                        **buffer_ptrs_dev();
+    void                                        **signal_pad_ptrs_dev();
+    size_t                                        buffer_size();
+    size_t                                        signal_pad_size();
 
     int rank();
     int world_size();
@@ -44,8 +44,7 @@ class SymmetricMemoryManager {
 
     static SymmetricMemoryManager &Instance();
 
-    template <typename Comm>
-    SymmetricMemory *GetSymmMem(size_t alloc_size, Communicator<Comm> *comm);
+    SymmetricMemory *GetSymmMem(size_t alloc_size, Communicator *comm);
 
   private:
     SymmetricMemoryManager() = default;

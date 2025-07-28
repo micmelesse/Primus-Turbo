@@ -20,7 +20,7 @@ SymmetricMemory::SymmetricMemory(std::vector<void *> buffers, std::vector<void *
         hipMemcpy(signal_pads_dev_, signal_pads_.data(), arr_size, hipMemcpyHostToDevice));
 }
 
-std::vector<void *> SymmetricMemory::buffer_ptrs() {
+template <typename T> std::vector<T *> SymmetricMemory::buffer_ptrs() {
     return buffers_;
 }
 
@@ -41,7 +41,7 @@ size_t SymmetricMemory::buffer_size() {
 }
 
 size_t SymmetricMemory::signal_pad_size() {
-    return signal_pad_size;
+    return kSignalPadSize;
 }
 
 int SymmetricMemory::rank() {
@@ -51,10 +51,9 @@ int SymmetricMemory::world_size() {
     return world_size_;
 }
 
-template <typename Comm>
-std::unique_ptr<SymmetricMemory> rendezvous_symm_mem(size_t alloc_size, Communicator<Comm> *comm) {
+std::unique_ptr<SymmetricMemory> rendezvous_symm_mem(size_t alloc_size, Communicator *comm) {
     size_t signal_pad_offset = ROUND_UP(alloc_size, 16);
-    size_t block_size        = signal_pad_offset + signal_pad_size;
+    size_t block_size        = signal_pad_offset + kSignalPadSize;
     int    world_size        = comm->world_size();
     int    rank              = comm->rank();
 
@@ -90,8 +89,7 @@ SymmetricMemoryManager &SymmetricMemoryManager::Instance() {
     return instance;
 }
 
-template <typename Comm>
-SymmetricMemory *SymmetricMemoryManager::GetSymmMem(size_t alloc_size, Communicator<Comm> *comm) {
+SymmetricMemory *SymmetricMemoryManager::GetSymmMem(size_t alloc_size, Communicator *comm) {
     int  world_size = comm->world_size();
     auto key        = std::make_tuple(alloc_size, world_size);
     auto iter       = symm_mem_.find(key);
@@ -99,8 +97,8 @@ SymmetricMemory *SymmetricMemoryManager::GetSymmMem(size_t alloc_size, Communica
         return iter->second.get();
     }
     auto symm_mem = rendezvous_symm_mem(alloc_size, comm);
-    symm_mem_.insert({key, symm_mem});
-    return symm_mem.get();
+    symm_mem_.insert(std::make_pair(key, std::move(symm_mem)));
+    return symm_mem_[key].get();
 }
 
 } // namespace primus_turbo::async_tp

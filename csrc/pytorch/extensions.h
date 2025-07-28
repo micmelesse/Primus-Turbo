@@ -47,13 +47,13 @@ torch::Tensor gemm_fp8_blockwise_meta(torch::Tensor &a, torch::Tensor &a_scales,
                                       torch::Tensor &b_scales, torch::Tensor &c, const bool transA,
                                       const bool transB, const int64_t block_size);
 
-std::vector<torch::Tensor> fused_all_gather_matmul(
-    const torch::Tensor &A_shard, const std::vector<torch::Tensor> &Bs, int64_t gather_dim,
-    const std::string &group_name, std::optional<bool> return_A, std::optional<torch::Tensor> A_out,
-    std::optional<std::vector<torch::Tensor>>  mm_outs,
-    std::optional<std::vector<at::ScalarType>> out_dtypes, std::optional<std::string> comm_algo,
-    std::optional<int> num_splits, std::optional<bool> skip_copy_local_ag_out,
-    std::optional<bool> enable_sdma);
+std::vector<torch::Tensor>
+fused_all_gather_matmul(const torch::Tensor &A_shard, const std::vector<torch::Tensor> &Bs,
+                        int64_t gather_dim, const std::string &group_name,
+                        std::optional<torch::Tensor>               A_out,
+                        std::optional<std::vector<torch::Tensor>>  mm_outs,
+                        std::optional<std::vector<at::ScalarType>> out_dtypes, bool return_A = true,
+                        bool skip_copy_local_ag_out = false);
 
 std::vector<torch::Tensor> fused_all_gather_scaled_matmul(
     const torch::Tensor &A_shard, const std::vector<torch::Tensor> &Bs,

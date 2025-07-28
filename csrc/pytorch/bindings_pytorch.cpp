@@ -20,15 +20,14 @@ TORCH_LIBRARY(primus_turbo_cpp_extension, m) {
           ") -> Tensor");
     m.def("fp8_quantize(Tensor input, Tensor scale, ScalarType dest_dtype) -> Tensor");
     m.def("fp8_dequantize(Tensor input, Tensor scale_inv, ScalarType dest_dtype) -> Tensor");
-    m.def(
-        "fused_all_gather_matmul(Tensor A_shard, Tensor[] Bs, int gather_dim, str group_name, "
-        "bool? return_A, Tensor? A_out, Tensor[]? mm_outs, ScalarType[]? out_dtypes, str? "
-        "comm_algo, int? num_splits, bool? skip_copy_local_ag_out, bool? enable_sdma)->(Tensor[])");
-    m.def("fused_all_gather_scaled_matmul(Tensor A_shard, Tensor[] Bs, Tensor A_scale, Tensor[] "
-          "B_scales, int gather_dim, str group_name, bool[] use_fast_accum, Tensor[]? biases, "
-          "Tensor[]? result_scales, ScalarType[]? out_dtypes,"
-          "Tensor? A_out, Tensor[]? mm_outs, str? comm_algo, int? num_splits, bool? "
-          "skip_copy_local_ag_out, bool? enable_sdma)->(Tensor[])");
+    m.def("fused_all_gather_matmul(Tensor A_shard, Tensor[] Bs, int gather_dim, str group_name, "
+          "Tensor? A_out, Tensor[]? mm_outs, ScalarType[]? out_dtypes, bool return_A=True, bool "
+          "skip_copy_local_ag_out=False)->(Tensor[])");
+    // m.def("fused_all_gather_scaled_matmul(Tensor A_shard, Tensor[] Bs, Tensor A_scale, Tensor[] "
+    //       "B_scales, int gather_dim, str group_name, bool[] use_fast_accum, Tensor[]? biases, "
+    //       "Tensor[]? result_scales, ScalarType[]? out_dtypes,"
+    //       "Tensor? A_out, Tensor[]? mm_outs, str? comm_algo, int? num_splits, bool? "
+    //       "skip_copy_local_ag_out, bool? enable_sdma)->(Tensor[])");
 }
 
 TORCH_LIBRARY_IMPL(primus_turbo_cpp_extension, CUDA, m) {
@@ -37,7 +36,7 @@ TORCH_LIBRARY_IMPL(primus_turbo_cpp_extension, CUDA, m) {
     m.impl("fp8_quantize", fp8_quantize);
     m.impl("fp8_dequantize", fp8_dequantize);
     m.impl("fused_all_gather_matmul", fused_all_gather_matmul);
-    m.impl("fused_all_gather_scaled_matmul", fused_all_gather_scaled_matmul);
+    // m.impl("fused_all_gather_scaled_matmul", fused_all_gather_scaled_matmul);
 }
 
 TORCH_LIBRARY_IMPL(primus_turbo_cpp_extension, Meta, m) {
