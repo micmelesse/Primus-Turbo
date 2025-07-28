@@ -62,17 +62,15 @@ std::vector<at::Tensor> rmsnorm_bwd_meta(const at::Tensor &input, const at::Tens
 int64_t init_grouped_gemm(const int64_t group_count);
 int64_t init_grouped_gemm_meta(const int64_t group_count);
 
-at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &c, at::Tensor &seg_lens,
-                        const bool transA, const bool transB, int64_t temp_ptr);
+at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &seg_lens, const bool transA,
+                        const bool transB, int64_t temp_ptr);
 
-at::Tensor grouped_gemm_meta(at::Tensor &a, at::Tensor &b, at::Tensor &c, at::Tensor &seg_lens,
-                             const bool transA, const bool transB, int64_t temp_ptr);
+at::Tensor grouped_gemm_meta(at::Tensor &a, at::Tensor &b, at::Tensor &seg_lens, const bool transA,
+                             const bool transB, int64_t temp_ptr);
 
-at::Tensor grouped_gemm_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &c,
-                                   at::Tensor &seg_lens, const bool transA, const bool transB,
-                                   int64_t temp_ptr);
+at::Tensor grouped_gemm_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &seg_lens,
+                                   const bool transA, const bool transB, int64_t temp_ptr);
 
-at::Tensor grouped_gemm_variable_k_meta(at::Tensor &a, at::Tensor &b, at::Tensor &c,
-                                        at::Tensor &seg_lens, const bool transA, const bool transB,
-                                        int64_t temp_ptr);
+at::Tensor grouped_gemm_variable_k_meta(at::Tensor &a, at::Tensor &b, at::Tensor &seg_lens,
+                                        const bool transA, const bool transB, int64_t temp_ptr);
 } // namespace primus_turbo::pytorch

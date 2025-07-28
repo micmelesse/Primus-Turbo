@@ -11,15 +11,30 @@ int64_t init_grouped_gemm(const int64_t group_count) {
     return reinterpret_cast<int64_t>(ptr);
 }
 
-at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &c, at::Tensor &seg_lens,
-                        const bool transA, const bool transB, int64_t temp_ptr) {
+at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &seg_lens, const bool transA,
+                        const bool transB, int64_t temp_ptr) {
+    // Check that a and b have the same dtype
+    TORCH_CHECK(a.dtype() == b.dtype(), "Tensors must have the same dtype, got ", a.dtype(),
+                " and ", b.dtype());
 
-    TORCH_CHECK(a.dtype() == b.dtype() && b.dtype() == c.dtype(),
-                "All tensors must have the same dtype, got ", a.dtype(), ", ", b.dtype(), ", and ",
-                c.dtype());
-
+    // Check that dtype is fp16 or bf16
     TORCH_CHECK(a.dtype() == at::kHalf || a.dtype() == at::kBFloat16,
                 "Only fp16 and bf16 are supported, got ", a.dtype());
+
+    // Determine output tensor size based on transA and transB
+    int        output_rows, output_cols;
+    at::Tensor c;
+    if (!transA && !transB) { // NN
+        output_rows = a.size(0);
+        output_cols = b.size(2);
+        c           = at::empty({output_rows, output_cols}, a.options());
+    } else if (!transA && transB) { // NT
+        output_rows = a.size(0);
+        output_cols = b.size(1);
+        c           = at::empty({output_rows, output_cols}, a.options());
+    } else {
+        TORCH_CHECK(false, "Unsupported: transA = ", transA, ", transB = ", transB);
+    }
 
     using Row = ck_tile::tensor_layout::gemm::RowMajor;
     using Col = ck_tile::tensor_layout::gemm::ColumnMajor;
@@ -89,15 +104,14 @@ at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &c, at::Tensor 
     return c;
 }
 
-at::Tensor grouped_gemm_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &c,
-                                   at::Tensor &seg_lens, const bool transA, const bool transB,
-                                   int64_t temp_ptr) {
-    TORCH_CHECK(a.dtype() == b.dtype() && b.dtype() == c.dtype(),
-                "All tensors must have the same dtype, got ", a.dtype(), ", ", b.dtype(), ", and ",
-                c.dtype());
+at::Tensor grouped_gemm_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &seg_lens,
+                                   const bool transA, const bool transB, int64_t temp_ptr) {
+    TORCH_CHECK(a.dtype() == b.dtype(), "All tensors must have the same dtype, got ", a.dtype(),
+                ", ", b.dtype());
 
     TORCH_CHECK(a.dtype() == at::kHalf || a.dtype() == at::kBFloat16,
                 "Only fp16 and bf16 are supported, got ", a.dtype());
+    at::Tensor c;
 
     using Row = ck_tile::tensor_layout::gemm::RowMajor;
     using Col = ck_tile::tensor_layout::gemm::ColumnMajor;
@@ -116,6 +130,7 @@ at::Tensor grouped_gemm_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &c,
         {
             const int M = a.size(1);
             const int N = b.size(1);
+            c           = at::empty({B, M, N}, a.options());
             ck_grouped_gemm_variable_k_kernel<AType, BType, CType, Col, Row, Row>(
                 kargs_ptr, reinterpret_cast<const AType *>(a.data_ptr()),
                 reinterpret_cast<const BType *>(b.data_ptr()),
@@ -133,6 +148,7 @@ at::Tensor grouped_gemm_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &c,
         {
             const int M = a.size(1);
             const int N = b.size(1);
+            c           = at::empty({B, M, N}, a.options());
             ck_grouped_gemm_variable_k_kernel<AType, BType, CType, Col, Row, Row>(
                 kargs_ptr, reinterpret_cast<const AType *>(a.data_ptr()),
                 reinterpret_cast<const BType *>(b.data_ptr()),

@@ -23,10 +23,10 @@ TORCH_LIBRARY(primus_turbo_cpp_extension, m) {
     m.def("rmsnorm_fwd(Tensor input, Tensor gamma, float eps) -> Tensor");
     m.def("rmsnorm_bwd(Tensor input, Tensor gamma, Tensor grad_out, float eps) -> Tensor[]");
     m.def("init_grouped_gemm(int group_count) -> int", init_grouped_gemm);
-    m.def("grouped_gemm(Tensor a, Tensor b, Tensor c, Tensor seg_lens, bool transA, bool transB, "
+    m.def("grouped_gemm(Tensor a, Tensor b, Tensor seg_lens, bool transA, bool transB, "
           "int temp_ptr) "
           "-> Tensor");
-    m.def("grouped_gemm_variable_k(Tensor a, Tensor b, Tensor c, Tensor seg_lens, bool transA, "
+    m.def("grouped_gemm_variable_k(Tensor a, Tensor b, Tensor seg_lens, bool transA, "
           "bool transB, int temp_ptr) -> Tensor");
 }
 
