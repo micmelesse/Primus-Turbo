@@ -22,11 +22,10 @@ class GroupedGemmFunc(torch.autograd.Function):
         init_ptr_inner = init_ptr
         if init_ptr == 0:
             init_ptr_inner = grouped_gemm_csrc_init(B)
-        c = torch.zeros(a.size(0), b.size(1), dtype=a.dtype, device=a.device)  # [B * M, N]
+        # [B * M, N]
         out = grouped_gemm_csrc_impl(
             a,
             b,
-            c,
             seg_lens,
             transA=False,
             transB=True,
@@ -37,7 +36,13 @@ class GroupedGemmFunc(torch.autograd.Function):
         return (out, init_ptr_inner) if init_ptr == 0 else out
 
     @staticmethod
-    def backward(ctx, grad_out: torch.Tensor):
+    def backward(ctx, *grad_outputs):
+        if len(grad_outputs) == 1:
+            grad_out = grad_outputs[0]
+        elif len(grad_outputs) == 2:
+            grad_out, _ = grad_outputs
+        else:
+            raise ValueError("Unexpected number of gradients")
         a, b, seg_lens = ctx.saved_tensors
         init_ptr = ctx.init_ptr
         grad_a = grouped_gemm_csrc_impl(
@@ -48,9 +53,10 @@ class GroupedGemmFunc(torch.autograd.Function):
             transB=False,
             init_ptr=init_ptr,
         )
+
         grad_b = grouped_gemm_variable_k_csrc_impl(
-            a,
             grad_out,
+            a,
             seg_lens,
             transA=True,
             transB=False,

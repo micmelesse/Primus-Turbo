@@ -11,7 +11,6 @@ def grouped_gemm_csrc_init(group_size: int) -> int:
 def grouped_gemm_csrc_impl(
     a: torch.Tensor,
     b: torch.Tensor,
-    c: torch.Tensor,
     seg_lens: torch.Tensor,
     transA: bool,
     transB: bool,
@@ -19,11 +18,10 @@ def grouped_gemm_csrc_impl(
 ) -> torch.Tensor:
     assert a.dim() == 2, f"a must be 2D, got {a.shape}"
     assert b.dim() == 3, f"b must be 3D, got {b.shape}"
-    assert c.dim() == 2, f"c must be 2D, got {c.shape}"
     assert (transA == False and transB == True) or (
         transA == False and transB == False
     ), f"Only NT (transA=False, transB=True) and NN (transA=False, transB=False) modes are supported, got transA={transA}, transB={transB}"
-    out = torch.ops.primus_turbo_cpp_extension.grouped_gemm(a, b, c, seg_lens, transA, transB, init_ptr)
+    out = torch.ops.primus_turbo_cpp_extension.grouped_gemm(a, b, seg_lens, transA, transB, init_ptr)
     return out
 
 
@@ -33,7 +31,6 @@ def grouped_gemm_csrc_impl(
 def grouped_gemm_variable_k_csrc_impl(
     a: torch.Tensor,
     b: torch.Tensor,
-    c: torch.Tensor,
     seg_lens: torch.Tensor,
     transA: bool,
     transB: bool,
@@ -42,8 +39,7 @@ def grouped_gemm_variable_k_csrc_impl(
     assert transA == True and transB == False, "Only transA=True and transB=False are supported."
     assert a.dim() == 2, f"a must be 2D, got {a.shape}"
     assert b.dim() == 2, f"b must be 2D, got {b.shape}"
-    assert c.dim() == 3, f"c must be 3D, got {c.shape}"
     out = torch.ops.primus_turbo_cpp_extension.grouped_gemm_variable_k(
-        a, b, c, seg_lens, transA, transB, init_ptr
+        a, b, seg_lens, transA, transB, init_ptr
     )
     return out
