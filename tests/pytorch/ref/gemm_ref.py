@@ -32,7 +32,7 @@ def grouped_gemm_variable_k_ref(a, b, seg_lens, trans_a=True, trans_b=False):
     return out
 
 
-class GroupedLinear(torch.nn.Module):
+class GroupedLinearRef(torch.nn.Module):
     def __init__(
         self,
         batch: int,
@@ -61,7 +61,7 @@ class GroupedLinear(torch.nn.Module):
         x: torch.Tensor,  # [B * M, K],
         seg_lens: torch.Tensor,  # [B,] int64
     ) -> torch.Tensor:
-        out, _ = grouped_gemm_ref(x, self.weight, seg_lens)
+        out = grouped_gemm_ref(x, self.weight, seg_lens)
         return out
 
 

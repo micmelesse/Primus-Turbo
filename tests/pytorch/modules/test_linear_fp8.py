@@ -27,7 +27,7 @@ def test_mxlinear(ori_dtype, dtype, block_size, M, NK, bias, enable_torch_compil
     x2 = x1.detach().clone().requires_grad_()
 
     # Ref
-    model = nn.Linear(K, N, bias=bias).to(device, dtype=ori_dtype)
+    model = nn.Linear(K, N, bias=bias)
     out_ref = model(x1)
     grad_out = torch.randn_like(out_ref)
     out_ref.backward(grad_out)

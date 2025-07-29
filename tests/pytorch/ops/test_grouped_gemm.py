@@ -46,6 +46,4 @@ def test_blockwise_fp8_grouped_gemm_func(B, M, N_K, dtype):
 
 
 if __name__ == "__main__":
-    # torch.manual_seed(1234)
-    # test_blockwise_fp8_grouped_gemm_func(4, 512, 6528, 1536, torch.bfloat16)
     test_blockwise_fp8_grouped_gemm_func(4, 1024, (4096, 4096), torch.float16)
