@@ -43,7 +43,3 @@ def test_blockwise_fp8_grouped_gemm_func(B, M, N_K, dtype):
     bgrad_snr = compute_snr(b_grad_ref, b_grad)
     print(f"bGrad-SNR: {bgrad_snr:.2f} dB")
     assert bgrad_snr > 20, "bGrad too low"
-
-
-if __name__ == "__main__":
-    test_blockwise_fp8_grouped_gemm_func(4, 1024, (4096, 4096), torch.float16)

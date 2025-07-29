@@ -4,12 +4,12 @@
 
 namespace primus_turbo::pytorch {
 
-at::Tensor init_grouped_gemm_meta(const at::Tensor &group_count) {
-    return at::scalar_tensor(0, at::TensorOptions().dtype(at::kLong).device(at::kCUDA));
+int64_t init_grouped_gemm_meta(const at::Tensor &group_count) {
+    return 0;
 }
 
 at::Tensor grouped_gemm_meta(at::Tensor &a, at::Tensor &b, at::Tensor &seg_lens, const bool transA,
-                             const bool transB, at::Tensor temp_ptr) {
+                             const bool transB, int64_t temp_ptr) {
     int output_rows = 0, output_cols = 0;
     if (!transA && !transB) { // NN
         output_rows = a.size(0);
@@ -22,7 +22,7 @@ at::Tensor grouped_gemm_meta(at::Tensor &a, at::Tensor &b, at::Tensor &seg_lens,
 }
 
 at::Tensor grouped_gemm_variable_k_meta(at::Tensor &a, at::Tensor &b, at::Tensor &seg_lens,
-                                        const bool transA, const bool transB, at::Tensor temp_ptr) {
+                                        const bool transA, const bool transB, int64_t temp_ptr) {
     // set for NT
     const int64_t B = seg_lens.numel();
     const int64_t M = a.size(1);
