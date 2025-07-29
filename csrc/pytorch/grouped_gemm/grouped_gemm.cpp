@@ -57,8 +57,8 @@ at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &seg_lens, cons
                 kargs_ptr, reinterpret_cast<const AType *>(a.data_ptr()),
                 reinterpret_cast<const BType *>(b.data_ptr()),
                 reinterpret_cast<CType *>(c.data_ptr()),
-                reinterpret_cast<const int *>(seg_lens.data_ptr()), group_count, N, K, K, K, N, 1,
-                stream);
+                reinterpret_cast<const int64_t *>(seg_lens.data_ptr()), group_count, N, K, K, K, N,
+                1, stream);
         } else if (!transA && !transB) // NN
         {
             const int N = b.size(2);
@@ -67,8 +67,8 @@ at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &seg_lens, cons
                 kargs_ptr, reinterpret_cast<const AType *>(a.data_ptr()),
                 reinterpret_cast<const BType *>(b.data_ptr()),
                 reinterpret_cast<CType *>(c.data_ptr()),
-                reinterpret_cast<const int *>(seg_lens.data_ptr()), group_count, N, K, K, N, N, 1,
-                stream);
+                reinterpret_cast<const int64_t *>(seg_lens.data_ptr()), group_count, N, K, K, N, N,
+                1, stream);
         } else {
             TORCH_CHECK(false, "Unsupported: transA = ", transA, ", transB = ", transB);
         }
@@ -84,8 +84,8 @@ at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &seg_lens, cons
                 kargs_ptr, reinterpret_cast<const AType *>(a.data_ptr()),
                 reinterpret_cast<const BType *>(b.data_ptr()),
                 reinterpret_cast<CType *>(c.data_ptr()),
-                reinterpret_cast<const int *>(seg_lens.data_ptr()), group_count, N, K, K, K, N, 1,
-                stream);
+                reinterpret_cast<const int64_t *>(seg_lens.data_ptr()), group_count, N, K, K, K, N,
+                1, stream);
         } else if (!transA && !transB) // NN
         {
             const int N = b.size(2);
@@ -94,8 +94,8 @@ at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &seg_lens, cons
                 kargs_ptr, reinterpret_cast<const AType *>(a.data_ptr()),
                 reinterpret_cast<const BType *>(b.data_ptr()),
                 reinterpret_cast<CType *>(c.data_ptr()),
-                reinterpret_cast<const int *>(seg_lens.data_ptr()), group_count, N, K, K, N, N, 1,
-                stream);
+                reinterpret_cast<const int64_t *>(seg_lens.data_ptr()), group_count, N, K, K, N, N,
+                1, stream);
         } else {
             TORCH_CHECK(false, "Unsupported: transA = ", transA, ", transB = ", transB);
         }
@@ -135,8 +135,8 @@ at::Tensor grouped_gemm_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &seg
                 kargs_ptr, reinterpret_cast<const AType *>(a.data_ptr()),
                 reinterpret_cast<const BType *>(b.data_ptr()),
                 reinterpret_cast<CType *>(c.data_ptr()),
-                reinterpret_cast<const int *>(seg_lens.data_ptr()), group_count, M, N, M, N, N, 1,
-                stream);
+                reinterpret_cast<const int64_t *>(seg_lens.data_ptr()), group_count, M, N, M, N, N,
+                1, stream);
         } else {
             TORCH_CHECK(false, "Unsupported: transA = ", transA, ", transB = ", transB);
         }
@@ -153,8 +153,8 @@ at::Tensor grouped_gemm_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &seg
                 kargs_ptr, reinterpret_cast<const AType *>(a.data_ptr()),
                 reinterpret_cast<const BType *>(b.data_ptr()),
                 reinterpret_cast<CType *>(c.data_ptr()),
-                reinterpret_cast<const int *>(seg_lens.data_ptr()), group_count, M, N, M, N, N, 1,
-                stream);
+                reinterpret_cast<const int64_t *>(seg_lens.data_ptr()), group_count, M, N, M, N, N,
+                1, stream);
         } else {
             TORCH_CHECK(false, "Unsupported: transA = ", transA, ", transB = ", transB);
         }

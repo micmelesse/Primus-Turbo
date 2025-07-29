@@ -6,7 +6,7 @@ from primus_turbo.pytorch.kernels.grouped_gemm.grouped_gemm_csrc_impl import (
     grouped_gemm_variable_k_csrc_impl,
 )
 
-__all__ = ["grouped_gemm"]
+__all__ = ["grouped_gemm", "grouped_gemm_init"]
 
 
 class GroupedGemmFunc(torch.autograd.Function):
@@ -33,13 +33,11 @@ class GroupedGemmFunc(torch.autograd.Function):
         )
         ctx.save_for_backward(a, b, seg_lens)
         ctx.init_ptr = init_ptr_inner
-        return (out, init_ptr_inner) if init_ptr == 0 else out
+        return out, init_ptr_inner
 
     @staticmethod
     def backward(ctx, *grad_outputs):
-        if len(grad_outputs) == 1:
-            grad_out = grad_outputs[0]
-        elif len(grad_outputs) == 2:
+        if len(grad_outputs) == 2:
             grad_out, _ = grad_outputs
         else:
             raise ValueError("Unexpected number of gradients")
@@ -72,3 +70,8 @@ def grouped_gemm(
     init_ptr: int = 0,
 ):
     return GroupedGemmFunc.apply(a, b, seg_lens, init_ptr)
+
+
+def grouped_gemm_init(batch):
+    init_ptr = grouped_gemm_csrc_init(batch)
+    return init_ptr

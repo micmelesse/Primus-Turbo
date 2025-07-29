@@ -52,8 +52,8 @@ void *ck_grouped_gemm_init(const int B, hipStream_t stream_id) {
 template <typename ADataType, typename BDataType, typename CDataType>
 __global__ void update_group_gemm_kargs(ck_tile::GemmTransKernelArg *kargs_ptr,
                                         const ADataType *a_ptr, const BDataType *b_ptr,
-                                        CDataType *c_ptr, const int *p_seg_lens, ck_tile::index_t B,
-                                        ck_tile::index_t N, ck_tile::index_t K,
+                                        CDataType *c_ptr, const int64_t *p_seg_lens,
+                                        ck_tile::index_t B, ck_tile::index_t N, ck_tile::index_t K,
                                         ck_tile::index_t stride_A, ck_tile::index_t stride_B,
                                         ck_tile::index_t stride_C, ck_tile::index_t k_batch) {
     // Calculate the index for this thread
@@ -93,7 +93,7 @@ __global__ void update_group_gemm_kargs(ck_tile::GemmTransKernelArg *kargs_ptr,
 template <typename ADataType, typename BDataType, typename CDataType, typename ALayout,
           typename BLayout, typename CLayout>
 void ck_grouped_gemm_kernel(ck_tile::GemmTransKernelArg *kargs_ptr, const ADataType *a_ptr,
-                            const BDataType *b_ptr, CDataType *c_ptr, const int *p_seg_lens,
+                            const BDataType *b_ptr, CDataType *c_ptr, const int64_t *p_seg_lens,
                             ck_tile::index_t B, ck_tile::index_t N, ck_tile::index_t K,
                             ck_tile::index_t stride_A, ck_tile::index_t stride_B,
                             ck_tile::index_t stride_C, ck_tile::index_t k_batch,
@@ -111,12 +111,11 @@ void ck_grouped_gemm_kernel(ck_tile::GemmTransKernelArg *kargs_ptr, const ADataT
 }
 
 template <typename ADataType, typename BDataType, typename CDataType>
-__global__ void
-update_group_gemm_variable_k_kargs(ck_tile::GemmTransKernelArg *kargs_ptr, const ADataType *a_ptr,
-                                   const BDataType *b_ptr, CDataType *c_ptr, const int *p_seg_lens,
-                                   ck_tile::index_t B, ck_tile::index_t M, ck_tile::index_t N,
-                                   ck_tile::index_t stride_A, ck_tile::index_t stride_B,
-                                   ck_tile::index_t stride_C, ck_tile::index_t k_batch) {
+__global__ void update_group_gemm_variable_k_kargs(
+    ck_tile::GemmTransKernelArg *kargs_ptr, const ADataType *a_ptr, const BDataType *b_ptr,
+    CDataType *c_ptr, const int64_t *p_seg_lens, ck_tile::index_t B, ck_tile::index_t M,
+    ck_tile::index_t N, ck_tile::index_t stride_A, ck_tile::index_t stride_B,
+    ck_tile::index_t stride_C, ck_tile::index_t k_batch) {
     // Calculate the index for this thread
     int index = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -155,8 +154,8 @@ template <typename ADataType, typename BDataType, typename CDataType, typename A
           typename BLayout, typename CLayout>
 void ck_grouped_gemm_variable_k_kernel(ck_tile::GemmTransKernelArg *kargs_ptr,
                                        const ADataType *a_ptr, const BDataType *b_ptr,
-                                       CDataType *c_ptr, const int *p_seg_lens, ck_tile::index_t B,
-                                       ck_tile::index_t M, ck_tile::index_t N,
+                                       CDataType *c_ptr, const int64_t *p_seg_lens,
+                                       ck_tile::index_t B, ck_tile::index_t M, ck_tile::index_t N,
                                        ck_tile::index_t stride_A, ck_tile::index_t stride_B,
                                        ck_tile::index_t stride_C, ck_tile::index_t k_batch,
                                        hipStream_t stream_id) {
@@ -178,46 +177,47 @@ using Col = ck_tile::tensor_layout::gemm::ColumnMajor;
 template void
 ck_grouped_gemm_kernel<ck_tile::half_t, ck_tile::half_t, ck_tile::half_t, Row, Col, Row>(
     ck_tile::GemmTransKernelArg *kargs_ptr, const ck_tile::half_t *a_ptr,
-    const ck_tile::half_t *b_ptr, ck_tile::half_t *c_ptr, const int *p_seg_lens, ck_tile::index_t B,
-    ck_tile::index_t N, ck_tile::index_t K, ck_tile::index_t stride_A, ck_tile::index_t stride_B,
-    ck_tile::index_t stride_C, ck_tile::index_t k_batch, hipStream_t stream_id);
+    const ck_tile::half_t *b_ptr, ck_tile::half_t *c_ptr, const int64_t *p_seg_lens,
+    ck_tile::index_t B, ck_tile::index_t N, ck_tile::index_t K, ck_tile::index_t stride_A,
+    ck_tile::index_t stride_B, ck_tile::index_t stride_C, ck_tile::index_t k_batch,
+    hipStream_t stream_id);
 
-template void
-ck_grouped_gemm_kernel<ck_tile::bfloat16_t, ck_tile::bfloat16_t, ck_tile::bfloat16_t, Row, Col,
-                       Row>(ck_tile::GemmTransKernelArg *kargs_ptr,
-                            const ck_tile::bfloat16_t *a_ptr, const ck_tile::bfloat16_t *b_ptr,
-                            ck_tile::bfloat16_t *c_ptr, const int *p_seg_lens, ck_tile::index_t B,
-                            ck_tile::index_t N, ck_tile::index_t K, ck_tile::index_t stride_A,
-                            ck_tile::index_t stride_B, ck_tile::index_t stride_C,
-                            ck_tile::index_t k_batch, hipStream_t stream_id);
+template void ck_grouped_gemm_kernel<ck_tile::bfloat16_t, ck_tile::bfloat16_t, ck_tile::bfloat16_t,
+                                     Row, Col, Row>(
+    ck_tile::GemmTransKernelArg *kargs_ptr, const ck_tile::bfloat16_t *a_ptr,
+    const ck_tile::bfloat16_t *b_ptr, ck_tile::bfloat16_t *c_ptr, const int64_t *p_seg_lens,
+    ck_tile::index_t B, ck_tile::index_t N, ck_tile::index_t K, ck_tile::index_t stride_A,
+    ck_tile::index_t stride_B, ck_tile::index_t stride_C, ck_tile::index_t k_batch,
+    hipStream_t stream_id);
 
 template void
 ck_grouped_gemm_kernel<ck_tile::half_t, ck_tile::half_t, ck_tile::half_t, Row, Row, Row>(
     ck_tile::GemmTransKernelArg *kargs_ptr, const ck_tile::half_t *a_ptr,
-    const ck_tile::half_t *b_ptr, ck_tile::half_t *c_ptr, const int *p_seg_lens, ck_tile::index_t B,
-    ck_tile::index_t N, ck_tile::index_t K, ck_tile::index_t stride_A, ck_tile::index_t stride_B,
-    ck_tile::index_t stride_C, ck_tile::index_t k_batch, hipStream_t stream_id);
+    const ck_tile::half_t *b_ptr, ck_tile::half_t *c_ptr, const int64_t *p_seg_lens,
+    ck_tile::index_t B, ck_tile::index_t N, ck_tile::index_t K, ck_tile::index_t stride_A,
+    ck_tile::index_t stride_B, ck_tile::index_t stride_C, ck_tile::index_t k_batch,
+    hipStream_t stream_id);
 
-template void
-ck_grouped_gemm_kernel<ck_tile::bfloat16_t, ck_tile::bfloat16_t, ck_tile::bfloat16_t, Row, Row,
-                       Row>(ck_tile::GemmTransKernelArg *kargs_ptr,
-                            const ck_tile::bfloat16_t *a_ptr, const ck_tile::bfloat16_t *b_ptr,
-                            ck_tile::bfloat16_t *c_ptr, const int *p_seg_lens, ck_tile::index_t B,
-                            ck_tile::index_t N, ck_tile::index_t K, ck_tile::index_t stride_A,
-                            ck_tile::index_t stride_B, ck_tile::index_t stride_C,
-                            ck_tile::index_t k_batch, hipStream_t stream_id);
+template void ck_grouped_gemm_kernel<ck_tile::bfloat16_t, ck_tile::bfloat16_t, ck_tile::bfloat16_t,
+                                     Row, Row, Row>(
+    ck_tile::GemmTransKernelArg *kargs_ptr, const ck_tile::bfloat16_t *a_ptr,
+    const ck_tile::bfloat16_t *b_ptr, ck_tile::bfloat16_t *c_ptr, const int64_t *p_seg_lens,
+    ck_tile::index_t B, ck_tile::index_t N, ck_tile::index_t K, ck_tile::index_t stride_A,
+    ck_tile::index_t stride_B, ck_tile::index_t stride_C, ck_tile::index_t k_batch,
+    hipStream_t stream_id);
 
 template void
 ck_grouped_gemm_variable_k_kernel<ck_tile::half_t, ck_tile::half_t, ck_tile::half_t, Col, Row, Row>(
     ck_tile::GemmTransKernelArg *kargs_ptr, const ck_tile::half_t *a_ptr,
-    const ck_tile::half_t *b_ptr, ck_tile::half_t *c_ptr, const int *p_seg_lens, ck_tile::index_t B,
-    ck_tile::index_t M, ck_tile::index_t N, ck_tile::index_t stride_A, ck_tile::index_t stride_B,
-    ck_tile::index_t stride_C, ck_tile::index_t k_batch, hipStream_t stream_id);
+    const ck_tile::half_t *b_ptr, ck_tile::half_t *c_ptr, const int64_t *p_seg_lens,
+    ck_tile::index_t B, ck_tile::index_t M, ck_tile::index_t N, ck_tile::index_t stride_A,
+    ck_tile::index_t stride_B, ck_tile::index_t stride_C, ck_tile::index_t k_batch,
+    hipStream_t stream_id);
 
 template void ck_grouped_gemm_variable_k_kernel<ck_tile::bfloat16_t, ck_tile::bfloat16_t,
                                                 ck_tile::bfloat16_t, Col, Row, Row>(
     ck_tile::GemmTransKernelArg *kargs_ptr, const ck_tile::bfloat16_t *a_ptr,
-    const ck_tile::bfloat16_t *b_ptr, ck_tile::bfloat16_t *c_ptr, const int *p_seg_lens,
+    const ck_tile::bfloat16_t *b_ptr, ck_tile::bfloat16_t *c_ptr, const int64_t *p_seg_lens,
     ck_tile::index_t B, ck_tile::index_t M, ck_tile::index_t N, ck_tile::index_t stride_A,
     ck_tile::index_t stride_B, ck_tile::index_t stride_C, ck_tile::index_t k_batch,
     hipStream_t stream_id);

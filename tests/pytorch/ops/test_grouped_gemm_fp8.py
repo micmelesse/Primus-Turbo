@@ -112,7 +112,7 @@ if __name__ == "__main__":
         M = 512
         N = 1024
         K = 2048
-        seg_lens = torch.zeros([B], dtype=torch.int32, device=device)
+        seg_lens = torch.zeros([B], dtype=torch.int64, device=device)
         seg_lens[0] = 256
         seg_lens[1] = 768
         seg_lens[2] = 768
@@ -145,7 +145,7 @@ if __name__ == "__main__":
         M = 512
         N = 1024
         K = 2048
-        seg_lens = torch.zeros([B], dtype=torch.int32, device=device)
+        seg_lens = torch.zeros([B], dtype=torch.int64, device=device)
         seg_lens[0] = 256
         seg_lens[1] = 768
         seg_lens[2] = 768
@@ -174,7 +174,7 @@ if __name__ == "__main__":
         M = 2048
         N = 1024
         K = 512
-        seg_lens = torch.zeros([B], dtype=torch.int32, device=device)
+        seg_lens = torch.zeros([B], dtype=torch.int64, device=device)
         seg_lens[0] = 256
         seg_lens[1] = 768
         seg_lens[2] = 768
