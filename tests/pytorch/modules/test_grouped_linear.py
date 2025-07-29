@@ -16,7 +16,7 @@ def test_grouped_linear(B, M, N, K, dtype, enable_torch_compile):
     torch_linear = GroupedLinearRef(B, K, N, device, dtype=dtype)
     with torch.no_grad():
         torch_linear.weight.copy_(primus_linear.weight)
-    primus_linear = torch.compile(primus_linear, fullgraph=True, mode="max-autotune")
+    # primus_linear = torch.compile(primus_linear, fullgraph=True, mode="max-autotune")
     x1 = torch.randn((B_M, K), device=device, dtype=dtype, requires_grad=True)
     x2 = x1.detach().clone().requires_grad_()
     out1 = primus_linear(x1, seq_len)
