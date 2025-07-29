@@ -23,7 +23,8 @@ class GroupedLinear(torch.nn.Module):
         self.out_features = out_features  # N
         self.batch = batch
         self.dtype = dtype
-        self.init_ptr = grouped_gemm_init(batch)
+        self.init_ptr = grouped_gemm_init(torch.tensor(batch, dtype=torch.int64, device=device))
+        print("self.init_ptr", self.init_ptr)
         factory_kwargs = {"device": device, "dtype": dtype}
         self.weight = nn.Parameter(
             torch.empty((batch, self.out_features, self.in_features), **factory_kwargs)
@@ -38,7 +39,7 @@ class GroupedLinear(torch.nn.Module):
         x: torch.Tensor,  # [B * M, K],
         seg_lens: torch.Tensor,  # [B,] int64
     ) -> torch.Tensor:
-        out, _ = grouped_gemm(x, self.weight, seg_lens)
+        out, _ = grouped_gemm(x, self.weight, seg_lens, self.init_ptr)
         return out
 
     def extra_repr(self) -> str:

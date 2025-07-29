@@ -22,12 +22,12 @@ TORCH_LIBRARY(primus_turbo_cpp_extension, m) {
     m.def("fp8_dequantize(Tensor input, Tensor scale_inv, ScalarType dest_dtype) -> Tensor");
     m.def("rmsnorm_fwd(Tensor input, Tensor gamma, float eps) -> Tensor");
     m.def("rmsnorm_bwd(Tensor input, Tensor gamma, Tensor grad_out, float eps) -> Tensor[]");
-    m.def("init_grouped_gemm(int group_count) -> int", init_grouped_gemm);
+    m.def("init_grouped_gemm(Tensor group_count) -> Tensor");
     m.def("grouped_gemm(Tensor a, Tensor b, Tensor seg_lens, bool transA, bool transB, "
-          "int temp_ptr) "
+          "Tensor temp_ptr) "
           "-> Tensor");
     m.def("grouped_gemm_variable_k(Tensor a, Tensor b, Tensor seg_lens, bool transA, "
-          "bool transB, int temp_ptr) -> Tensor");
+          "bool transB, Tensor temp_ptr) -> Tensor");
 }
 
 TORCH_LIBRARY_IMPL(primus_turbo_cpp_extension, CUDA, m) {

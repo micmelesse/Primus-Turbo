@@ -5,14 +5,16 @@
 // #include "ck_tile/ops/common/tensor_layout.hpp"
 namespace primus_turbo::pytorch {
 
-int64_t init_grouped_gemm(const int64_t group_count) {
-    auto  stream = at::cuda::getCurrentCUDAStream();
-    void *ptr    = ck_grouped_gemm_init(group_count, stream);
-    return reinterpret_cast<int64_t>(ptr);
+at::Tensor init_grouped_gemm(const at::Tensor &group_count) {
+    auto    group_count_int = group_count.item<int64_t>();
+    auto    stream          = at::cuda::getCurrentCUDAStream();
+    void   *ptr             = ck_grouped_gemm_init(group_count_int, stream);
+    int64_t ptr_int         = reinterpret_cast<int64_t>(ptr);
+    return at::scalar_tensor(ptr_int, at::TensorOptions().dtype(at::kLong).device(at::kCUDA));
 }
 
 at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &seg_lens, const bool transA,
-                        const bool transB, int64_t temp_ptr) {
+                        const bool transB, at::Tensor temp_ptr) {
     // Check that a and b have the same dtype
     TORCH_CHECK(a.dtype() == b.dtype(), "Tensors must have the same dtype, got ", a.dtype(),
                 " and ", b.dtype());
@@ -22,7 +24,7 @@ at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &seg_lens, cons
                 "Only fp16 and bf16 are supported, got ", a.dtype());
 
     // Determine output tensor size based on transA and transB
-    int        output_rows, output_cols;
+    int        output_rows = 0, output_cols = 0;
     at::Tensor c;
     if (!transA && !transB) { // NN
         output_rows = a.size(0);
@@ -33,17 +35,18 @@ at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &seg_lens, cons
         output_cols = b.size(1);
         c           = at::empty({output_rows, output_cols}, a.options());
     } else {
-        TORCH_CHECK(false, "Unsupported: transA = ", transA, ", transB = ", transB);
+        TORCH_CHECK(false, "Unsupported transA=", transA, " transB=", transB);
     }
 
     using Row = ck_tile::tensor_layout::gemm::RowMajor;
     using Col = ck_tile::tensor_layout::gemm::ColumnMajor;
 
-    const int                    B           = b.size(0);
-    const int                    group_count = B;
-    auto                         stream      = at::cuda::getCurrentCUDAStream();
+    const int64_t                B            = seg_lens.numel();
+    const int                    group_count  = B;
+    auto                         stream       = at::cuda::getCurrentCUDAStream();
+    int64_t                      temp_ptr_int = temp_ptr.item<int64_t>();
     ck_tile::GemmTransKernelArg *kargs_ptr =
-        reinterpret_cast<ck_tile::GemmTransKernelArg *>(temp_ptr);
+        reinterpret_cast<ck_tile::GemmTransKernelArg *>(temp_ptr_int);
 
     if (a.dtype() == at::kHalf) {
         using AType = ck_tile::half_t;
@@ -105,7 +108,7 @@ at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &seg_lens, cons
 }
 
 at::Tensor grouped_gemm_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &seg_lens,
-                                   const bool transA, const bool transB, int64_t temp_ptr) {
+                                   const bool transA, const bool transB, at::Tensor temp_ptr) {
     TORCH_CHECK(a.dtype() == b.dtype(), "All tensors must have the same dtype, got ", a.dtype(),
                 ", ", b.dtype());
 
@@ -116,11 +119,12 @@ at::Tensor grouped_gemm_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &seg
     using Row = ck_tile::tensor_layout::gemm::RowMajor;
     using Col = ck_tile::tensor_layout::gemm::ColumnMajor;
 
-    const int64_t                B           = seg_lens.numel();
-    const int                    group_count = B;
-    auto                         stream      = at::cuda::getCurrentCUDAStream();
+    const int64_t                B            = seg_lens.numel();
+    const int                    group_count  = B;
+    auto                         stream       = at::cuda::getCurrentCUDAStream();
+    int64_t                      temp_ptr_int = temp_ptr.item<int64_t>();
     ck_tile::GemmTransKernelArg *kargs_ptr =
-        reinterpret_cast<ck_tile::GemmTransKernelArg *>(temp_ptr);
+        reinterpret_cast<ck_tile::GemmTransKernelArg *>(temp_ptr_int);
 
     if (a.dtype() == at::kHalf) {
         using AType = ck_tile::half_t;

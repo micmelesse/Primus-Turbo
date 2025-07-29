@@ -3,8 +3,14 @@ import torch
 _torch_custom_op_wrapper = torch.library.custom_op
 
 
-def grouped_gemm_csrc_init(group_size: int) -> int:
+@_torch_custom_op_wrapper("primus_turbo::grouped_gemm_csrc_init", mutates_args=(), device_types="cuda")
+def grouped_gemm_csrc_init(group_size: torch.Tensor) -> torch.Tensor:
     return torch.ops.primus_turbo_cpp_extension.init_grouped_gemm(group_size)
+
+
+@grouped_gemm_csrc_init.register_fake
+def _grouped_gemm_csrc_impl(group_size: torch.Tensor) -> torch.Tensor:
+    return torch.tensor(0, dtype=torch.int64, device="cuda")
 
 
 @_torch_custom_op_wrapper("primus_turbo::grouped_gemm_csrc_impl", mutates_args=(), device_types="cuda")
@@ -14,7 +20,7 @@ def grouped_gemm_csrc_impl(
     seg_lens: torch.Tensor,
     transA: bool,
     transB: bool,
-    init_ptr: int,  # must do grouped_gemm_csrc_init before grouped_gemm_csrc_impl
+    init_ptr: torch.Tensor,  # must do grouped_gemm_csrc_init before grouped_gemm_csrc_impl
 ) -> torch.Tensor:
     assert a.dim() == 2, f"a must be 2D, got {a.shape}"
     assert b.dim() == 3, f"b must be 3D, got {b.shape}"
@@ -36,7 +42,7 @@ def grouped_gemm_variable_k_csrc_impl(
     seg_lens: torch.Tensor,
     transA: bool,
     transB: bool,
-    init_ptr: int,  # must do grouped_gemm_csrc_init before grouped_gemm_variable_k_fp8_blockwise_impl
+    init_ptr: torch.Tensor,  # must do grouped_gemm_csrc_init before grouped_gemm_variable_k_fp8_blockwise_impl
 ) -> torch.Tensor:
     assert a.dim() == 2, f"a must be 2D, got {a.shape}"
     assert b.dim() == 2, f"b must be 2D, got {b.shape}"

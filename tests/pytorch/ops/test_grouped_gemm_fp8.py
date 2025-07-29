@@ -120,7 +120,9 @@ if __name__ == "__main__":
         a = torch.randn((B * M, K), dtype=ori_dtype, device=device, requires_grad=False)
         b = torch.randn((B, K, N), dtype=ori_dtype, device=device, requires_grad=False)
 
-        temp_ptr = torch.ops.primus_turbo_cpp_extension.init_grouped_gemm(B)
+        temp_ptr = torch.ops.primus_turbo_cpp_extension.init_grouped_gemm(
+            torch.tensor(B, dtype=torch.int64, device=device)
+        )
         out = torch.ops.primus_turbo_cpp_extension.grouped_gemm(a, b, seg_lens, False, False, temp_ptr)
         print(out.shape)
         out_ref = grouped_gemm_ref(a.clone(), b.clone(), seg_lens.clone(), False)
@@ -152,7 +154,9 @@ if __name__ == "__main__":
         seg_lens[3] = 256
         a = torch.randn((B * M, K), dtype=ori_dtype, device=device, requires_grad=True)
         b = torch.randn((B, N, K), dtype=ori_dtype, device=device, requires_grad=True)
-        temp_ptr = torch.ops.primus_turbo_cpp_extension.init_grouped_gemm(B)
+        temp_ptr = torch.ops.primus_turbo_cpp_extension.init_grouped_gemm(
+            torch.tensor(B, dtype=torch.int64, device=device)
+        )
         out = torch.ops.primus_turbo_cpp_extension.grouped_gemm(a, b, seg_lens, False, True, temp_ptr)
         out_ref = grouped_gemm_ref(a.clone(), b.clone(), seg_lens.clone(), True)
         # print(out[0])
@@ -181,7 +185,9 @@ if __name__ == "__main__":
         seg_lens[3] = 256
         a = torch.randn((B * K, M), dtype=ori_dtype, device=device, requires_grad=False)
         b = torch.randn((B * K, N), dtype=ori_dtype, device=device, requires_grad=False)
-        temp_ptr = torch.ops.primus_turbo_cpp_extension.init_grouped_gemm(B)
+        temp_ptr = torch.ops.primus_turbo_cpp_extension.init_grouped_gemm(
+            torch.tensor(B, dtype=torch.int64, device=device)
+        )
         out = torch.ops.primus_turbo_cpp_extension.grouped_gemm_variable_k(
             a, b, seg_lens, True, False, temp_ptr
         )

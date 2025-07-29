@@ -20,7 +20,7 @@ def test_blockwise_fp8_grouped_gemm_func(B, M, N_K, dtype):
     a_ref = a.detach().clone().requires_grad_(True)
     b_ref = b.detach().clone().requires_grad_(True)
 
-    init_ptr = grouped_gemm_init(B)  # init before forward
+    init_ptr = grouped_gemm_init(torch.tensor(B, dtype=torch.int64, device=device))  # init before forward
     out, init_ptr = grouped_gemm(a, b, seg_lens, init_ptr)
 
     out_ref = grouped_gemm_ref(a_ref, b_ref, seg_lens.clone(), True)
