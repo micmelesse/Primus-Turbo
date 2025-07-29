@@ -182,6 +182,37 @@ def build_torch_extension():
     )
 
 
+def build_jax_extension():
+    import pybind11
+    from jax import ffi
+
+    # Link and Compile flags
+    extra_flags = get_common_flags()
+    extra_flags["extra_link_args"] = [
+        "-Wl,-rpath,$ORIGIN/../lib",
+        f"-L{PROJECT_ROOT / 'primus_turbo' / 'lib'}",
+        "-lprimus_turbo_kernels",
+        *extra_flags.get("extra_link_args", []),
+    ]
+
+    # CPP
+    jax_csrc_source_files = Path(PROJECT_ROOT / "csrc" / "jax")
+    sources = all_files_in_dir(jax_csrc_source_files, name_extensions=["cpp", "cc", "cu"])
+
+    return HIPExtension(
+        name="primus_turbo.jax._C",
+        sources=sources,
+        include_dirs=[
+            Path(PROJECT_ROOT / "csrc" / "include"),
+            Path(PROJECT_ROOT / "3rdparty" / "composable_kernel" / "include"),
+            Path(PROJECT_ROOT / "csrc"),
+            ffi.include_dir(),
+            pybind11.get_include(),
+        ],
+        **extra_flags,
+    )
+
+
 def compile_aiter():
     aiter_dir = os.path.join("3rdparty", "aiter")
     subprocess.run(["python3", "setup.py", "develop"], cwd=aiter_dir, check=True)
@@ -194,13 +225,20 @@ if __name__ == "__main__":
     compile_aiter()
 
     kernels_ext = build_kernels_extension()
+    # TODO: Control build one or all.
     torch_ext = build_torch_extension()
+    jax_ext = build_jax_extension()
 
     setup(
         name="primus_turbo",
         version=read_version(),
         packages=find_packages(exclude=["tests", "tests.*"]),
         package_data={"primus_turbo": ["lib/*.so"]},
-        ext_modules=[kernels_ext, torch_ext],
+        ext_modules=[kernels_ext, torch_ext, jax_ext],
         cmdclass={"build_ext": TurboBuildExt.with_options(use_ninja=True)},
+        entry_points={
+            "jax_plugins": [
+                "primus_turbo = primus_turbo.jax",
+            ],
+        },
     )
