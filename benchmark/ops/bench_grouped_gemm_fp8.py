@@ -1,8 +1,9 @@
 import torch
 import torch.utils.benchmark as benchmark
 
-from primus_turbo.pytorch.ops import grouped_gemm, grouped_gemm_init
-from tests.pytorch.ref.gemm_ref import generate_seq_len, grouped_gemm_ref
+import primus_turbo.pytorch as turbo
+from primus_turbo.pytorch.ops import grouped_gemm_fp8_blockwise
+from tests.pytorch.ref.gemm_ref import grouped_gemm_ref
 from tests.test_utils import compute_snr
 
 test_configs = [
@@ -11,32 +12,33 @@ test_configs = [
         "M": 2048,
         "N": 4096,
         "K": 7168,
-        "dtype": torch.float16,
+        "ori_dtype": torch.bfloat16,
+        "dtype": turbo.float8_e4m3,
+        "block_size": 128,
     },
     {
         "B": 8,
         "M": 4096,
         "N": 4096,
-        "K": 4096,
-        "dtype": torch.bfloat16,
-    },
-    {
-        "B": 4,
-        "M": 4096,
-        "N": 8192,
-        "K": 8192,
-        "dtype": torch.bfloat16,
+        "K": 2048,
+        "ori_dtype": torch.float16,
+        "dtype": turbo.float8_e5m2,
+        "block_size": 256,
     },
 ]
 
 
-def bench_grouped_gemm(B, M, N, K, dtype, test_backward):
+def bench_grouped_gemm(B, M, N, K, ori_dtype, dtype, block_size, test_backward):
     device = "cuda"
 
     # Prepare inputs
-    x = torch.randn((B * M, K), dtype=dtype, device=device, requires_grad=True)
-    w = torch.randn((B, N, K), dtype=dtype, device=device, requires_grad=True)
-    seg_lens = generate_seq_len(B, B * M).to(device)  # int64
+    x = torch.randn((B * M, K), dtype=ori_dtype, device=device, requires_grad=True)
+    w = torch.randn((B, N, K), dtype=ori_dtype, device=device, requires_grad=True)
+    seg_lens = torch.randint(1, M + 1, (B,), dtype=torch.long, device=device)
+    seg_lens = seg_lens / seg_lens.sum() * B * M
+    seg_lens = seg_lens.to(torch.long)
+    error = B * M - seg_lens.sum()
+    seg_lens[-1] += error
 
     x_ref = x.clone().detach().requires_grad_()
     w_ref = w.clone().detach().requires_grad_()
@@ -48,10 +50,9 @@ def bench_grouped_gemm(B, M, N, K, dtype, test_backward):
     grad_out = torch.randn_like(out_ref)
     out_ref.backward(grad_out, retain_graph=True)
 
-    init_ptr = grouped_gemm_init(torch.tensor(B, dtype=torch.int64, device=device))  # init before forward
     # Forward pass for implementation
-    fn_forward = lambda: grouped_gemm(x, w, seg_lens, init_ptr)
-    out, _ = fn_forward()
+    fn_forward = lambda: grouped_gemm_fp8_blockwise(x, w, seg_lens, block_size, dtype)
+    out = fn_forward()
 
     out.backward(grad_out, retain_graph=True)
 
@@ -69,7 +70,7 @@ def bench_grouped_gemm(B, M, N, K, dtype, test_backward):
 
     if test_backward:
         # Re-run forward pass to get fresh output
-        o, _ = fn_forward()
+        o = fn_forward()
         do = torch.randn_like(o)
         fn = lambda: o.backward(do, retain_graph=True)
         total_flops *= 2  # Approximate factor for backward pass
@@ -77,7 +78,7 @@ def bench_grouped_gemm(B, M, N, K, dtype, test_backward):
         fn = fn_forward
 
     # Warmup
-    warmup = 20
+    warmup = 5
     for _ in range(warmup):
         _ = fn_forward()
     torch.cuda.synchronize()
@@ -107,7 +108,9 @@ if __name__ == "__main__":
             "M",
             "N",
             "K",
+            "ori_dtype",
             "dtype",
+            "block_size",
             "Test Backward",
             "Time (ms)",
             "TFLOPS",
@@ -119,7 +122,9 @@ if __name__ == "__main__":
         M = config["M"]
         N = config["N"]
         K = config["K"]
+        ori_dtype = config["ori_dtype"]
         dtype = config["dtype"]
+        block_size = config["block_size"]
         print(f"\n{'='*50}")
         print(f"Testing config: {config}")
         print(f"{'='*50}")
@@ -132,7 +137,9 @@ if __name__ == "__main__":
                     M=M,
                     N=N,
                     K=K,
+                    ori_dtype=ori_dtype,
                     dtype=dtype,
+                    block_size=block_size,
                     test_backward=test_backward,
                 )
 
@@ -143,7 +150,9 @@ if __name__ == "__main__":
                     "M": M,
                     "N": N,
                     "K": K,
+                    "ori_dtype": ori_dtype,
                     "dtype": dtype,
+                    "block_size": block_size,
                     "Test Backward": test_backward,
                     "Time (ms)": f"{time_ms:.2f}",
                     "TFLOPS": f"{tflops:.2f}",
@@ -158,7 +167,9 @@ if __name__ == "__main__":
                     "M": M,
                     "N": N,
                     "K": K,
+                    "ori_dtype": ori_dtype,
                     "dtype": dtype,
+                    "block_size": block_size,
                     "Test Backward": test_backward,
                     "Time (ms)": "Failed",
                     "TFLOPS": "N/A",
@@ -170,5 +181,5 @@ if __name__ == "__main__":
     print(tabulate(results, headers="keys", tablefmt="grid", showindex=False))
 
     # Save to CSV
-    results.to_csv("grouped_gemm_benchmark_results.csv", index=False)
-    print("Results saved to grouped_gemm_benchmark_results.csv")
+    results.to_csv("grouped_gemm_fp8_benchmark_results.csv", index=False)
+    print("Results saved to grouped_gemm_fp8_benchmark_results.csv")
