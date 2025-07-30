@@ -37,8 +37,7 @@ class GroupedLinear(torch.nn.Module):
         x: torch.Tensor,  # [B * M, K],
         seg_lens: torch.Tensor,  # [B,] int64
     ) -> torch.Tensor:
-        out, _ = grouped_gemm(x, self.weight, seg_lens, self.init_ptr)
-        return out
+        return grouped_gemm(x, self.weight, seg_lens)
 
     def extra_repr(self) -> str:
         return f"batch={self.batch},in_features={self.in_features}, out_features={self.out_features}"
