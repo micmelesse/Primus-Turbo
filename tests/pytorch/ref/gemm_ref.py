@@ -65,76 +65,13 @@ class GroupedLinearRef(torch.nn.Module):
         return out
 
 
-def generate_seq_len(B, B_M):
-    """
-    Generate a tensor of shape (B,) where all elements are multiples of 128 and sum to B_M
-
-    Args:
-        B: batch size, length of output tensor
-        B_M: target sum of all elements
-
-    Returns:
-        seq_len: tensor of shape (B,) with elements multiple of 128, sum equals B_M
-    """
-    # Check if B_M is divisible by 128
-    if B_M % 128 != 0:
-        raise ValueError(f"B_M ({B_M}) must be divisible by 128")
-
-    # Check if B_M is large enough for B elements (each at least 128)
-    if B_M < B * 128:
-        raise ValueError(f"B_M ({B_M}) too small for B ({B}) elements, minimum required is {B * 128}")
-
-    # Convert to units of 128
-    total_units = B_M // 128
-
-    # Generate random distribution ensuring no zero elements
-    if B == 1:
-        # Special case when B=1
-        seq_len = torch.tensor([B_M], dtype=torch.int64)
+def generate_grouped_gemm_seg_lens(b, m, balance: bool):
+    if balance:
+        return torch.full((b,), m, dtype=torch.int64)
     else:
-        # Generate B-1 random split points ensuring each segment has at least 1 unit (128)
-        # We need to distribute (total_units - B) extra units among B segments
-        extra_units = total_units - B
-
-        # Generate random distribution of extra units
-        if extra_units == 0:
-            # All elements will be 128
-            units = torch.full((B,), 1, dtype=torch.int64)
-        else:
-            # Randomly distribute extra units
-            # Generate B-1 random split points in the range [0, extra_units]
-            splits = torch.sort(torch.randint(0, extra_units + 1, (B - 1,))).values
-            # Add start (0) and end (extra_units) points
-            points = torch.cat([torch.tensor([0]), splits, torch.tensor([extra_units])])
-            # Calculate differences to get extra unit counts for each segment
-            extra_units_per_segment = torch.diff(points)
-            # Add 1 base unit to each segment to ensure no zeros
-            units = extra_units_per_segment + 1
-
-        # Convert units to actual values (multiply by 128)
-        seq_len = units * 128
-
-    return seq_len
-
-
-def generate_uniform_seq_len(B, B_M):
-    """
-    Generate a tensor of shape (B,) where all elements are the same value and sum to B_M
-
-    Args:
-        B: batch size, length of output tensor
-        B_M: target sum of all elements
-
-    Returns:
-        seq_len: tensor of shape (B,) with all elements equal, sum equals B_M
-    """
-    # Check if B_M is divisible by B
-    if B_M % B != 0:
-        raise ValueError(f"B_M ({B_M}) must be divisible by B ({B})")
-
-    # All elements will have the same value
-    element_value = B_M // B
-    seq_len = torch.full((B,), element_value, dtype=torch.int64)
-
-    return seq_len
-
+        dist = 0.2 + 0.8 * torch.rand(b)
+        dist /= dist.sum()
+        seg_lens = (dist * b * m).to(torch.int64)
+        error = b * m - seg_lens.sum()
+        seg_lens[-1] += error
+        return seg_lens

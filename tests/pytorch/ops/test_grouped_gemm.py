@@ -2,18 +2,19 @@ import pytest
 import torch
 
 from primus_turbo.pytorch.ops import grouped_gemm
-from tests.pytorch.ref.gemm_ref import generate_seq_len, grouped_gemm_ref
+from tests.pytorch.ref.gemm_ref import generate_grouped_gemm_seg_lens, grouped_gemm_ref
 from tests.test_utils import get_tolerances
 
 
 @pytest.mark.parametrize("B", [1, 2, 3, 4, 8, 16])
-@pytest.mark.parametrize("M", [256, 512, 2048])
+@pytest.mark.parametrize("M", [128, 256, 512, 1024, 2048])
 @pytest.mark.parametrize("N_K", [(1024, 2048), (4096, 4096), (4096, 7168)])
 @pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
-def test_blockwise_fp8_grouped_gemm_func(B, M, N_K, dtype):
+@pytest.mark.parametrize("balance", [True, False])
+def test_grouped_gemm_func(B, M, N_K, dtype, balance):
     N, K = N_K
     device = "cuda"
-    seg_lens = generate_seq_len(B, B * M).to(device)  # int64
+    seg_lens = generate_grouped_gemm_seg_lens(B, M, balance=balance).to(device)
 
     a = torch.randn((B * M, K), dtype=dtype, device=device, requires_grad=True)
     b = torch.randn((B, N, K), dtype=dtype, device=device, requires_grad=True)
