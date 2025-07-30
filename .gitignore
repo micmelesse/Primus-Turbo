@@ -9,3 +9,4 @@ test-reports/
 *.hip
 *_hip.cpp
 *_hip.hpp
+*_hip.cuh
