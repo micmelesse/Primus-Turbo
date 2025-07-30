@@ -3,7 +3,7 @@ import math
 import torch
 import torch.nn as nn
 
-from primus_turbo.pytorch.ops import grouped_gemm, grouped_gemm_init
+from primus_turbo.pytorch.ops import grouped_gemm
 
 __all__ = ["GroupedLinear"]
 
@@ -23,8 +23,6 @@ class GroupedLinear(torch.nn.Module):
         self.out_features = out_features  # N
         self.batch = batch
         self.dtype = dtype
-        self.init_ptr = grouped_gemm_init(torch.tensor(batch, dtype=torch.int64, device=device))
-        print("self.init_ptr", self.init_ptr)
         factory_kwargs = {"device": device, "dtype": dtype}
         self.weight = nn.Parameter(
             torch.empty((batch, self.out_features, self.in_features), **factory_kwargs)

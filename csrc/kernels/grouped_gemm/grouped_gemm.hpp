@@ -20,6 +20,7 @@
 #include "ck_tile/ops/gemm.hpp"
 
 namespace primus_turbo {
+
 #define CK_TILE_PIPELINE_COMPUTE_V3 1
 #define CK_TILE_PIPELINE_MEMORY 2
 #define CK_TILE_PIPELINE_COMPUTE_V4 3
@@ -46,8 +47,8 @@ namespace primus_turbo {
 
 using grouped_gemm_kargs = ck_tile::GemmHostArgs</*NumDTensor = 0*/>;
 
-inline std::size_t get_workspace_size(const std::vector<grouped_gemm_kargs> &gemm_descs) {
-    return gemm_descs.size() * sizeof(ck_tile::GemmTransKernelArg);
+inline std::int64_t get_workspace_size(const int batch) {
+    return batch * sizeof(ck_tile::GemmTransKernelArg);
 }
 
 template <typename ADataType, typename BDataType, typename CDataType, typename AccDataType,
@@ -173,4 +174,5 @@ float grouped_gemm_tileloop(const ck_tile::stream_config &s, const ck_tile::inde
 
     return ave_time;
 }
+
 } // namespace primus_turbo

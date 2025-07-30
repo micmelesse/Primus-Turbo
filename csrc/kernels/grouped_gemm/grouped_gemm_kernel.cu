@@ -9,46 +9,6 @@ template <typename Layout> static constexpr inline auto is_row_major(Layout layo
                                                  ck_tile::tensor_layout::gemm::RowMajor>>{};
 }
 
-void *ck_grouped_gemm_init(const int B, hipStream_t stream_id) {
-    // Create gemm descriptors for grouped gemm
-    std::vector<grouped_gemm_kargs> gemm_descs;
-    gemm_descs.reserve(B);
-
-    for (int i = 0; i < B; i++) {
-        gemm_descs.push_back({});
-    }
-
-    // Allocate workspace for kernel arguments
-    ck_tile::DeviceMem gemm_workspace;
-    gemm_workspace.Realloc(get_workspace_size(gemm_descs));
-
-    // Prepare kernel arguments
-    std::vector<ck_tile::GemmTransKernelArg> kargs;
-    void                                    *kargs_ptr = gemm_workspace.GetDeviceBuffer();
-
-    for (const auto &arg : gemm_descs) {
-        kargs.emplace_back(ck_tile::GemmKernelArgs<>{arg.a_ptr,
-                                                     arg.b_ptr,
-                                                     {},
-                                                     arg.e_ptr,
-                                                     arg.M,
-                                                     arg.N,
-                                                     arg.K,
-                                                     arg.stride_A,
-                                                     arg.stride_B,
-                                                     {},
-                                                     arg.stride_E,
-                                                     arg.k_batch});
-    }
-
-    // Copy kernel arguments to device
-    const auto stream = ck_tile::stream_config{stream_id}; // No need to time in this function
-    HIP_CHECK_ERROR(hipMemcpyWithStream(kargs_ptr, kargs.data(),
-                                        kargs.size() * sizeof(ck_tile::GemmTransKernelArg),
-                                        hipMemcpyHostToDevice, stream.stream_id_));
-    return kargs_ptr;
-}
-
 template <typename ADataType, typename BDataType, typename CDataType>
 __global__ void update_group_gemm_kargs(ck_tile::GemmTransKernelArg *kargs_ptr,
                                         const ADataType *a_ptr, const BDataType *b_ptr,

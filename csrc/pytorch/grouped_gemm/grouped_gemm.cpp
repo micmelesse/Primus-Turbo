@@ -4,16 +4,8 @@
 #include "ck_tile/core/numeric/half.hpp"
 namespace primus_turbo::pytorch {
 
-int64_t init_grouped_gemm(const at::Tensor &group_count) {
-    auto    group_count_int = group_count.item<int64_t>();
-    auto    stream          = at::cuda::getCurrentCUDAStream();
-    void   *ptr             = ck_grouped_gemm_init(group_count_int, stream);
-    int64_t ptr_int         = reinterpret_cast<int64_t>(ptr);
-    return ptr_int;
-}
-
 at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &seg_lens, const bool transA,
-                        const bool transB, int64_t temp_ptr) {
+                        const bool transB) {
     // Check that a and b have the same dtype
     TORCH_CHECK(a.dtype() == b.dtype(), "Tensors must have the same dtype, got ", a.dtype(),
                 " and ", b.dtype());
@@ -21,6 +13,10 @@ at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &seg_lens, cons
     // Check that dtype is fp16 or bf16
     TORCH_CHECK(a.dtype() == at::kHalf || a.dtype() == at::kBFloat16,
                 "Only fp16 and bf16 are supported, got ", a.dtype());
+
+    const int64_t args_workspace_sizes  = get_workspace_size(seg_lens.numel());
+    at::Tensor    args_workspace_tensor = at::empty(
+        {args_workspace_sizes}, at::TensorOptions().dtype(at::kByte).device(seg_lens.device()));
 
     // Determine output tensor size based on transA and transB
     int        output_rows = 0, output_cols = 0;
@@ -44,7 +40,7 @@ at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &seg_lens, cons
     const int                    group_count = B;
     auto                         stream      = at::cuda::getCurrentCUDAStream();
     ck_tile::GemmTransKernelArg *kargs_ptr =
-        reinterpret_cast<ck_tile::GemmTransKernelArg *>(temp_ptr);
+        reinterpret_cast<ck_tile::GemmTransKernelArg *>(args_workspace_tensor.data_ptr());
 
     if (a.dtype() == at::kHalf) {
         using AType = ck_tile::half_t;
@@ -106,12 +102,17 @@ at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &seg_lens, cons
 }
 
 at::Tensor grouped_gemm_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &seg_lens,
-                                   const bool transA, const bool transB, int64_t temp_ptr) {
+                                   const bool transA, const bool transB) {
     TORCH_CHECK(a.dtype() == b.dtype(), "All tensors must have the same dtype, got ", a.dtype(),
                 ", ", b.dtype());
 
     TORCH_CHECK(a.dtype() == at::kHalf || a.dtype() == at::kBFloat16,
                 "Only fp16 and bf16 are supported, got ", a.dtype());
+
+    const int64_t args_workspace_sizes  = get_workspace_size(seg_lens.numel());
+    at::Tensor    args_workspace_tensor = at::empty(
+        {args_workspace_sizes}, at::TensorOptions().dtype(at::kByte).device(seg_lens.device()));
+
     at::Tensor c;
 
     using Row = ck_tile::tensor_layout::gemm::RowMajor;
@@ -121,7 +122,7 @@ at::Tensor grouped_gemm_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &seg
     const int                    group_count = B;
     auto                         stream      = at::cuda::getCurrentCUDAStream();
     ck_tile::GemmTransKernelArg *kargs_ptr =
-        reinterpret_cast<ck_tile::GemmTransKernelArg *>(temp_ptr);
+        reinterpret_cast<ck_tile::GemmTransKernelArg *>(args_workspace_tensor.data_ptr());
 
     if (a.dtype() == at::kHalf) {
         using AType = ck_tile::half_t;
