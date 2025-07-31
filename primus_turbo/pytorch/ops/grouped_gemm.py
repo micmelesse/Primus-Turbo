@@ -48,6 +48,7 @@ class GroupedGemmFunc(torch.autograd.Function):
             lhs,
             rhs,
             group_lens,
+            group_offs,
             trans_a=True,
             trans_b=False,
         )

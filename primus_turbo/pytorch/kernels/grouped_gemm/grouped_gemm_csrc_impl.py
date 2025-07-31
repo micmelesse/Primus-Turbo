@@ -21,7 +21,8 @@ def grouped_gemm_csrc_impl(
 def grouped_gemm_variable_k_csrc_impl(
     a: torch.Tensor,
     b: torch.Tensor,
-    seg_lens: torch.Tensor,
+    group_lens: torch.Tensor,
+    group_offs: torch.Tensor,
     trans_a: bool,
     trans_b: bool,
 ) -> torch.Tensor:
@@ -30,5 +31,7 @@ def grouped_gemm_variable_k_csrc_impl(
     assert a.dtype in [torch.float16, torch.bfloat16], f"a must be float16 or bfloat16, got {a.dtype}"
     assert b.dtype in [torch.float16, torch.bfloat16], f"b must be float16 or bfloat16, got {b.dtype}"
     assert trans_a == True and trans_b == False, "Only trans_a=True and trans_b=False are supported."
-    out = torch.ops.primus_turbo_cpp_extension.grouped_gemm_variable_k(a, b, seg_lens, trans_a, trans_b)
+    out = torch.ops.primus_turbo_cpp_extension.grouped_gemm_variable_k(
+        a, b, group_lens, group_offs, trans_a, trans_b
+    )
     return out
