@@ -62,11 +62,11 @@ std::vector<at::Tensor> rmsnorm_bwd_meta(const at::Tensor &input, const at::Tens
                                          const at::Tensor &grad_output, const double eps);
 
 // Grouped Gemm
-at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &seg_lens, const bool transA,
-                        const bool transB);
+at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
+                        at::Tensor &group_offs, const bool transA, const bool transB);
 
-at::Tensor grouped_gemm_meta(at::Tensor &a, at::Tensor &b, at::Tensor &seg_lens, const bool transA,
-                             const bool transB);
+at::Tensor grouped_gemm_meta(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
+                             at::Tensor &group_offs, const bool transA, const bool transB);
 
 at::Tensor grouped_gemm_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &seg_lens,
                                    const bool transA, const bool transB);

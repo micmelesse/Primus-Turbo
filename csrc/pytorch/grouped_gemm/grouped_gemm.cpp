@@ -1,103 +1,57 @@
 #include "primus_turbo/grouped_gemm.h"
 #include "../extensions.h"
 #include "../type_traits.h"
-#include "ck_tile/core/numeric/half.hpp"
+
 namespace primus_turbo::pytorch {
 
-at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &seg_lens, const bool transA,
-                        const bool transB) {
-    // Check that a and b have the same dtype
-    TORCH_CHECK(a.dtype() == b.dtype(), "Tensors must have the same dtype, got ", a.dtype(),
-                " and ", b.dtype());
+at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
+                        at::Tensor &group_offs, const bool transA, const bool transB) {
+    // TODO:
+    auto out_dtype = a.scalar_type();
 
-    // Check that dtype is fp16 or bf16
-    TORCH_CHECK(a.dtype() == at::kHalf || a.dtype() == at::kBFloat16,
-                "Only fp16 and bf16 are supported, got ", a.dtype());
+    // Check
+    PRIMUS_TURBO_CHECK(is_16bit_floating_point_dtype(a.scalar_type()));
+    PRIMUS_TURBO_CHECK(is_16bit_floating_point_dtype(b.scalar_type()));
+    PRIMUS_TURBO_CHECK(group_lens.scalar_type() == at::kLong);
+    PRIMUS_TURBO_CHECK(group_offs.scalar_type() == at::kLong);
+    PRIMUS_TURBO_CHECK(a.scalar_type() == b.scalar_type(), "a and b dtype mismatch");
 
-    const int64_t args_workspace_sizes  = get_workspace_size(seg_lens.numel());
-    at::Tensor    args_workspace_tensor = at::empty(
-        {args_workspace_sizes}, at::TensorOptions().dtype(at::kByte).device(seg_lens.device()));
+    // Alloc args workspace
+    const int64_t args_sizes = get_workspace_size(group_lens.numel());
+    at::Tensor    args_tensor =
+        at::empty({args_sizes}, at::TensorOptions().dtype(at::kByte).device(group_lens.device()));
 
     // Determine output tensor size based on transA and transB
-    int        output_rows = 0, output_cols = 0;
-    at::Tensor c;
-    if (!transA && !transB) { // NN
-        output_rows = a.size(0);
-        output_cols = b.size(2);
-        c           = at::empty({output_rows, output_cols}, a.options());
-    } else if (!transA && transB) { // NT
-        output_rows = a.size(0);
-        output_cols = b.size(1);
-        c           = at::empty({output_rows, output_cols}, a.options());
-    } else {
-        TORCH_CHECK(false, "Unsupported transA=", transA, " transB=", transB);
-    }
+    const int32_t bs = b.size(0);
+    const int32_t m  = transA ? a.size(1) : a.size(0);
+    const int32_t n  = transB ? b.size(1) : b.size(2);
+    const int32_t k  = transA ? a.size(0) : a.size(1);
+    at::Tensor    c  = at::empty({m, n}, at::dtype(out_dtype).device(at::kCUDA));
 
-    using Row = ck_tile::tensor_layout::gemm::RowMajor;
-    using Col = ck_tile::tensor_layout::gemm::ColumnMajor;
-
-    const int64_t                B           = seg_lens.numel();
-    const int                    group_count = B;
-    auto                         stream      = at::cuda::getCurrentCUDAStream();
-    ck_tile::GemmTransKernelArg *kargs_ptr =
-        reinterpret_cast<ck_tile::GemmTransKernelArg *>(args_workspace_tensor.data_ptr());
-
+    auto stream = at::cuda::getCurrentCUDAStream();
     if (a.dtype() == at::kHalf) {
-        using AType = ck_tile::half_t;
-        using BType = ck_tile::half_t;
-        using CType = ck_tile::half_t;
-        if (!transA && transB) // NT
-        {
-            const int N = b.size(1);
-            const int K = b.size(2);
-            ck_grouped_gemm_kernel<AType, BType, CType, Row, Col, Row>(
-                kargs_ptr, reinterpret_cast<const AType *>(a.data_ptr()),
-                reinterpret_cast<const BType *>(b.data_ptr()),
-                reinterpret_cast<CType *>(c.data_ptr()),
-                reinterpret_cast<const int64_t *>(seg_lens.data_ptr()), group_count, N, K, K, K, N,
-                1, stream);
-        } else if (!transA && !transB) // NN
-        {
-            const int N = b.size(2);
-            const int K = b.size(1);
-            ck_grouped_gemm_kernel<AType, BType, CType, Row, Row, Row>(
-                kargs_ptr, reinterpret_cast<const AType *>(a.data_ptr()),
-                reinterpret_cast<const BType *>(b.data_ptr()),
-                reinterpret_cast<CType *>(c.data_ptr()),
-                reinterpret_cast<const int64_t *>(seg_lens.data_ptr()), group_count, N, K, K, N, N,
-                1, stream);
-        } else {
-            TORCH_CHECK(false, "Unsupported: transA = ", transA, ", transB = ", transB);
-        }
+        using AType = typename TorchToCKTileType<at::kHalf>::type;
+        using BType = AType;
+        using CType = AType;
+        ck_grouped_gemm<AType, BType, CType>(
+            args_tensor.data_ptr(), reinterpret_cast<const AType *>(a.data_ptr()),
+            reinterpret_cast<const BType *>(b.data_ptr()), reinterpret_cast<CType *>(c.data_ptr()),
+            reinterpret_cast<const int64_t *>(group_lens.data_ptr()),
+            reinterpret_cast<const int64_t *>(group_offs.data_ptr()), transA, transB, bs, m, n, k,
+            stream);
     } else if (a.dtype() == at::kBFloat16) {
-        using AType = ck_tile::bfloat16_t;
-        using BType = ck_tile::bfloat16_t;
-        using CType = ck_tile::bfloat16_t;
-        if (!transA && transB) // NT
-        {
-            const int N = b.size(1);
-            const int K = b.size(2);
-            ck_grouped_gemm_kernel<AType, BType, CType, Row, Col, Row>(
-                kargs_ptr, reinterpret_cast<const AType *>(a.data_ptr()),
-                reinterpret_cast<const BType *>(b.data_ptr()),
-                reinterpret_cast<CType *>(c.data_ptr()),
-                reinterpret_cast<const int64_t *>(seg_lens.data_ptr()), group_count, N, K, K, K, N,
-                1, stream);
-        } else if (!transA && !transB) // NN
-        {
-            const int N = b.size(2);
-            const int K = b.size(1);
-            ck_grouped_gemm_kernel<AType, BType, CType, Row, Row, Row>(
-                kargs_ptr, reinterpret_cast<const AType *>(a.data_ptr()),
-                reinterpret_cast<const BType *>(b.data_ptr()),
-                reinterpret_cast<CType *>(c.data_ptr()),
-                reinterpret_cast<const int64_t *>(seg_lens.data_ptr()), group_count, N, K, K, N, N,
-                1, stream);
-        } else {
-            TORCH_CHECK(false, "Unsupported: transA = ", transA, ", transB = ", transB);
-        }
+        using AType = typename TorchToCKTileType<at::kBFloat16>::type;
+        using BType = AType;
+        using CType = AType;
+        ck_grouped_gemm<AType, BType, CType>(
+            args_tensor.data_ptr(), reinterpret_cast<const AType *>(a.data_ptr()),
+            reinterpret_cast<const BType *>(b.data_ptr()), reinterpret_cast<CType *>(c.data_ptr()),
+            reinterpret_cast<const int64_t *>(group_lens.data_ptr()),
+            reinterpret_cast<const int64_t *>(group_offs.data_ptr()), transA, transB, bs, m, n, k,
+            stream);
+    } else {
+        PRIMUS_TURBO_CHECK(false, "GroupedGemm only support float16 and bfloat16");
     }
-
     return c;
 }
 
