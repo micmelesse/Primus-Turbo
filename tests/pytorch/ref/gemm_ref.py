@@ -65,13 +65,13 @@ class GroupedLinearRef(torch.nn.Module):
         return out
 
 
-def generate_grouped_gemm_seg_lens(b, m, balance: bool):
+def generate_grouped_gemm_group_lens(b, m, balance: bool):
     if balance:
         return torch.full((b,), m, dtype=torch.int64)
     else:
         dist = 0.2 + 0.8 * torch.rand(b)
         dist /= dist.sum()
-        seg_lens = (dist * b * m).to(torch.int64)
-        error = b * m - seg_lens.sum()
-        seg_lens[-1] += error
-        return seg_lens
+        group_lens = (dist * b * m).to(torch.int64)
+        error = b * m - group_lens.sum()
+        group_lens[-1] += error
+        return group_lens

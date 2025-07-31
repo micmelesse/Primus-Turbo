@@ -11,7 +11,7 @@ __all__ = ["GroupedLinear"]
 class GroupedLinear(torch.nn.Module):
     def __init__(
         self,
-        batch: int,
+        group_num: int,
         in_features: int,
         out_features: int,
         device=None,
@@ -19,14 +19,14 @@ class GroupedLinear(torch.nn.Module):
     ):
         super().__init__()
 
-        self.in_features = in_features  # K
-        self.out_features = out_features  # N
-        self.batch = batch
+        self.in_features = in_features
+        self.out_features = out_features
+        self.group_num = group_num
         self.dtype = dtype
         factory_kwargs = {"device": device, "dtype": dtype}
         self.weight = nn.Parameter(
-            torch.empty((batch, self.out_features, self.in_features), **factory_kwargs)
-        )  # [B,N,K]
+            torch.empty((group_num, self.out_features, self.in_features), **factory_kwargs)
+        )
         self.reset_parameters()
 
     def reset_parameters(self) -> None:
@@ -34,10 +34,11 @@ class GroupedLinear(torch.nn.Module):
 
     def forward(
         self,
-        x: torch.Tensor,  # [B * M, K],
-        seg_lens: torch.Tensor,  # [B,] int64
+        x: torch.Tensor,
+        group_lens: torch.Tensor,
+        group_offs: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        return grouped_gemm(x, self.weight, seg_lens)
+        return grouped_gemm(x, self.weight, group_lens, group_offs, trans_b=True)
 
     def extra_repr(self) -> str:
-        return f"batch={self.batch},in_features={self.in_features}, out_features={self.out_features}"
+        return f"group_num={self.group_num},in_features={self.in_features}, out_features={self.out_features}"

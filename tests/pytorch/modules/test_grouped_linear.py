@@ -2,7 +2,10 @@ import pytest
 import torch
 
 from primus_turbo.pytorch.modules import GroupedLinear
-from tests.pytorch.ref.gemm_ref import GroupedLinearRef, generate_grouped_gemm_seg_lens
+from tests.pytorch.ref.gemm_ref import (
+    GroupedLinearRef,
+    generate_grouped_gemm_group_lens,
+)
 from tests.test_utils import get_tolerances
 
 
@@ -16,7 +19,7 @@ def test_grouped_linear(B, M, N_K, dtype, balance, enable_torch_compile):
     torch._dynamo.reset()
     device = "cuda"
     N, K = N_K
-    seg_lens = generate_grouped_gemm_seg_lens(B, M, balance=balance).to(device)
+    group_lens = generate_grouped_gemm_group_lens(B, M, balance=balance).to(device)
 
     primus_linear = GroupedLinear(B, K, N, device, dtype=dtype)
     torch_linear = GroupedLinearRef(B, K, N, device, dtype=dtype)
@@ -29,8 +32,8 @@ def test_grouped_linear(B, M, N_K, dtype, balance, enable_torch_compile):
     x2 = x1.detach().clone().requires_grad_()
 
     # FWD
-    out1 = primus_linear(x1, seg_lens)
-    out2 = torch_linear(x2, seg_lens)
+    out1 = primus_linear(x1, group_lens)
+    out2 = torch_linear(x2, group_lens)
     torch.testing.assert_close(out1, out2, **get_tolerances(dtype))
 
     # BWD

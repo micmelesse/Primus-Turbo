@@ -2,7 +2,10 @@ import pytest
 import torch
 
 from primus_turbo.pytorch.ops import grouped_gemm
-from tests.pytorch.ref.gemm_ref import generate_grouped_gemm_seg_lens, grouped_gemm_ref
+from tests.pytorch.ref.gemm_ref import (
+    generate_grouped_gemm_group_lens,
+    grouped_gemm_ref,
+)
 from tests.test_utils import get_tolerances
 
 
@@ -11,19 +14,23 @@ from tests.test_utils import get_tolerances
 @pytest.mark.parametrize("N_K", [(1024, 2048), (4096, 4096), (4096, 7168)])
 @pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
 @pytest.mark.parametrize("balance", [True, False])
-def test_grouped_gemm_func(B, M, N_K, dtype, balance):
-    N, K = N_K
+@pytest.mark.parametrize("trans_b", [True, False])
+def test_grouped_gemm_func(B, M, N_K, dtype, balance, trans_b):
     device = "cuda"
-    seg_lens = generate_grouped_gemm_seg_lens(B, M, balance=balance).to(device)
+    N, K = N_K
+    group_lens = generate_grouped_gemm_group_lens(B, M, balance=balance).to(device)
+    print(B, M, N, K, dtype, balance, trans_b)
+
+    b_shape = (B, N, K) if trans_b else (B, K, N)
 
     a = torch.randn((B * M, K), dtype=dtype, device=device, requires_grad=True)
-    b = torch.randn((B, N, K), dtype=dtype, device=device, requires_grad=True)
+    b = torch.randn(b_shape, dtype=dtype, device=device, requires_grad=True)
     a_ref = a.detach().clone().requires_grad_(True)
     b_ref = b.detach().clone().requires_grad_(True)
 
     # FWD
-    out = grouped_gemm(a, b, seg_lens)
-    out_ref = grouped_gemm_ref(a_ref, b_ref, seg_lens.clone(), True)
+    out = grouped_gemm(a, b, group_lens, trans_b=trans_b)
+    out_ref = grouped_gemm_ref(a_ref, b_ref, group_lens.clone(), trans_b)
     torch.testing.assert_close(out_ref, out, **get_tolerances(dtype))
 
     # BWD

@@ -5,67 +5,78 @@ from primus_turbo.pytorch.ops import grouped_gemm
 from tests.pytorch.ref.gemm_ref import generate_uniform_seq_len, grouped_gemm_ref
 from tests.test_utils import compute_snr
 
+
 def generate_deepseekv3_test_cases():
     test_cases = []
-    EP = [8,16,32]
+    EP = [8, 16, 32]
     n_routed_experts = 256
     moe_intermediate_size = 2048
     hidden_size = 7168
     for ep in EP:
         B = n_routed_experts // ep
-        for M in [512,2048,4096]:
-            for N,K in [(2 * moe_intermediate_size, hidden_size),(hidden_size,moe_intermediate_size)]:
-                    for dtype in [torch.bfloat16]:
-                        test_cases.append({
+        for M in [512, 2048, 4096]:
+            for N, K in [(2 * moe_intermediate_size, hidden_size), (hidden_size, moe_intermediate_size)]:
+                for dtype in [torch.bfloat16]:
+                    test_cases.append(
+                        {
                             "B": B,
                             "M": M,
                             "N": N,
                             "K": K,
                             "dtype": dtype,
-                        })
+                        }
+                    )
     return test_cases
+
 
 def generate_deepseekv2_test_cases():
     test_cases = []
-    EP = [8,16,32]
+    EP = [8, 16, 32]
     n_routed_experts = 160
     moe_intermediate_size = 1536
     hidden_size = 5120
     for ep in EP:
         B = n_routed_experts // ep
 
-        for M in [512,2048,4096]:
-            for N,K in [(2 * moe_intermediate_size, hidden_size),(hidden_size,moe_intermediate_size)]:
-                    for dtype in [torch.bfloat16]:
-                        test_cases.append({
+        for M in [512, 2048, 4096]:
+            for N, K in [(2 * moe_intermediate_size, hidden_size), (hidden_size, moe_intermediate_size)]:
+                for dtype in [torch.bfloat16]:
+                    test_cases.append(
+                        {
                             "B": B,
                             "M": M,
                             "N": N,
                             "K": K,
                             "dtype": dtype,
-                        })
+                        }
+                    )
     return test_cases
+
 
 def generate_poolside_test_cases():
     test_cases = []
-    EP = [8,16,32]
+    EP = [8, 16, 32]
     n_routed_experts = 128
     moe_intermediate_size = 2048
     hidden_size = 8192
     for ep in EP:
         B = n_routed_experts // ep
 
-        for M in [512,2048,4096]:
-            for N,K in [(2 * moe_intermediate_size, hidden_size),(hidden_size,moe_intermediate_size)]:
-                    for dtype in [torch.bfloat16]:
-                        test_cases.append({
+        for M in [512, 2048, 4096]:
+            for N, K in [(2 * moe_intermediate_size, hidden_size), (hidden_size, moe_intermediate_size)]:
+                for dtype in [torch.bfloat16]:
+                    test_cases.append(
+                        {
                             "B": B,
                             "M": M,
                             "N": N,
                             "K": K,
                             "dtype": dtype,
-                        })
+                        }
+                    )
     return test_cases
+
+
 def bench_grouped_gemm(B, M, N, K, dtype, test_backward):
     device = "cuda"
 
@@ -137,7 +148,7 @@ if __name__ == "__main__":
     # print(test_configs)
     import pandas as pd
     from tabulate import tabulate
-    
+
     # DataFrame to store results
     results = pd.DataFrame(
         columns=[
@@ -162,7 +173,7 @@ if __name__ == "__main__":
         print(f"\n{'='*50}")
         print(f"Testing config: {config}")
         print(f"{'='*50}")
-        for test_backward in [False,True]:
+        for test_backward in [False, True]:
             test_id += 1
             try:
                 # Run benchmark
