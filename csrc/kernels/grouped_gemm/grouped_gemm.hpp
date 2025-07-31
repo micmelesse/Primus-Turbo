@@ -85,7 +85,7 @@ float grouped_gemm_tileloop(const ck_tile::stream_config &s, const ck_tile::inde
     constexpr ck_tile::index_t N_Warp_Tile = 32;
     constexpr ck_tile::index_t K_Warp_Tile = 16;
 
-    constexpr bool DoubleSmemBuffer = false;
+    constexpr bool DoubleSmemBuffer = true;
 #elif (CK_TILE_PIPELINE_DEFAULT == CK_TILE_PIPELINE_COMPUTE_V4)
     // Compute friendly for Intrawave scheduler
     // Using the ping pong reader in the lds level

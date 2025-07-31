@@ -115,3 +115,26 @@ def generate_seq_len(B, B_M):
         seq_len = units * 128
 
     return seq_len
+
+
+def generate_uniform_seq_len(B, B_M):
+    """
+    Generate a tensor of shape (B,) where all elements are the same value and sum to B_M
+
+    Args:
+        B: batch size, length of output tensor
+        B_M: target sum of all elements
+
+    Returns:
+        seq_len: tensor of shape (B,) with all elements equal, sum equals B_M
+    """
+    # Check if B_M is divisible by B
+    if B_M % B != 0:
+        raise ValueError(f"B_M ({B_M}) must be divisible by B ({B})")
+
+    # All elements will have the same value
+    element_value = B_M // B
+    seq_len = torch.full((B,), element_value, dtype=torch.int64)
+
+    return seq_len
+

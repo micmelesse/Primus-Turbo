@@ -1,43 +1,79 @@
 import torch
 import torch.utils.benchmark as benchmark
 
-from primus_turbo.pytorch.ops import grouped_gemm, grouped_gemm_init
-from tests.pytorch.ref.gemm_ref import generate_seq_len, grouped_gemm_ref
+from primus_turbo.pytorch.ops import grouped_gemm
+from tests.pytorch.ref.gemm_ref import generate_uniform_seq_len, grouped_gemm_ref
 from tests.test_utils import compute_snr
 
-test_configs = [
-    {
-        "B": 4,
-        "M": 2048,
-        "N": 4096,
-        "K": 7168,
-        "dtype": torch.float16,
-    },
-    {
-        "B": 8,
-        "M": 4096,
-        "N": 4096,
-        "K": 4096,
-        "dtype": torch.bfloat16,
-    },
-    {
-        "B": 4,
-        "M": 4096,
-        "N": 8192,
-        "K": 8192,
-        "dtype": torch.bfloat16,
-    },
-]
+def generate_deepseekv3_test_cases():
+    test_cases = []
+    EP = [8,16,32]
+    n_routed_experts = 256
+    moe_intermediate_size = 2048
+    hidden_size = 7168
+    for ep in EP:
+        B = n_routed_experts // ep
+        for M in [512,2048,4096]:
+            for N,K in [(2 * moe_intermediate_size, hidden_size),(hidden_size,moe_intermediate_size)]:
+                    for dtype in [torch.bfloat16]:
+                        test_cases.append({
+                            "B": B,
+                            "M": M,
+                            "N": N,
+                            "K": K,
+                            "dtype": dtype,
+                        })
+    return test_cases
 
+def generate_deepseekv2_test_cases():
+    test_cases = []
+    EP = [8,16,32]
+    n_routed_experts = 160
+    moe_intermediate_size = 1536
+    hidden_size = 5120
+    for ep in EP:
+        B = n_routed_experts // ep
 
+        for M in [512,2048,4096]:
+            for N,K in [(2 * moe_intermediate_size, hidden_size),(hidden_size,moe_intermediate_size)]:
+                    for dtype in [torch.bfloat16]:
+                        test_cases.append({
+                            "B": B,
+                            "M": M,
+                            "N": N,
+                            "K": K,
+                            "dtype": dtype,
+                        })
+    return test_cases
+
+def generate_poolside_test_cases():
+    test_cases = []
+    EP = [8,16,32]
+    n_routed_experts = 128
+    moe_intermediate_size = 2048
+    hidden_size = 8192
+    for ep in EP:
+        B = n_routed_experts // ep
+
+        for M in [512,2048,4096]:
+            for N,K in [(2 * moe_intermediate_size, hidden_size),(hidden_size,moe_intermediate_size)]:
+                    for dtype in [torch.bfloat16]:
+                        test_cases.append({
+                            "B": B,
+                            "M": M,
+                            "N": N,
+                            "K": K,
+                            "dtype": dtype,
+                        })
+    return test_cases
 def bench_grouped_gemm(B, M, N, K, dtype, test_backward):
     device = "cuda"
 
     # Prepare inputs
     x = torch.randn((B * M, K), dtype=dtype, device=device, requires_grad=True)
     w = torch.randn((B, N, K), dtype=dtype, device=device, requires_grad=True)
-    seg_lens = generate_seq_len(B, B * M).to(device)  # int64
-
+    seg_lens = generate_uniform_seq_len(B, B * M).to(device)  # int64
+    print("seg_lens: ", seg_lens)
     x_ref = x.clone().detach().requires_grad_()
     w_ref = w.clone().detach().requires_grad_()
 
@@ -47,11 +83,9 @@ def bench_grouped_gemm(B, M, N, K, dtype, test_backward):
 
     grad_out = torch.randn_like(out_ref)
     out_ref.backward(grad_out, retain_graph=True)
-
-    init_ptr = grouped_gemm_init(torch.tensor(B, dtype=torch.int64, device=device))  # init before forward
     # Forward pass for implementation
-    fn_forward = lambda: grouped_gemm(x, w, seg_lens, init_ptr)
-    out, _ = fn_forward()
+    fn_forward = lambda: grouped_gemm(x, w, seg_lens)
+    out = fn_forward()
 
     out.backward(grad_out, retain_graph=True)
 
@@ -69,7 +103,7 @@ def bench_grouped_gemm(B, M, N, K, dtype, test_backward):
 
     if test_backward:
         # Re-run forward pass to get fresh output
-        o, _ = fn_forward()
+        o = fn_forward()
         do = torch.randn_like(o)
         fn = lambda: o.backward(do, retain_graph=True)
         total_flops *= 2  # Approximate factor for backward pass
@@ -96,9 +130,14 @@ def bench_grouped_gemm(B, M, N, K, dtype, test_backward):
 
 
 if __name__ == "__main__":
+    dpv2_test_cases = generate_deepseekv2_test_cases()
+    dpv3_test_cases = generate_deepseekv3_test_cases()
+    ps_test_cases = generate_poolside_test_cases()
+    test_configs = dpv3_test_cases + dpv3_test_cases + ps_test_cases
+    # print(test_configs)
     import pandas as pd
     from tabulate import tabulate
-
+    
     # DataFrame to store results
     results = pd.DataFrame(
         columns=[
@@ -123,7 +162,7 @@ if __name__ == "__main__":
         print(f"\n{'='*50}")
         print(f"Testing config: {config}")
         print(f"{'='*50}")
-        for test_backward in [False, True]:
+        for test_backward in [False,True]:
             test_id += 1
             try:
                 # Run benchmark
