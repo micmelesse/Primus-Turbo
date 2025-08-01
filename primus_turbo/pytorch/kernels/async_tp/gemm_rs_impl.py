@@ -177,36 +177,36 @@ def _pipeline_matmul_scatter_out_impl(
             )
             gemm_events[chunk_idx].record(gemm_stream)
     
-            rank_orders = [(i + chunk_idx) % num_ranks for i in range(num_ranks)]
-            for idx, remote_rank in enumerate(rank_orders):
-                comm_stream = comm_stream_pool[idx % len(comm_stream_pool)]
-                comm_stream.wait_event(gemm_events[chunk_idx])
+        rank_orders = [(i + chunk_idx) % num_ranks for i in range(num_ranks)]
+        for idx, remote_rank in enumerate(rank_orders):
+            comm_stream = comm_stream_pool[idx % len(comm_stream_pool)]
+            comm_stream.wait_event(gemm_events[chunk_idx])
 
-                data_elem_size = local_tensor_buffers[chunk_idx].element_size()
+            data_elem_size = local_tensor_buffers[chunk_idx].element_size()
 
-                M_dst_start_pos = (
-                    rank * m_per_rank + chunk_idx * m_per_chunk
-                )
-                M_src_start_pos = remote_rank * m_per_chunk
+            M_dst_start_pos = (
+                rank * m_per_rank + chunk_idx * m_per_chunk
+            )
+            M_src_start_pos = remote_rank * m_per_chunk
 
-                src_ptr = (
-                    local_tensor_buffers[chunk_idx].data_ptr()
-                    + M_src_start_pos * N * data_elem_size
-                )
-                dst_ptr = (
-                    scatter_bufs[remote_rank].data_ptr()
-                    + M_dst_start_pos * N * data_elem_size
-                )
+            src_ptr = (
+                local_tensor_buffers[chunk_idx].data_ptr()
+                + M_src_start_pos * N * data_elem_size
+            )
+            dst_ptr = (
+                scatter_bufs[remote_rank].data_ptr()
+                + M_dst_start_pos * N * data_elem_size
+            )
 
-                nbytes = m_per_chunk * N * data_elem_size
-                cp_res = hip.hipMemcpyAsync(
-                    dst_ptr,
-                    src_ptr,
-                    nbytes,
-                    hip_memcpy_kind,
-                    comm_stream.cuda_stream,
-                )
-                HIP_CHECK(cp_res)
+            nbytes = m_per_chunk * N * data_elem_size
+            cp_res = hip.hipMemcpyAsync(
+                dst_ptr,
+                src_ptr,
+                nbytes,
+                hip_memcpy_kind,
+                comm_stream.cuda_stream,
+            )
+            HIP_CHECK(cp_res)
 
     for stream in stream_pool:
         current_stream.wait_stream(stream)
