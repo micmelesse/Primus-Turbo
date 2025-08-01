@@ -1,9 +1,13 @@
 #include "ck_tile/host/hip_check_error.hpp"
-#include "grouped_gemm.hpp"
+
+#include "ck_grouped_gemm_kernel.h"
 #include "primus_turbo/grouped_gemm.h"
-#include <hip/hip_runtime.h>
 
 namespace primus_turbo {
+
+std::int64_t get_ck_grouped_gemm_args_sizes(const int group_num) {
+    return group_num * sizeof(ck_tile::GemmTransKernelArg);
+}
 
 template <typename ADataType, typename BDataType, typename CDataType>
 __global__ void

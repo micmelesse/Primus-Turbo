@@ -47,9 +47,9 @@ namespace primus_turbo {
 
 using grouped_gemm_kargs = ck_tile::GemmHostArgs</*NumDTensor = 0*/>;
 
-inline std::int64_t get_workspace_size(const int batch) {
-    return batch * sizeof(ck_tile::GemmTransKernelArg);
-}
+// inline std::int64_t get_workspace_size(const int batch) {
+//     return batch * sizeof(ck_tile::GemmTransKernelArg);
+// }
 
 template <typename ADataType, typename BDataType, typename CDataType, typename AccDataType,
           typename ALayout, typename BLayout, typename CLayout>

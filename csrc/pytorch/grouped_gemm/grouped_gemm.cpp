@@ -17,7 +17,7 @@ at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
     PRIMUS_TURBO_CHECK(a.scalar_type() == b.scalar_type(), "a and b dtype mismatch");
 
     // Alloc args workspace
-    const int64_t args_sizes = get_workspace_size(group_lens.numel());
+    const int64_t args_sizes = get_ck_grouped_gemm_args_sizes(group_lens.numel());
     at::Tensor    args_tensor =
         at::empty({args_sizes}, at::TensorOptions().dtype(at::kByte).device(group_lens.device()));
 
@@ -68,7 +68,7 @@ at::Tensor grouped_gemm_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &gro
     PRIMUS_TURBO_CHECK(a.scalar_type() == b.scalar_type(), "a and b dtype mismatch");
 
     // Alloc args workspace
-    const int64_t args_sizes = get_workspace_size(group_lens.numel());
+    const int64_t args_sizes = get_ck_grouped_gemm_args_sizes(group_lens.numel());
     at::Tensor    args_tensor =
         at::empty({args_sizes}, at::TensorOptions().dtype(at::kByte).device(group_lens.device()));
 

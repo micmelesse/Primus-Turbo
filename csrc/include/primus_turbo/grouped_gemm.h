@@ -1,9 +1,12 @@
 #pragma once
-#include "../kernels/grouped_gemm/grouped_gemm.hpp"
+
 #include "ck_tile/core.hpp"
 #include <cstdint>
 #include <hip/hip_runtime.h>
+
 namespace primus_turbo {
+
+std::int64_t get_ck_grouped_gemm_args_sizes(const int group_num);
 
 template <typename ADataType, typename BDataType, typename CDataType, typename AccDataType = float>
 void ck_grouped_gemm(void *args_ptr, const ADataType *a_ptr, const BDataType *b_ptr,
