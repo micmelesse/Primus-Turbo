@@ -91,5 +91,5 @@ jobs:
             rm -rf "${{ env.UT_LOG_PATH }}"
           fi
           pip3 install -r requirements.txt &&
-          python3 setup.py develop &&
+          pip3 install -e . &&
           pytest -v tests/ --log-cli-level=INFO

@@ -2,7 +2,6 @@ import os
 import platform
 import re
 import shutil
-import subprocess
 from pathlib import Path
 
 from setuptools import find_packages, setup
@@ -213,17 +212,11 @@ def build_jax_extension():
     )
 
 
-def compile_aiter():
-    aiter_dir = os.path.join("3rdparty", "aiter")
-    subprocess.run(["python3", "setup.py", "develop"], cwd=aiter_dir, check=True)
-
-
 if __name__ == "__main__":
     # set cxx
     setup_cxx_env()
-    # Compile aiter before setting up the main package
-    compile_aiter()
 
+    # Extensions
     kernels_ext = build_kernels_extension()
     # TODO: Control build one or all.
     torch_ext = build_torch_extension()
@@ -241,4 +234,9 @@ if __name__ == "__main__":
                 "primus_turbo = primus_turbo.jax",
             ],
         },
+        install_requires=[
+            "aiter @ git+https://github.com/ROCm/aiter.git@4822e6755ae66ba727f0d1d33d348673972cbe9c",
+            "hip-python",
+            "jax[rocm]",
+        ],
     )
