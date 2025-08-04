@@ -43,6 +43,7 @@ void ck_grouped_gemm(void *args_ptr, const ADataType *a_ptr, const BDataType *b_
     // TODO: k_batch control splitk
     const ck_tile::index_t k_batch = 1;
     const bool             splitk  = k_batch > 1;
+    // TODO: check splitk must be false!
 
     const ck_tile::index_t strideA = transA ? m : k;
     const ck_tile::index_t strideB = transB ? k : n;
@@ -57,24 +58,23 @@ void ck_grouped_gemm(void *args_ptr, const ADataType *a_ptr, const BDataType *b_
             group_lens_ptr, group_offs_ptr, group_num, n, k, strideA, strideB, strideC, k_batch);
     }
 
-    using RowMajor = ck_tile::tensor_layout::gemm::RowMajor;
-    using ColMajor = ck_tile::tensor_layout::gemm::ColumnMajor;
-    using CLayout  = RowMajor;
-
+    std::unique_ptr<CKGroupedGemmRunnerInterFace> runner;
+    using CLayout         = RowMajor;
     const auto stream_cfg = ck_tile::stream_config{stream};
     if (!transA && !transB) { // NN
         using ALayout = RowMajor;
         using BLayout = RowMajor;
-        grouped_gemm_tileloop<ADataType, BDataType, CDataType, AccDataType, ALayout, BLayout,
-                              CLayout>(stream_cfg, group_num, args_ptr, splitk);
+        runner = get_ck_grouped_gemm_instance<ADataType, BDataType, CDataType, AccDataType, ALayout,
+                                              BLayout, CLayout>(group_num, m, n, k);
     } else if (!transA && transB) { // NT
         using ALayout = RowMajor;
         using BLayout = ColMajor;
-        grouped_gemm_tileloop<ADataType, BDataType, CDataType, AccDataType, ALayout, BLayout,
-                              CLayout>(stream_cfg, group_num, args_ptr, splitk);
+        runner = get_ck_grouped_gemm_instance<ADataType, BDataType, CDataType, AccDataType, ALayout,
+                                              BLayout, CLayout>(group_num, m, n, k);
     } else {
         // TODO: more layout
     }
+    runner->run(stream_cfg, group_num, args_ptr);
 }
 
 template <typename ADataType, typename BDataType, typename CDataType>
@@ -128,19 +128,18 @@ void ck_grouped_gemm_variable_k(void *args_ptr, const ADataType *a_ptr, const BD
                 strideC, k_batch);
     }
 
-    using RowMajor = ck_tile::tensor_layout::gemm::RowMajor;
-    using ColMajor = ck_tile::tensor_layout::gemm::ColumnMajor;
-    using CLayout  = RowMajor;
-
-    const auto stream_cfg = ck_tile::stream_config{stream};
+    using CLayout = RowMajor;
+    std::unique_ptr<CKGroupedGemmRunnerInterFace> runner;
+    const auto                                    stream_cfg = ck_tile::stream_config{stream};
     if (transA && !transB) { // TN
         using ALayout = ColMajor;
         using BLayout = RowMajor;
-        grouped_gemm_tileloop<ADataType, BDataType, CDataType, AccDataType, ALayout, BLayout,
-                              CLayout>(stream_cfg, group_num, args_ptr, splitk);
+        runner = get_ck_grouped_gemm_instance<ADataType, BDataType, CDataType, AccDataType, ALayout,
+                                              BLayout, CLayout>(group_num, m, n, k);
     } else {
         // TOOD:
     }
+    runner->run(stream_cfg, group_num, args_ptr);
 
     // TODO: process zero case
 }
