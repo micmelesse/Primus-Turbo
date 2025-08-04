@@ -5,7 +5,7 @@ from typing import List, Optional, Tuple
 import torch
 import torch.distributed.distributed_c10d as c10d
 
-from primus_turbo.pytorch.kernels.async_tp import ag_gemm_impl, gemm_rs_impl
+from primus_turbo.pytorch.kernels.async_tp import ag_gemm_impl, gemm_rs_impl_weight
 
 __all__ = ["fused_all_gather_matmul", "fused_matmul_reduce_scatter", "fused_all_gather_scaled_matmul"]
 
@@ -260,7 +260,7 @@ def fused_matmul_reduce_scatter(
 
     with torch.profiler.record_function(f"{comm_method}_fused_matmul_scatter_out"):
         if comm_method == "tile":
-            rs_output = gemm_rs_impl._tiled_fused_matmul_scatter_out_impl(
+            rs_output = gemm_rs_impl_weight._tiled_fused_matmul_scatter_out_impl(
                 input=x,
                 weight=B,
                 group_name=group_name,
@@ -271,7 +271,7 @@ def fused_matmul_reduce_scatter(
                 stream=torch.cuda.current_stream(),
             )
         else:
-            rs_output = gemm_rs_impl._pipeline_matmul_scatter_out_impl(
+            rs_output = gemm_rs_impl_weight._pipeline_matmul_scatter_out_impl(
                 torch.ops.aten.mm.out,
                 input=x,
                 weight=B,
