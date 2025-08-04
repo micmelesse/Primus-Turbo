@@ -15,11 +15,13 @@ git submodule update --init --recursive
 ### Develop
 ```
 pip3 install -r requirements.txt
-python3 setup.py develop
+pip3 install -e .
 pytest -s ./tests/
 ```
 
 ### Deploy
 ```
-python3 setup.py bdist_wheel
+pip3 install -r requirements.txt
+python3 -m build --wheel --no-isolation
+pip3 install --extra-index-url https://test.pypi.org/simple ./primus_turbo-XXX.whl
 ```
