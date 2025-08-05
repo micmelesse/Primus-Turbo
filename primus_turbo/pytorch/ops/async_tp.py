@@ -168,6 +168,7 @@ def fused_matmul_reduce_scatter(
     gemm_streams: List[torch.cuda.Stream],
     comm_streams: List[torch.cuda.Stream],
     copy_streams: List[torch.cuda.Stream],
+    reduce_streams: List[torch.cuda.Stream],
     *,
     comm_method: str = "pipeline",
     num_splits: int = 2,
@@ -256,7 +257,7 @@ def fused_matmul_reduce_scatter(
 
         if output.numel() != rs_out.numel() * group.size():
             raise ValueError(f"output size must equal group size * rs_out size.")
-        output = output.view(-1, B.shape[0])
+        output = output.view(-1, N)
 
     with torch.profiler.record_function(f"{comm_method}_fused_matmul_scatter_out"):
         if comm_method == "tile":
@@ -282,6 +283,7 @@ def fused_matmul_reduce_scatter(
                 comm_stream_pool=comm_streams,
                 copy_stream_pool=copy_streams,
                 gemm_stream_pool=gemm_streams,
+                reduce_stream_pool=reduce_streams,
                 output=output,
                 rs_output=rs_out,
                 out_dtype=out_dtype,

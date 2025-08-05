@@ -118,16 +118,18 @@ class FusedMatmulReduceScatterTestBase(MultiProcessTestCase):
         if comm_method == "pipeline":
             self.gemm_streams = [torch.cuda.current_stream()]
             self.comm_streams = get_backend_stream(size=self.world_size, priority=0, prefix="comm")
+            self.reduce_streams = [torch.cuda.current_stream()]
         else:
             self.gemm_streams = []
             self.comm_streams = []
+            self.reduce_streams = []
         self.copy_streams = []
 
     @skip_if_lt_x_gpu(2)
     @parametrize("scatter_dim", [0, 1])
     @parametrize("reduce_op", ["sum", "avg"])
     @parametrize("dtype", [torch.bfloat16, torch.float16])
-    @parametrize("comm_method", ["pipeline"])
+    @parametrize("comm_method", ["tile", "pipeline"])
     def test_fused_matmul_reduce_scatter(self, comm_method: str, scatter_dim: int, reduce_op: str, dtype: torch.dtype) -> None:
         self._init_process(comm_method)
 
@@ -163,6 +165,7 @@ class FusedMatmulReduceScatterTestBase(MultiProcessTestCase):
             gemm_streams=self.gemm_streams,
             comm_streams=self.comm_streams,
             copy_streams=self.copy_streams,
+            reduce_streams=self.reduce_streams,
             comm_method=comm_method
         )
 
@@ -185,7 +188,7 @@ class FusedMatmulReduceScatterTestBase(MultiProcessTestCase):
     @parametrize("M,K,N", [(8192, 8192, 8192), (8192, 28672, 8192)])
     @parametrize("batch_size", [1, 4])
     @parametrize("dtype", [torch.bfloat16])
-    @parametrize("comm_method", ["pipeline"])
+    @parametrize("comm_method", ["tile", "pipeline"])
     def test_llama3_70b_fused_matmul_reduce_scatter(self, comm_method, dtype, batch_size, M, K, N) -> None:
         self._init_process(comm_method)
         group = dist.group.WORLD
@@ -217,6 +220,7 @@ class FusedMatmulReduceScatterTestBase(MultiProcessTestCase):
             gemm_streams=self.gemm_streams,
             comm_streams=self.comm_streams,
             copy_streams=self.copy_streams,
+            reduce_streams=self.reduce_streams,
             comm_method=comm_method
         )
 
