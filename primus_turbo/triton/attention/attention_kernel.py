@@ -107,12 +107,18 @@ def is_hip():
 
 def is_cdna():
     return is_hip() and triton.runtime.driver.active.get_current_target().arch in (
+        "gfx950",
         "gfx940",
         "gfx941",
         "gfx942",
         "gfx90a",
         "gfx908",
     )
+
+
+def is_cdna4():
+    target = triton.runtime.driver.active.get_current_target()
+    return target is not None and target.backend == 'hip' and target.arch == 'gfx950'
 
 
 def is_rdna():
@@ -127,7 +133,7 @@ def is_rdna():
 
 
 def get_tl_f8_bwd_dtype():
-    return tl.float8e5b16 if is_hip() else tl.float8e5
+    return tl.float8e5b16 if is_hip() and not is_cdna4() else tl.float8e5
 
 
 @triton.jit

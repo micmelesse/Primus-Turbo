@@ -696,7 +696,7 @@ def attention_triton_backward_impl(
         dv_og.copy_(dv)
         dv = dv_og
 
-    return dq.to(fwd_torch_dtype), dk.to(fwd_torch_dtype), dv.to(fwd_torch_dtype)
+    return dq, dk, dv
 
 
 @attention_triton_backward_impl.register_fake
@@ -726,8 +726,8 @@ def _attention_triton_backward_impl_fake(
     use_fp8: bool,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     dq_out, dk_out, dv_out = (
-        torch.empty_like(q, dtype=torch.bfloat16),
-        torch.empty_like(k, dtype=torch.bfloat16),
-        torch.empty_like(v, dtype=torch.bfloat16),
+        torch.empty_like(q, dtype=bwd_torch_dtype),
+        torch.empty_like(k, dtype=bwd_torch_dtype),
+        torch.empty_like(v, dtype=bwd_torch_dtype),
     )
     return dq_out, dk_out, dv_out

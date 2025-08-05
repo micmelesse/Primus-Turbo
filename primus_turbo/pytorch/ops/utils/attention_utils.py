@@ -51,7 +51,7 @@ def quant_v_get_p_scale(v, use_fp8: bool):
     if use_fp8:
         range_v = torch.max(torch.abs(v))
 
-        float8_fw = torch.float8_e4m3fnuz
+        float8_fw = get_f8_fwd_dtype()
         dtype_max = torch.finfo(float8_fw).max
 
         v_scale = dtype_max / range_v
