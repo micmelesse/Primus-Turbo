@@ -118,7 +118,7 @@ def is_cdna():
 
 def is_cdna4():
     target = triton.runtime.driver.active.get_current_target()
-    return target is not None and target.backend == 'hip' and target.arch == 'gfx950'
+    return target is not None and target.backend == "hip" and target.arch == "gfx950"
 
 
 def is_rdna():
