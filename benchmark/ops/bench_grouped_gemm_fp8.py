@@ -1,90 +1,45 @@
 import torch
 import torch.utils.benchmark as benchmark
 
-from primus_turbo.pytorch.ops import grouped_gemm
-from tests.pytorch.ref.gemm_ref import generate_uniform_seq_len, grouped_gemm_ref
+import primus_turbo.pytorch as turbo
+from primus_turbo.pytorch.ops import grouped_gemm_fp8_blockwise
+from tests.pytorch.ref.gemm_ref import grouped_gemm_ref
 from tests.test_utils import compute_snr
 
-
-def generate_deepseekv3_test_cases():
-    test_cases = []
-    EP = [8, 16, 32]
-    n_routed_experts = 256
-    moe_intermediate_size = 2048
-    hidden_size = 7168
-    for ep in EP:
-        B = n_routed_experts // ep
-        for M in [512, 2048, 4096]:
-            for N, K in [(2 * moe_intermediate_size, hidden_size), (hidden_size, moe_intermediate_size)]:
-                for dtype in [torch.bfloat16]:
-                    test_cases.append(
-                        {
-                            "B": B,
-                            "M": M,
-                            "N": N,
-                            "K": K,
-                            "dtype": dtype,
-                        }
-                    )
-    return test_cases
+test_configs = [
+    {
+        "B": 4,
+        "M": 2048,
+        "N": 4096,
+        "K": 7168,
+        "ori_dtype": torch.bfloat16,
+        "dtype": turbo.float8_e4m3,
+        "block_size": 128,
+    },
+    {
+        "B": 8,
+        "M": 4096,
+        "N": 4096,
+        "K": 2048,
+        "ori_dtype": torch.float16,
+        "dtype": turbo.float8_e5m2,
+        "block_size": 256,
+    },
+]
 
 
-def generate_deepseekv2_test_cases():
-    test_cases = []
-    EP = [8, 16, 32]
-    n_routed_experts = 160
-    moe_intermediate_size = 1536
-    hidden_size = 5120
-    for ep in EP:
-        B = n_routed_experts // ep
-
-        for M in [512, 2048, 4096]:
-            for N, K in [(2 * moe_intermediate_size, hidden_size), (hidden_size, moe_intermediate_size)]:
-                for dtype in [torch.bfloat16]:
-                    test_cases.append(
-                        {
-                            "B": B,
-                            "M": M,
-                            "N": N,
-                            "K": K,
-                            "dtype": dtype,
-                        }
-                    )
-    return test_cases
-
-
-def generate_poolside_test_cases():
-    test_cases = []
-    EP = [8, 16, 32]
-    n_routed_experts = 128
-    moe_intermediate_size = 2048
-    hidden_size = 8192
-    for ep in EP:
-        B = n_routed_experts // ep
-
-        for M in [512, 2048, 4096]:
-            for N, K in [(2 * moe_intermediate_size, hidden_size), (hidden_size, moe_intermediate_size)]:
-                for dtype in [torch.bfloat16]:
-                    test_cases.append(
-                        {
-                            "B": B,
-                            "M": M,
-                            "N": N,
-                            "K": K,
-                            "dtype": dtype,
-                        }
-                    )
-    return test_cases
-
-
-def bench_grouped_gemm(B, M, N, K, dtype, test_backward):
+def bench_grouped_gemm(B, M, N, K, ori_dtype, dtype, block_size, test_backward):
     device = "cuda"
 
     # Prepare inputs
-    x = torch.randn((B * M, K), dtype=dtype, device=device, requires_grad=True)
-    w = torch.randn((B, N, K), dtype=dtype, device=device, requires_grad=True)
-    seg_lens = generate_uniform_seq_len(B, B * M).to(device)  # int64
-    print("seg_lens: ", seg_lens)
+    x = torch.randn((B * M, K), dtype=ori_dtype, device=device, requires_grad=True)
+    w = torch.randn((B, N, K), dtype=ori_dtype, device=device, requires_grad=True)
+    seg_lens = torch.randint(1, M + 1, (B,), dtype=torch.long, device=device)
+    seg_lens = seg_lens / seg_lens.sum() * B * M
+    seg_lens = seg_lens.to(torch.long)
+    error = B * M - seg_lens.sum()
+    seg_lens[-1] += error
+
     x_ref = x.clone().detach().requires_grad_()
     w_ref = w.clone().detach().requires_grad_()
 
@@ -94,8 +49,9 @@ def bench_grouped_gemm(B, M, N, K, dtype, test_backward):
 
     grad_out = torch.randn_like(out_ref)
     out_ref.backward(grad_out, retain_graph=True)
+
     # Forward pass for implementation
-    fn_forward = lambda: grouped_gemm(x, w, seg_lens)
+    fn_forward = lambda: grouped_gemm_fp8_blockwise(x, w, seg_lens, block_size, dtype)
     out = fn_forward()
 
     out.backward(grad_out, retain_graph=True)
@@ -122,7 +78,7 @@ def bench_grouped_gemm(B, M, N, K, dtype, test_backward):
         fn = fn_forward
 
     # Warmup
-    warmup = 20
+    warmup = 5
     for _ in range(warmup):
         _ = fn_forward()
     torch.cuda.synchronize()
@@ -141,11 +97,6 @@ def bench_grouped_gemm(B, M, N, K, dtype, test_backward):
 
 
 if __name__ == "__main__":
-    dpv2_test_cases = generate_deepseekv2_test_cases()
-    dpv3_test_cases = generate_deepseekv3_test_cases()
-    ps_test_cases = generate_poolside_test_cases()
-    test_configs = dpv3_test_cases + dpv3_test_cases + ps_test_cases
-    # print(test_configs)
     import pandas as pd
     from tabulate import tabulate
 
@@ -157,7 +108,9 @@ if __name__ == "__main__":
             "M",
             "N",
             "K",
+            "ori_dtype",
             "dtype",
+            "block_size",
             "Test Backward",
             "Time (ms)",
             "TFLOPS",
@@ -169,7 +122,9 @@ if __name__ == "__main__":
         M = config["M"]
         N = config["N"]
         K = config["K"]
+        ori_dtype = config["ori_dtype"]
         dtype = config["dtype"]
+        block_size = config["block_size"]
         print(f"\n{'='*50}")
         print(f"Testing config: {config}")
         print(f"{'='*50}")
@@ -182,7 +137,9 @@ if __name__ == "__main__":
                     M=M,
                     N=N,
                     K=K,
+                    ori_dtype=ori_dtype,
                     dtype=dtype,
+                    block_size=block_size,
                     test_backward=test_backward,
                 )
 
@@ -193,7 +150,9 @@ if __name__ == "__main__":
                     "M": M,
                     "N": N,
                     "K": K,
+                    "ori_dtype": ori_dtype,
                     "dtype": dtype,
+                    "block_size": block_size,
                     "Test Backward": test_backward,
                     "Time (ms)": f"{time_ms:.2f}",
                     "TFLOPS": f"{tflops:.2f}",
@@ -208,7 +167,9 @@ if __name__ == "__main__":
                     "M": M,
                     "N": N,
                     "K": K,
+                    "ori_dtype": ori_dtype,
                     "dtype": dtype,
+                    "block_size": block_size,
                     "Test Backward": test_backward,
                     "Time (ms)": "Failed",
                     "TFLOPS": "N/A",
@@ -220,5 +181,5 @@ if __name__ == "__main__":
     print(tabulate(results, headers="keys", tablefmt="grid", showindex=False))
 
     # Save to CSV
-    results.to_csv("grouped_gemm_benchmark_results.csv", index=False)
-    print("Results saved to grouped_gemm_benchmark_results.csv")
+    results.to_csv("grouped_gemm_fp8_benchmark_results.csv", index=False)
+    print("Results saved to grouped_gemm_fp8_benchmark_results.csv")
