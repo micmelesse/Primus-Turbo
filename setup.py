@@ -114,7 +114,7 @@ def get_common_flags():
         "-amdgpu-function-calls=false",
     ]
 
-    gpu_arch = os.getenv("GPU_ARCH", "gfx950")
+    gpu_arch = os.getenv("GPU_ARCH", "gfx942")
     nvcc_flags += [
         f"--offload-arch={gpu_arch}",
     ]
