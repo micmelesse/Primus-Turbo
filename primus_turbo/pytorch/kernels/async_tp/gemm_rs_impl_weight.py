@@ -141,13 +141,17 @@ def get_local_mm_out_bufs(M, N, num_splits, dtype, device):
     return _local_mm_out_bufs_cache[key]
 
 @lru_cache
-def get_gemm_event():
-    return torch.cuda.Event()
+def get_gemm_events(num_splits):
+    return [torch.cuda.Event() for _ in range(num_splits)]
 
 
 @lru_cache
-def get_comm_event():
-    return torch.cuda.Event()
+def get_comm_events(num_splits):
+    return [torch.cuda.Event() for _ in range(num_splits)]
+
+@lru_cache
+def get_reduce_events(num_splits):
+    return [torch.cuda.Event() for _ in range(num_splits)]
 
 
 def _pipeline_matmul_scatter_out_impl(
@@ -159,9 +163,9 @@ def _pipeline_matmul_scatter_out_impl(
     num_splits: int,
     enable_sdma: bool,
     comm_stream_pool: List[torch.cuda.Stream],
-    copy_stream_pool: List[torch.cuda.Stream],
     gemm_stream_pool: List[torch.cuda.Stream],
     reduce_stream_pool: List[torch.cuda.Stream],
+    copy_stream_pool: List[torch.cuda.Stream],
     output: torch.Tensor,
     rs_output: torch.Tensor,
     out_dtype: torch.dtype
@@ -190,14 +194,16 @@ def _pipeline_matmul_scatter_out_impl(
 
     m_per_rank = M // num_ranks
     n_per_chunk = N // num_splits
+    data_elem_size = torch.tensor([], dtype=out_dtype).element_size()
     weight_chunks = weight.chunk(num_splits, dim=-1)
-    chunked_rs_outputs = rs_output.chunk(num_splits, dim=-1) if rs_output is not None else get_local_mm_out_bufs(m_per_rank, N, num_splits, out_dtype, input.device)
-    local_tensor_buffers = output.chunk(num_splits, dim=-1) if output is not None else get_local_mm_out_bufs(M, N, num_splits, out_dtype, input.device) 
+    chunked_rs_outputs = get_local_mm_out_bufs(m_per_rank, N, num_splits, out_dtype, input.device)
+    local_tensor_buffers = get_local_mm_out_bufs(M, N, num_splits, out_dtype, input.device) 
 
-    gemm_event = get_gemm_event()
-    comm_event = get_comm_event()
+    gemm_events = get_gemm_events(num_splits)
+    comm_events = get_comm_events(num_splits)
+    reduce_events = get_reduce_events(num_splits)
     current_stream = torch.cuda.current_stream()
-    stream_pool = comm_stream_pool + copy_stream_pool + gemm_stream_pool + reduce_stream_pool
+    stream_pool = comm_stream_pool + gemm_stream_pool + reduce_stream_pool + copy_stream_pool
 
     barrier_tensors[rank].fill_(0)
     symm_mem.barrier()
@@ -208,51 +214,69 @@ def _pipeline_matmul_scatter_out_impl(
     for chunk_idx in range(num_splits):
         gemm_stream = gemm_stream_pool[chunk_idx % len(gemm_stream_pool)]
         reduce_stream = reduce_stream_pool[chunk_idx % len(reduce_stream_pool)]
+        copy_stream = copy_stream_pool[chunk_idx % len(copy_stream_pool)]
+        gemm_event = gemm_events[chunk_idx]
+        comm_event = comm_events[chunk_idx]
+        reduce_event = reduce_events[chunk_idx]
         with gemm_stream:
             mm_out_op(
                 input, weight_chunks[chunk_idx], out=local_tensor_buffers[chunk_idx]
             )
             gemm_event.record(gemm_stream)
 
-            rank_orders = [(i + chunk_idx) % num_ranks for i in range(num_ranks)]
-            for idx, remote_rank in enumerate(rank_orders):
-                comm_stream = comm_stream_pool[idx % len(comm_stream_pool)]
-                comm_stream.wait_event(gemm_event)
-            
-                data_elem_size = local_tensor_buffers[chunk_idx].element_size()
+        if output is not None:
+            copy_stream.wait_event(gemm_event)
+            src_ptr = local_tensor_buffers[chunk_idx].data_ptr()
+            dst_ptr = output.data_ptr() + chunk_idx * n_per_chunk * data_elem_size
+            copy_width = n_per_chunk * data_elem_size  # bytes to copy per row
+            dst_pitch = N * data_elem_size
+            HIP_CHECK(
+                hip.hipMemcpy2DAsync(
+                    dst_ptr, dst_pitch, # dst pointer + row stride
+                    src_ptr, copy_width, # src pointer + row stride
+                    copy_width, M,   # width, height 
+                    hip_memcpy_kind, copy_stream.cuda_stream,
+                )
+            )
 
-                M_dst_start_pos = M * chunk_idx + m_per_rank * rank
-                M_src_start_pos = remote_rank * m_per_rank
-                dst_ptr = (
-                    scatter_bufs[remote_rank].data_ptr()
-                    + M_dst_start_pos * n_per_chunk * data_elem_size
-                )
+        rank_orders = [(i + chunk_idx) % num_ranks for i in range(num_ranks)]
+        for idx, remote_rank in enumerate(rank_orders):
+            comm_stream = comm_stream_pool[idx % len(comm_stream_pool)]
+            comm_stream.wait_event(gemm_event)
 
-                src_ptr = (
-                    local_tensor_buffers[chunk_idx].data_ptr()
-                    + M_src_start_pos * n_per_chunk * data_elem_size
-                )
+            M_dst_start_pos = M * chunk_idx + m_per_rank * rank
+            M_src_start_pos = remote_rank * m_per_rank
+            dst_ptr = (
+                scatter_bufs[remote_rank].data_ptr()
+                + M_dst_start_pos * n_per_chunk * data_elem_size
+            )
 
-                nbytes = m_per_rank * n_per_chunk * data_elem_size
-                HIP_CHECK(
-                    hip.hipMemcpyAsync(
-                        dst_ptr,
-                        src_ptr,
-                        nbytes,
-                        hip_memcpy_kind,
-                        comm_stream.cuda_stream,
-                    )
+            src_ptr = (
+                local_tensor_buffers[chunk_idx].data_ptr()
+                + M_src_start_pos * n_per_chunk * data_elem_size
+            )
+
+            nbytes = m_per_rank * n_per_chunk * data_elem_size
+            HIP_CHECK(
+                hip.hipMemcpyAsync(
+                    dst_ptr,
+                    src_ptr,
+                    nbytes,
+                    hip_memcpy_kind,
+                    comm_stream.cuda_stream,
                 )
-                HIP_CHECK(
-                    hip.hipMemcpyAsync(
-                        barrier_ptrs[remote_rank] + chunk_idx * num_ranks * 4 + rank * 4,
-                        one.data_ptr(),
-                        one.nbytes,
-                        hip_memcpy_kind,
-                        comm_stream.cuda_stream,
-                    )
+            )
+            HIP_CHECK(
+                hip.hipMemcpyAsync(
+                    barrier_ptrs[remote_rank] + chunk_idx * num_ranks * 4 + rank * 4,
+                    one.data_ptr(),
+                    one.nbytes,
+                    hip_memcpy_kind,
+                    comm_stream.cuda_stream,
                 )
-                comm_event.record(comm_stream)
+            )
+            comm_event.record(comm_stream)
+        
         
         reduce_stream.wait_event(comm_event)
         with reduce_stream:
@@ -267,9 +291,26 @@ def _pipeline_matmul_scatter_out_impl(
                 chunked_rs_outputs[chunk_idx],
                 reduce_stream,
             )
+            reduce_event.record(reduce_stream)
+        
+        
+        if rs_output is not None:
+            copy_stream.wait_event(reduce_event)
+            with copy_stream:
+                src_ptr = chunked_rs_outputs[chunk_idx].data_ptr()
+                dst_ptr = rs_output.data_ptr() + chunk_idx * n_per_chunk * data_elem_size
+                copy_width = n_per_chunk * data_elem_size
+                dst_pitch = N * data_elem_size
+                HIP_CHECK(
+                    hip.hipMemcpy2DAsync(
+                        dst_ptr, dst_pitch, # dst pointer + row stride
+                        src_ptr, copy_width, # src pointer + row stride
+                        copy_width, m_per_rank,   # width, height 
+                        hip_memcpy_kind, copy_stream.cuda_stream,
+                    )
+                )
 
     for stream in stream_pool:
         current_stream.wait_stream(stream)
-    symm_mem.barrier()
 
-    return rs_output if rs_output else torch.cat(chunked_rs_outputs, dim=-1)
+    return  rs_output if rs_output is not None else torch.cat(chunked_rs_outputs, dim=-1)

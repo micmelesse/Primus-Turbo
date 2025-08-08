@@ -118,12 +118,13 @@ class FusedMatmulReduceScatterTestBase(MultiProcessTestCase):
         if comm_method == "pipeline":
             self.gemm_streams = [torch.cuda.current_stream()]
             self.comm_streams = get_backend_stream(size=self.world_size, priority=0, prefix="comm")
-            self.reduce_streams = [torch.cuda.current_stream()]
+            self.reduce_streams = get_backend_stream(size=1, priority=0, prefix="reduce")
+            self.copy_streams = get_backend_stream(size=1, priority=0, prefix="copy")
         else:
             self.gemm_streams = []
             self.comm_streams = []
             self.reduce_streams = []
-        self.copy_streams = []
+            self.copy_streams = []
 
     @skip_if_lt_x_gpu(2)
     @parametrize("scatter_dim", [0, 1])
@@ -164,8 +165,8 @@ class FusedMatmulReduceScatterTestBase(MultiProcessTestCase):
             group_name=group.group_name,
             gemm_streams=self.gemm_streams,
             comm_streams=self.comm_streams,
-            copy_streams=self.copy_streams,
             reduce_streams=self.reduce_streams,
+            copy_streams=self.copy_streams,
             comm_method=comm_method
         )
 
@@ -219,8 +220,8 @@ class FusedMatmulReduceScatterTestBase(MultiProcessTestCase):
             group_name=group.group_name,
             gemm_streams=self.gemm_streams,
             comm_streams=self.comm_streams,
-            copy_streams=self.copy_streams,
             reduce_streams=self.reduce_streams,
+            copy_streams=self.copy_streams,
             comm_method=comm_method
         )
 

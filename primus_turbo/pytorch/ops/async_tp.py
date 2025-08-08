@@ -167,8 +167,8 @@ def fused_matmul_reduce_scatter(
     group_name: str,
     gemm_streams: List[torch.cuda.Stream],
     comm_streams: List[torch.cuda.Stream],
-    copy_streams: List[torch.cuda.Stream],
     reduce_streams: List[torch.cuda.Stream],
+    copy_streams: List[torch.cuda.Stream],
     *,
     comm_method: str = "pipeline",
     num_splits: int = 2,
@@ -250,6 +250,8 @@ def fused_matmul_reduce_scatter(
             raise ValueError(
                 f"Invalid shape: rs_out ({rs_out.shape}) is not unexpected as ({leading_dims}, {N})!"
             )
+    else:
+        rs_out = torch.empty((M // group.size(), N), dtype=out_dtype, device=A.device)
 
     if output is not None:
         if output.dtype != A.dtype:
@@ -281,9 +283,9 @@ def fused_matmul_reduce_scatter(
                 num_splits=num_splits,
                 enable_sdma=enable_sdma,
                 comm_stream_pool=comm_streams,
-                copy_stream_pool=copy_streams,
                 gemm_stream_pool=gemm_streams,
                 reduce_stream_pool=reduce_streams,
+                copy_stream_pool=copy_streams,
                 output=output,
                 rs_output=rs_out,
                 out_dtype=out_dtype,
