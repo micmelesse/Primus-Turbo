@@ -72,3 +72,12 @@ template <typename... Ts> inline std::string concat_strings(const Ts &...args) {
     } while (false)
 
 #define PRIMUS_TURBO_STATIC_CHECK(cond, reason) static_assert(cond, reason)
+
+#define PRIMUS_TURBO_CHECK_ROCSHMEM(expr)                                                          \
+    do {                                                                                           \
+        const auto status_PRIMUS_TURBO_CHECK_ROCSHMEM = (expr);                                    \
+        if (status_PRIMUS_TURBO_CHECK_ROCSHMEM != rocshmem::ROCSHMEM_SUCCESS) {                    \
+            PRIMUS_TURBO_ERROR("rocSHMEM Error: ",                                                 \
+                               std::to_string((int) status_PRIMUS_TURBO_CHECK_ROCSHMEM));          \
+        }                                                                                          \
+    } while (false)

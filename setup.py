@@ -3,11 +3,13 @@ import platform
 import re
 import shutil
 from pathlib import Path
+from typing import List
 
 from setuptools import find_packages, setup
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 
 from primus_turbo.utils.hip_extension import HIPExtension
+from tools.build_3rdparty import Library, build_3rdparty
 
 PROJECT_ROOT = Path(os.path.dirname(__file__)).resolve()
 DEFAULT_HIPCC = "/opt/rocm/bin/hipcc"
@@ -112,6 +114,7 @@ def get_common_flags():
         "-amdgpu-early-inline-all=true",
         "-mllvm",
         "-amdgpu-function-calls=false",
+        "-fgpu-rdc",
     ]
 
     # Device Arch
@@ -134,7 +137,7 @@ def get_common_flags():
     }
 
 
-def build_kernels_extension():
+def build_kernels_extension(libraries: List[Library]):
     extra_flags = get_common_flags()
     extra_flags["extra_link_args"] += [
         "-shared",
@@ -143,20 +146,30 @@ def build_kernels_extension():
 
     kernels_source_files = Path(PROJECT_ROOT / "csrc" / "kernels")
     kernels_source = all_files_in_dir(kernels_source_files, name_extensions=["cpp", "cc", "cu"])
+
+    include_dirs = [
+        Path(PROJECT_ROOT / "csrc" / "include"),
+        Path(PROJECT_ROOT / "3rdparty" / "composable_kernel" / "include"),
+        Path(PROJECT_ROOT / "csrc"),
+    ]
+    library_dirs = []
+
+    for lib in libraries:
+        include_dirs.extend(lib.include_dirs)
+        library_dirs.extend(lib.library_dirs)
+        extra_flags["extra_link_args"].extend(lib.extra_link_args)
+
     return HIPExtension(
         name="libprimus_turbo_kernels",
-        include_dirs=[
-            Path(PROJECT_ROOT / "csrc" / "include"),
-            Path(PROJECT_ROOT / "3rdparty" / "composable_kernel" / "include"),
-            Path(PROJECT_ROOT / "csrc"),
-        ],
+        include_dirs=include_dirs,
         sources=kernels_source,
+        library_dirs=library_dirs,
         libraries=["hipblas"],
         **extra_flags,
     )
 
 
-def build_torch_extension():
+def build_torch_extension(libraries: List[Library]):
     # Link and Compile flags
     extra_flags = get_common_flags()
     extra_flags["extra_link_args"] = [
@@ -170,14 +183,24 @@ def build_torch_extension():
     pytorch_csrc_source_files = Path(PROJECT_ROOT / "csrc" / "pytorch")
     sources = all_files_in_dir(pytorch_csrc_source_files, name_extensions=["cpp", "cc", "cu"])
 
+    include_dirs = [
+        Path(PROJECT_ROOT / "csrc" / "include"),
+        Path(PROJECT_ROOT / "3rdparty" / "composable_kernel" / "include"),
+        Path(PROJECT_ROOT / "csrc"),
+    ]
+    library_dirs = []
+
+    for lib in libraries:
+        include_dirs.extend(lib.include_dirs)
+        library_dirs.extend(lib.library_dirs)
+        extra_flags["extra_link_args"].extend(lib.extra_link_args)
+
     return CUDAExtension(
         name="primus_turbo.pytorch._C",
         sources=sources,
-        include_dirs=[
-            Path(PROJECT_ROOT / "csrc" / "include"),
-            Path(PROJECT_ROOT / "3rdparty" / "composable_kernel" / "include"),
-            Path(PROJECT_ROOT / "csrc"),
-        ],
+        include_dirs=include_dirs,
+        library_dirs=library_dirs,
+        libraries=["hipblas"],
         **extra_flags,
     )
 
@@ -214,13 +237,17 @@ def build_jax_extension():
 
 
 if __name__ == "__main__":
+
+    # build 3rdparty
+    libraries = build_3rdparty()
+
     # set cxx
     setup_cxx_env()
 
     # Extensions
-    kernels_ext = build_kernels_extension()
+    kernels_ext = build_kernels_extension(libraries)
     # TODO: Control build one or all.
-    torch_ext = build_torch_extension()
+    torch_ext = build_torch_extension(libraries)
     jax_ext = build_jax_extension()
 
     setup(
