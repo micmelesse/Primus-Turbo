@@ -79,4 +79,15 @@ at::Tensor grouped_gemm_variable_k_meta(at::Tensor &a, at::Tensor &b, at::Tensor
                                         at::Tensor &group_offs, const bool transA,
                                         const bool transB);
 
+at::Tensor fp8_quantize_row_col(at::Tensor &input, at::Tensor &scale, int64_t dims,
+                                const bool is_row_major);
+
+at::Tensor fp8_dequantize_row_col(at::Tensor &input, at::Tensor &scale, int64_t dims,
+                                  torch::ScalarType scalar_type, const bool is_row_major);
+
+at::Tensor fp8_quantize_row_col_meta(at::Tensor &input, at::Tensor &scale, int64_t dims,
+                                     const bool is_row_major);
+
+at::Tensor fp8_dequantize_row_col_meta(at::Tensor &input, at::Tensor &scale, int64_t dims,
+                                       torch::ScalarType scalar_type, const bool is_row_major);
 } // namespace primus_turbo::pytorch
