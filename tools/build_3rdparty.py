@@ -146,6 +146,8 @@ def _build_rocshmem(build_dir, install_prefix) -> None:
             env = os.environ.copy()
             env["LD_LIBRARY_PATH"] = f"{MPI_LIBRARY_PATH}:{UCX_LIBRARY_PATH}:{libraries}"
             env["PATH"] = f"{MPI_HOME}/bin:{UCX_HOME}/bin:{path}"
+            cmake_prefix = os.getenv("CMAKE_PREFIX_PATH", "")
+            env["CMAKE_PREFIX_PATH"] = f"{MPI_LIBRARY_PATH}:{UCX_LIBRARY_PATH}:{cmake_prefix}"
             subprocess.check_call(
                 ["bash", f"{rocshmem_src_dirs}/scripts/build_configs/rc", rocshmem_dirs],
                 cwd=rocshmem_build_dir,
