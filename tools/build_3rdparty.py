@@ -147,7 +147,7 @@ def _build_rocshmem(build_dir, install_prefix) -> None:
             env["LD_LIBRARY_PATH"] = f"{MPI_LIBRARY_PATH}:{UCX_LIBRARY_PATH}:{libraries}"
             env["PATH"] = f"{MPI_HOME}/bin:{UCX_HOME}/bin:{path}"
             cmake_prefix = os.getenv("CMAKE_PREFIX_PATH", "")
-            env["CMAKE_PREFIX_PATH"] = f"{MPI_LIBRARY_PATH}:{UCX_LIBRARY_PATH}:{cmake_prefix}"
+            env["CMAKE_PREFIX_PATH"] = f"{MPI_LIBRARY_PATH}:{UCX_LIBRARY_PATH}:/opt/rocm/lib:{cmake_prefix}"
             subprocess.check_call(
                 ["bash", f"{rocshmem_src_dirs}/scripts/build_configs/rc", rocshmem_dirs],
                 cwd=rocshmem_build_dir,
@@ -305,7 +305,8 @@ def _check_ompi_ucx(ompi_home: Path, ucx_home: Path) -> bool:
 def _build_ompi_ucx(build_dir: Path, install_prefix: Path) -> Tuple[Path, Path]:
     global THIRD_PARTY_DIR
     rocshmem_src_dirs = THIRD_PARTY_DIR / "rocSHMEM"
-    install_folders = [install_prefix / "install" / "ompi", install_prefix / "install" / "ucx"]
+    ompi_ucx_build_dir = build_dir / "ompi_ucx"
+    install_folders = [install_prefix / "ompi", install_prefix / "ucx"]
 
     if not all([folder.exists() for folder in install_folders]):
         try:
@@ -313,22 +314,29 @@ def _build_ompi_ucx(build_dir: Path, install_prefix: Path) -> Tuple[Path, Path]:
             if not install_prefix.exists():
                 os.makedirs(install_prefix)
             env = os.environ.copy()
-            env["BUILD_DIR"] = install_prefix
+            env["BUILD_DIR"] = ompi_ucx_build_dir
             start = time.time()
             subprocess.check_call(
                 ["bash", f"{rocshmem_src_dirs}/scripts/install_dependencies.sh"],
                 cwd=PROJECT_ROOT,
                 env=env,
             )
+
+            shutil.copytree(
+                ompi_ucx_build_dir / "install" / "ompi", install_prefix / "ompi", dirs_exist_ok=True
+            )
+            shutil.copytree(
+                ompi_ucx_build_dir / "install" / "ucx", install_prefix / "ucx", dirs_exist_ok=True
+            )
             end = time.time()
             print(f"[Primus-Turbo Setup] Install ompi and ucx took {end - start:.2f} sec")
         except Exception as e:
             print(f"[Primus-Turbo Setup] Install ompi and ucx failed --- {e}")
             print(
-                f"Please run:\n\t BUILD_DIR={install_prefix} bash {rocshmem_src_dirs}/scripts/install_dependencies.sh "
+                f"Please run:\n\t BUILD_DIR={ompi_ucx_build_dir} bash {rocshmem_src_dirs}/scripts/install_dependencies.sh "
             )
             sys.exit(1)
     else:
         print(f"[Primus-Turbo Setup] Found installed ompi and ucx in {install_prefix}")
 
-    return install_prefix / "install" / "ompi", install_prefix / "install" / "ucx"
+    return install_prefix / "ompi", install_prefix / "ucx"
