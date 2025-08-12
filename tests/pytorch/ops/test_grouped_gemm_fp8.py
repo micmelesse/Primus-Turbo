@@ -77,3 +77,84 @@ def test_blockwise_fp8_grouped_gemm_func(B, M, NK, ori_dtype, dtype, block_size)
     wgrad_snr = compute_snr(w_grad_ref, w_grad)
     print(f"WGrad-SNR: {wgrad_snr:.2f} dB")
     assert wgrad_snr > 20, "wgrad_snr too low"
+
+
+if __name__ == "__main__":
+
+    from primus_turbo.pytorch.core.float8 import float8_e4m3
+    from tests.pytorch.ref.gemm_ref import grouped_gemm_ref
+
+    torch.manual_seed(1234)
+
+    from tests.test_utils import compute_snr
+
+    def calc_scale_and_scale_inv(x: torch.Tensor, fp8_max: float, row_wise: bool = True):
+        if row_wise:
+            if x.dim() == 2:
+                amax = x.abs().amax(dim=1, keepdim=True)
+            elif x.dim() == 3:
+                amax = x.abs().amax(dim=2, keepdim=True)
+            else:
+                raise ValueError(f"Unsupported tensor dimension: {x.dim()}")
+        else:
+            if x.dim() == 2:
+                amax = x.abs().amax(dim=0, keepdim=True)
+            elif x.dim() == 3:
+                amax = x.abs().amax(dim=(0, 1), keepdim=True)
+            else:
+                raise ValueError(f"Unsupported tensor dimension: {x.dim()}")
+
+        scale = torch.full_like(amax, fill_value=fp8_max, dtype=torch.float32, device=x.device) / amax
+        scale_inv = 1.0 / scale
+
+        return scale, scale_inv
+
+    def compute_group_offs(group_lens: torch.Tensor) -> torch.Tensor:
+        return torch.cat(
+            [torch.tensor([0], device=group_lens.device, dtype=group_lens.dtype), group_lens.cumsum(0)]
+        )
+
+    NT = True
+    NN = True
+    TN = True
+    ori_dtype = torch.bfloat16
+    device = "cuda"
+
+    if NT is True:
+        B = 4
+        M = 512
+        N = 1024
+        K = 2048
+        # row-wise
+        a = torch.randn((B * M, K), dtype=ori_dtype, device=device, requires_grad=False)
+        a_ref = a.clone()
+        a_scale, a_scale_inv = calc_scale_and_scale_inv(a, torch.finfo(float8_e4m3).max)
+        print(a_scale.shape, a_scale_inv.shape)
+        a_fp8 = torch.ops.primus_turbo_cpp_extension.fp8_quantize_row_col(a, a_scale, True)
+        a_fp8_ref = a * a_scale
+
+        b = torch.randn((B, N, K), dtype=ori_dtype, device=device, requires_grad=False)
+        b_ref = b.clone()
+        b_scale, b_scale_inv = calc_scale_and_scale_inv(b, torch.finfo(float8_e4m3).max)
+        print(b_scale.shape, b_scale_inv.shape)
+        b_fp8 = torch.ops.primus_turbo_cpp_extension.fp8_quantize_row_col(b, b_scale.flatten(), True)
+        b_fp8_ref = b * b_scale
+
+        seg_lens = torch.zeros([B], dtype=torch.int64, device=device)
+        seg_lens[0] = 256
+        seg_lens[1] = 768
+        seg_lens[2] = 768
+        seg_lens[3] = 256
+        out_ref = grouped_gemm_ref(a_ref, b_ref, seg_lens, True)
+        print(out_ref[: seg_lens[0]])
+        group_lens_offs = compute_group_offs(seg_lens)
+        out = torch.ops.primus_turbo_cpp_extension.grouped_gemm_fp8(
+            a_fp8, b_fp8, seg_lens, group_lens_offs, transA=False, transB=True
+        )
+        print(out.shape)
+        scale1 = a_scale_inv[: seg_lens[0]] * b_scale_inv[0].T
+        out_1 = out[: seg_lens[0]]
+
+        out_o = out_1 * scale1
+        print(out_o)
+        print(compute_snr(out_ref[: seg_lens[0]], out_o))

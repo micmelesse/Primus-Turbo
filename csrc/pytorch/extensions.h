@@ -36,6 +36,16 @@ at::Tensor fp8_dequantize(const at::Tensor input, const at::Tensor scale_inv,
 at::Tensor fp8_dequantize_meta(const at::Tensor input, const at::Tensor scale_inv,
                                const at::ScalarType dest_dtype);
 
+at::Tensor fp8_quantize_row_col(at::Tensor &input, at::Tensor &scale, const bool is_row_major);
+
+at::Tensor fp8_dequantize_row_col(at::Tensor &input, at::Tensor &scale,
+                                  torch::ScalarType scalar_type, const bool is_row_major);
+
+at::Tensor fp8_quantize_row_col_meta(at::Tensor &input, at::Tensor &scale, const bool is_row_major);
+
+at::Tensor fp8_dequantize_row_col_meta(at::Tensor &input, at::Tensor &scale,
+                                       torch::ScalarType scalar_type, const bool is_row_major);
+
 /* GEMM */
 
 at::Tensor hipblaslt_gemm(at::Tensor A, at::Tensor scaleA_inv, at::Tensor B, at::Tensor scaleB_inv,
@@ -78,16 +88,8 @@ at::Tensor grouped_gemm_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &gro
 at::Tensor grouped_gemm_variable_k_meta(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
                                         at::Tensor &group_offs, const bool transA,
                                         const bool transB);
-
-at::Tensor fp8_quantize_row_col(at::Tensor &input, at::Tensor &scale, int64_t dims,
-                                const bool is_row_major);
-
-at::Tensor fp8_dequantize_row_col(at::Tensor &input, at::Tensor &scale, int64_t dims,
-                                  torch::ScalarType scalar_type, const bool is_row_major);
-
-at::Tensor fp8_quantize_row_col_meta(at::Tensor &input, at::Tensor &scale, int64_t dims,
-                                     const bool is_row_major);
-
-at::Tensor fp8_dequantize_row_col_meta(at::Tensor &input, at::Tensor &scale, int64_t dims,
-                                       torch::ScalarType scalar_type, const bool is_row_major);
+at::Tensor grouped_gemm_fp8(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
+                            at::Tensor &group_offs, const bool transA, const bool transB);
+at::Tensor grouped_gemm_fp8_meta(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
+                                 at::Tensor &group_offs, const bool transA, const bool transB);
 } // namespace primus_turbo::pytorch

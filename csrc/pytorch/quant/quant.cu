@@ -90,8 +90,8 @@ at::Tensor fp8_dequantize(const at::Tensor input, const at::Tensor scale_inv,
     return output;
 }
 
-at::Tensor fp8_quantize_row_col(at::Tensor &input, at::Tensor &scale, int64_t dims,
-                                const bool is_row_major) {
+at::Tensor fp8_quantize_row_col(at::Tensor &input, at::Tensor &scale, const bool is_row_major) {
+    int64_t dims = input.ndimension();
     PRIMUS_TURBO_CHECK(dims == 2 || dims == 3, "only support 2D or 3D tensor");
     int64_t    b = 1, m = 0, k = 0;
     at::Tensor output;
@@ -103,17 +103,16 @@ at::Tensor fp8_quantize_row_col(at::Tensor &input, at::Tensor &scale, int64_t di
     }
 
     else if (dims == 3) {
-        b = input.size(0);
-        m = input.size(1);
-        k = input.size(2);
+        b      = input.size(0);
+        m      = input.size(1);
+        k      = input.size(2);
+        output = at::empty({b, m, k}, at::dtype(at::kFloat8_e4m3fnuz).device(at::kCUDA));
         if (is_row_major) {
             m = b * m;
         } else {
             k = b * k;
         }
-        output = at::empty({b, m, k}, at::dtype(at::kFloat8_e4m3fnuz).device(at::kCUDA));
     }
-
     auto stream = at::cuda::getCurrentCUDAStream();
 
     if (input.dtype() == at::kBFloat16) {
@@ -143,12 +142,12 @@ at::Tensor fp8_quantize_row_col(at::Tensor &input, at::Tensor &scale, int64_t di
     return output;
 }
 
-at::Tensor fp8_dequantize_row_col(at::Tensor &input, at::Tensor &scale, int64_t dims,
+at::Tensor fp8_dequantize_row_col(at::Tensor &input, at::Tensor &scale,
                                   torch::ScalarType scalar_type, const bool is_row_major) {
+    int64_t dims = input.ndimension();
     PRIMUS_TURBO_CHECK(dims == 2 || dims == 3, "only support 2D or 3D tensor");
     int64_t    b = 1, m = 0, k = 0;
     at::Tensor output;
-    int64_t    dimss = input.ndimension();
     if (dims == 2) {
         m = input.size(0);
         k = input.size(1);
@@ -173,7 +172,6 @@ at::Tensor fp8_dequantize_row_col(at::Tensor &input, at::Tensor &scale, int64_t 
     using InType    = ck_tile::fp8_t; // FP8
     using ScaleType = typename TorchToCKTileType<torch::kFloat>::type;
 
-    // 根据scalar_type选择合适的OutType
     switch (scalar_type) {
     case torch::kHalf: {
         using OutType = typename TorchToCKTileType<torch::kHalf>::type;

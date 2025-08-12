@@ -24,5 +24,11 @@ at::Tensor grouped_gemm_variable_k_meta(at::Tensor &a, at::Tensor &b, at::Tensor
     const int64_t n  = transB ? b.size(0) : b.size(1);
     return at::empty({bs, m, n}, a.options().device(at::kMeta));
 }
-
+at::Tensor grouped_gemm_fp8_meta(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
+                                 at::Tensor &group_offs, const bool transA, const bool transB) {
+    const int64_t m      = transA ? a.size(1) : a.size(0);
+    const int64_t n      = transB ? b.size(1) : b.size(2);
+    at::Tensor    output = at::empty({m, n}, at::dtype(at::kBFloat16).device(at::kCUDA));
+    return output;
+}
 } // namespace primus_turbo::pytorch

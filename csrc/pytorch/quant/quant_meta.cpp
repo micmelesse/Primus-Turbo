@@ -16,10 +16,11 @@ at::Tensor fp8_dequantize_meta(const at::Tensor input, const at::Tensor scale_in
     return torch::empty_like(input, torch::dtype(dest_dtype).device(at::kMeta));
 }
 
-at::Tensor fp8_quantize_row_col_meta(at::Tensor &input, at::Tensor &scale, int64_t dims,
+at::Tensor fp8_quantize_row_col_meta(at::Tensor &input, at::Tensor &scale,
                                      const bool is_row_major) {
     int64_t    b = 1, m = 0, k = 0;
     at::Tensor output;
+    int64_t    dims = input.ndimension();
     if (dims == 2) {
         m = input.size(0);
         k = input.size(1);
@@ -28,23 +29,19 @@ at::Tensor fp8_quantize_row_col_meta(at::Tensor &input, at::Tensor &scale, int64
     }
 
     else if (dims == 3) {
-        b = input.size(0);
-        m = input.size(1);
-        k = input.size(2);
-        if (is_row_major) {
-            m = b * m;
-        } else {
-            k = b * k;
-        }
+        b      = input.size(0);
+        m      = input.size(1);
+        k      = input.size(2);
         output = at::empty({b, m, k}, at::dtype(at::kFloat8_e4m3fnuz).device(at::kCUDA));
     }
     return output;
 }
 
-at::Tensor fp8_dequantize_row_col_meta(at::Tensor &input, at::Tensor &scale, int64_t dims,
+at::Tensor fp8_dequantize_row_col_meta(at::Tensor &input, at::Tensor &scale,
                                        torch::ScalarType scalar_type, const bool is_row_major) {
     int64_t    b = 1, m = 0, k = 0;
     at::Tensor output;
+    int64_t    dims = input.ndimension();
     if (dims == 2) {
         m = input.size(0);
         k = input.size(1);

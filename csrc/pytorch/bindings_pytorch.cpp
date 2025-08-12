@@ -24,17 +24,17 @@ TORCH_LIBRARY(primus_turbo_cpp_extension, m) {
           ") -> Tensor");
     m.def("fp8_quantize(Tensor input, Tensor scale, ScalarType dest_dtype) -> Tensor");
     m.def("fp8_dequantize(Tensor input, Tensor scale_inv, ScalarType dest_dtype) -> Tensor");
+    m.def("fp8_quantize_row_col(Tensor input, Tensor scale, bool is_row_major) -> Tensor");
+    m.def("fp8_dequantize_row_col(Tensor input, Tensor scale, "
+          "ScalarType scalar_type, bool is_row_major) -> Tensor");
     m.def("rmsnorm_fwd(Tensor input, Tensor gamma, float eps) -> Tensor");
     m.def("rmsnorm_bwd(Tensor input, Tensor gamma, Tensor grad_out, float eps) -> Tensor[]");
     m.def("grouped_gemm(Tensor a, Tensor b, Tensor group_lens, Tensor group_offs, bool transA, "
           "bool transB) -> Tensor");
+    m.def("grouped_gemm_fp8(Tensor a, Tensor b, Tensor group_lens, Tensor group_offs, bool transA, "
+          "bool transB) -> Tensor");
     m.def("grouped_gemm_variable_k(Tensor a, Tensor b, Tensor group_lens, Tensor group_offs, "
           "bool transA, bool transB) -> Tensor");
-    m.def(
-        "fp8_quantize_row_col(Tensor input, Tensor scale, int dims, bool is_row_major) -> Tensor");
-    m.def("fp8_dequantize_row_col(at::Tensor &input, at::Tensor &scale, int64_t dims, "
-          "torch::ScalarType "
-          "scalar_type, const bool is_row_major) -> Tensor");
 }
 
 TORCH_LIBRARY_IMPL(primus_turbo_cpp_extension, CUDA, m) {
@@ -48,6 +48,7 @@ TORCH_LIBRARY_IMPL(primus_turbo_cpp_extension, CUDA, m) {
     m.impl("grouped_gemm_variable_k", grouped_gemm_variable_k);
     m.impl("fp8_quantize_row_col", fp8_quantize_row_col);
     m.impl("fp8_dequantize_row_col", fp8_dequantize_row_col);
+    m.impl("grouped_gemm_fp8", grouped_gemm_fp8);
 }
 
 TORCH_LIBRARY_IMPL(primus_turbo_cpp_extension, Meta, m) {
@@ -61,6 +62,7 @@ TORCH_LIBRARY_IMPL(primus_turbo_cpp_extension, Meta, m) {
     m.impl("grouped_gemm_variable_k", grouped_gemm_variable_k_meta);
     m.impl("fp8_quantize_row_col", fp8_quantize_row_col_meta);
     m.impl("fp8_dequantize_row_col", fp8_dequantize_row_col_meta);
+    m.impl("grouped_gemm_fp8", grouped_gemm_fp8_meta);
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {

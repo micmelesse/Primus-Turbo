@@ -74,4 +74,12 @@ static inline bool is_16bit_floating_point_dtype(at::ScalarType dtype) {
     return dtype == at::kHalf || dtype == at::kBFloat16;
 }
 
+static inline bool is_8bit_floating_point_dtype(at::ScalarType dtype) {
+    return dtype == at::kFloat8_e4m3fnuz || dtype == at::kFloat8_e4m3fn ||
+           dtype == at::kFloat8_e5m2fnuz || dtype == at::kFloat8_e5m2;
+}
+
+static inline bool is_floating_point_dtype(at::ScalarType dtype) {
+    return dtype == at::kHalf || dtype == at::kBFloat16 || dtype == at::kFloat;
+}
 } // namespace primus_turbo::pytorch
