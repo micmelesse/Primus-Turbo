@@ -114,7 +114,6 @@ def get_common_flags():
         "-amdgpu-early-inline-all=true",
         "-mllvm",
         "-amdgpu-function-calls=false",
-        "-fgpu-rdc",
     ]
 
     # Device Arch
@@ -154,10 +153,17 @@ def build_kernels_extension(libraries: List[Library]):
     ]
     library_dirs = []
 
+    has_gpu_rdc_flag = False
     for lib in libraries:
         include_dirs.extend(lib.include_dirs)
         library_dirs.extend(lib.library_dirs)
         extra_flags["extra_link_args"].extend(lib.extra_link_args)
+
+        if "-fgpu-rdc" in lib.extra_link_args or "--hip-link" in lib.extra_link_args:
+            has_gpu_rdc_flag = True
+
+    if has_gpu_rdc_flag:
+        extra_flags["extra_compile_args"]["nvcc"] += ["-fgpu-rdc"]
 
     return HIPExtension(
         name="libprimus_turbo_kernels",
@@ -169,7 +175,7 @@ def build_kernels_extension(libraries: List[Library]):
     )
 
 
-def build_torch_extension(libraries: List[Library]):
+def build_torch_extension():
     # Link and Compile flags
     extra_flags = get_common_flags()
     extra_flags["extra_link_args"] = [
@@ -183,23 +189,14 @@ def build_torch_extension(libraries: List[Library]):
     pytorch_csrc_source_files = Path(PROJECT_ROOT / "csrc" / "pytorch")
     sources = all_files_in_dir(pytorch_csrc_source_files, name_extensions=["cpp", "cc", "cu"])
 
-    include_dirs = [
-        Path(PROJECT_ROOT / "csrc" / "include"),
-        Path(PROJECT_ROOT / "3rdparty" / "composable_kernel" / "include"),
-        Path(PROJECT_ROOT / "csrc"),
-    ]
-    library_dirs = []
-
-    for lib in libraries:
-        include_dirs.extend(lib.include_dirs)
-        library_dirs.extend(lib.library_dirs)
-        extra_flags["extra_link_args"].extend(lib.extra_link_args)
-
     return CUDAExtension(
         name="primus_turbo.pytorch._C",
         sources=sources,
-        include_dirs=include_dirs,
-        library_dirs=library_dirs,
+        include_dirs=[
+            Path(PROJECT_ROOT / "csrc" / "include"),
+            Path(PROJECT_ROOT / "3rdparty" / "composable_kernel" / "include"),
+            Path(PROJECT_ROOT / "csrc"),
+        ],
         libraries=["hipblas"],
         **extra_flags,
     )
@@ -247,7 +244,7 @@ if __name__ == "__main__":
     # Extensions
     kernels_ext = build_kernels_extension(libraries)
     # TODO: Control build one or all.
-    torch_ext = build_torch_extension(libraries)
+    torch_ext = build_torch_extension()
     jax_ext = build_jax_extension()
 
     setup(

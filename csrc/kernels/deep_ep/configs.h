@@ -12,7 +12,6 @@
 #include <hip/hip_bfloat16.h>
 #include <hip/hip_fp8.h>
 #include <hip/hip_runtime.h>
-#include <rocshmem/rocshmem.hpp>
 
 #define NUM_MAX_NVL_PEERS 8
 #define NUM_MAX_RDMA_PEERS 20

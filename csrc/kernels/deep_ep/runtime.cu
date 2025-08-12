@@ -12,6 +12,7 @@
 #include "launch.h"
 #include "primus_turbo/common.h"
 #include "utils.h"
+#include <rocshmem/rocshmem.hpp>
 
 namespace primus_turbo::deep_ep {
 
