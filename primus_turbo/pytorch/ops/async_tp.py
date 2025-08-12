@@ -5,7 +5,7 @@ from typing import List, Optional, Tuple
 import torch
 import torch.distributed.distributed_c10d as c10d
 
-from primus_turbo.pytorch.kernels.async_tp import ag_gemm_impl, gemm_rs_impl_weight
+from primus_turbo.pytorch.kernels.async_tp import ag_gemm_impl, gemm_rs_impl
 
 __all__ = ["fused_all_gather_matmul", "fused_matmul_reduce_scatter", "fused_all_gather_scaled_matmul"]
 
@@ -167,8 +167,6 @@ def fused_matmul_reduce_scatter(
     group_name: str,
     gemm_streams: List[torch.cuda.Stream],
     comm_streams: List[torch.cuda.Stream],
-    reduce_streams: List[torch.cuda.Stream],
-    copy_streams: List[torch.cuda.Stream],
     *,
     comm_method: str = "pipeline",
     num_splits: int = 2,
@@ -182,7 +180,6 @@ def fused_matmul_reduce_scatter(
     communication:
         C_total = torch.matmul(A, B)
         C = reduce_scatter_tensor(C, "avg", scatter_dim, group)
-
 
     Optimal stride order for A - if A.movedim(scatter_dim, 0) is
     contiguous, no extra copy is required for input layout transformation.
@@ -208,7 +205,13 @@ def fused_matmul_reduce_scatter(
         >>> A = torch.randn(2, 3)
         >>> B = torch.randn(3, 3)
         >>> tp_group = torch.distributed.new_group(...)
-        >>> rs_output = primus_turbo.pytorch.ops.fused_matmul_reduce_scatter(A, B, 'NN', 'sum', 0, tp_group.group_name)
+        >>> comm_method = "pipeline"
+        >>> gemm_streams = []
+        >>> comm_streams = []
+        >>> if comm_method == "pipeline":  
+        >>>     gemm_streams = [torch.cuda.current_stream()]
+        >>>     comm_streams = [torch.cuda.Stream() for i in range(tp_group.size())]
+        >>> rs_output = primus_turbo.pytorch.ops.fused_matmul_reduce_scatter(A, B, 'NN', 'sum', 0, tp_group.group_name, gemm_streams, comm_streams)
     """
     # check input
     if A.dim() < 2:
@@ -263,7 +266,7 @@ def fused_matmul_reduce_scatter(
 
     with torch.profiler.record_function(f"{comm_method}_fused_matmul_scatter_out"):
         if comm_method == "tile":
-            rs_output = gemm_rs_impl_weight._tiled_fused_matmul_scatter_out_impl(
+            rs_output = gemm_rs_impl._tiled_fused_matmul_scatter_out_impl(
                 input=x,
                 weight=B,
                 group_name=group_name,
@@ -274,7 +277,7 @@ def fused_matmul_reduce_scatter(
                 stream=torch.cuda.current_stream(),
             )
         else:
-            rs_output = gemm_rs_impl_weight._pipeline_matmul_scatter_out_impl(
+            rs_output = gemm_rs_impl._pipeline_matmul_scatter_out_impl(
                 torch.ops.aten.mm.out,
                 input=x,
                 weight=B,
@@ -282,10 +285,8 @@ def fused_matmul_reduce_scatter(
                 reduce_op=reduce_op,
                 num_splits=num_splits,
                 enable_sdma=enable_sdma,
-                comm_stream_pool=comm_streams,
                 gemm_stream_pool=gemm_streams,
-                reduce_stream_pool=reduce_streams,
-                copy_stream_pool=copy_streams,
+                comm_stream_pool=comm_streams,
                 output=output,
                 rs_output=rs_out,
                 out_dtype=out_dtype,

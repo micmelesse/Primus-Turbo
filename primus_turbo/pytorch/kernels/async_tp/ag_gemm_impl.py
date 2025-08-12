@@ -11,17 +11,7 @@ from torch.distributed._symmetric_memory import (
 )
 
 from .amd_symmetric_memory import get_amd_symm_mem_workspace
-from .common_ops import batch_wait_eq_sys, ipc_create_tensor_lists
-
-
-def hip_check(call_result):
-    err = call_result[0]
-    result = call_result[1:]
-    if len(result) == 1:
-        result = result[0]
-    if isinstance(err, hip.hipError_t) and err != hip.hipError_t.hipSuccess:
-        raise RuntimeError(str(err))
-    return result
+from .common_ops import hip_check, batch_wait_eq_sys, ipc_create_tensor_lists
 
 
 def wait_all_gather(rank, num_ranks, barrier_ptr: int):

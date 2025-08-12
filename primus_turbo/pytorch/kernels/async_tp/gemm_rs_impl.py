@@ -4,6 +4,7 @@ from typing import Any, Callable, List, Optional, Tuple
 import torch
 import torch.distributed.distributed_c10d as c10d
 import triton
+from hip import hip
 
 from primus_turbo.triton.async_tp.gemm_rs_kernel import (
     kernel_gemm_rs_producer_fuse_scatter,
@@ -203,7 +204,7 @@ def _pipeline_matmul_scatter_out_impl(
 
     gemm_events = get_events(num_splits)
     current_stream = torch.cuda.current_stream()
-    stream_pool = comm_stream_pool + copy_stream_pool + gemm_stream_pool
+    stream_pool = comm_stream_pool + gemm_stream_pool
     symm_mem.barrier()
 
     for stream in stream_pool:
