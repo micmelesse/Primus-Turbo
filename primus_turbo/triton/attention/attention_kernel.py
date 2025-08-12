@@ -977,7 +977,6 @@ def _bwd_preprocess_use_o(
     do = tl.load(do_ptrs, mask=mask_o, other=0.0).to(tl.float32)
 
     # compute delta
-    # TODO: fine-grained scaling factor
     delta = tl.sum(o * do, axis=1)
 
     # write-back delta
@@ -1194,6 +1193,7 @@ def _bwd_kernel_dkdv(
     k = tl.trans(k)
     v = tl.trans(v)
 
+    # FIXME: possible race conditions if not transposed?
     dk = tl.zeros([BLOCK_DMODEL_QK, BLOCK_N], dtype=tl.float32)
     dv = tl.zeros([BLOCK_DMODEL_V, BLOCK_N], dtype=tl.float32)
 
@@ -1362,7 +1362,7 @@ def _attn_bwd_dkdv(
             dp = dp * dp_descale
 
         Di = tl.gather(lds, index=tl.arange(BLOCK_M, 2 * BLOCK_M), axis=0)
-        ds = (p * (dp - Di[:, None])) * sm_scale / p_scale
+        ds = (p * (dp - Di[:, None])) * (sm_scale / p_scale)
 
         if USE_FP8:
             ds_scale = F8_FWD_MAX / tl.max(tl.abs(ds) + 1e-7)
@@ -1537,6 +1537,7 @@ def _bwd_kernel_dq(
 
     # compute dq
     offs_m = start_m * BLOCK_M + tl.arange(0, BLOCK_M)
+    # FIXME: possible race conditions if not transposed?
     dq = tl.zeros([BLOCK_DMODEL_QK, BLOCK_M], dtype=tl.float32)
     q_ptrs = q_offset + offs_m[:, None] * stride_qm + offs_d_qk[None, :] * stride_qk
     do_ptrs = do_offset + offs_m[:, None] * stride_dom + offs_d_v[None, :] * stride_dok
@@ -1700,7 +1701,7 @@ def _attn_bwd_dq(
             dp_descale = do_descale / v_scale
             dp = dp * dp_descale
 
-        ds = (p * (dp - Di[:, None])) * sm_scale / p_scale
+        ds = (p * (dp - Di[:, None])) * (sm_scale / p_scale)
 
         if USE_FP8:
             ds_scale = F8_FWD_MAX / tl.max(tl.abs(ds) + 1e-7)
