@@ -1,5 +1,5 @@
 from functools import lru_cache
-from typing import Any, Callable, List, Optional, Tuple
+from typing import List
 
 import torch
 import torch.distributed.distributed_c10d as c10d
@@ -194,9 +194,7 @@ def _pipeline_matmul_scatter_out_impl(
 
     p2p_workspace_size_req = M * N * input.element_size()
     symm_mem = get_amd_symm_mem_workspace(group_name, min_size=p2p_workspace_size_req)
-
     scatter_bufs = [symm_mem.get_buffer(i, [M, N], out_dtype) for i in range(num_ranks)]
-    scatter_bufs_ptr = get_scatter_buf_ptrs((t.data_ptr() for t in scatter_bufs))
 
     m_per_rank = M // num_ranks
     m_per_chunk = m_per_rank // num_splits

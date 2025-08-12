@@ -5,8 +5,7 @@ from typing import Any, Callable, List, Optional, Tuple
 import torch
 import torch.distributed.distributed_c10d as c10d
 from hip import hip
-from torch.distributed._symmetric_memory import (
-    _check_and_verify_fp8_all_gather_scale_mode, _ScaleMode)
+from torch.distributed._symmetric_memory import _check_and_verify_fp8_all_gather_scale_mode, _ScaleMode
 
 from .amd_symmetric_memory import get_amd_symm_mem_workspace
 from .common_ops import batch_wait_eq_sys, hip_check, ipc_create_tensor_lists
