@@ -523,9 +523,6 @@ def attn_fwd(
     else:
         off_h_k = off_h_q
 
-    PADDED_HEAD_QK: tl.constexpr = (ACTUAL_BLOCK_DMODEL_QK != BLOCK_DMODEL_QK)
-    PADDED_HEAD_V: tl.constexpr = (ACTUAL_BLOCK_DMODEL_V != BLOCK_DMODEL_V)
-
     # we assume q and k has the same length
     if USE_FP8:
         actual_kscale_block_num = stride_kdescale_h
@@ -593,9 +590,6 @@ def attn_fwd(
             o_ptrs = o_offset + offs_m[:, None] * stride_om + offs_d_v[None, :] * stride_on
             acc = tl.zeros([BLOCK_M, BLOCK_DMODEL_V], dtype=Out.type.element_ty)
             o_ptrs_mask = offs_m[:, None] < seqlen_q
-            if PADDED_HEAD_V:
-                o_ptrs_mask = o_ptrs_mask & (offs_d_v[None, :]
-                                             < ACTUAL_BLOCK_DMODEL_V)
             # We still need to write 0s to the result
             tl.store(o_ptrs, acc, mask=o_ptrs_mask)
             # The tensor allocated for L is based on MAX_SEQLENS_Q as that is
@@ -622,6 +616,8 @@ def attn_fwd(
         n_extra_tokens = BLOCK_N - seqlen_k
     elif seqlen_k % BLOCK_N:
         n_extra_tokens = seqlen_k % BLOCK_N
+    PADDED_HEAD_QK: tl.constexpr = ACTUAL_BLOCK_DMODEL_QK != BLOCK_DMODEL_QK
+    PADDED_HEAD_V: tl.constexpr = ACTUAL_BLOCK_DMODEL_V != BLOCK_DMODEL_V
 
     # Compute pointers for all the tensors used in this kernel.
     q_offset = Q + off_z * stride_qz + off_h_q * stride_qh + cu_seqlens_q_start * stride_qm
@@ -1209,8 +1205,8 @@ def _bwd_kernel_dkdv(
     k = tl.trans(k)
     v = tl.trans(v)
 
-    dk = tl.zeros([BLOCK_N, BLOCK_DMODEL_QK], dtype=tl.float32)
-    dv = tl.zeros([BLOCK_N, BLOCK_DMODEL_V], dtype=tl.float32)
+    dk = tl.zeros([BLOCK_DMODEL_QK, BLOCK_N], dtype=tl.float32)
+    dv = tl.zeros([BLOCK_DMODEL_V, BLOCK_N], dtype=tl.float32)
 
     if USE_FP8:
         blk_k_descale = k_descale.gather(index=idx_tensor, axis=0)
@@ -1265,6 +1261,9 @@ def _bwd_kernel_dkdv(
     if USE_FP8:
         dv_descale = 1.0 / (p_scale)
         dv *= dv_descale
+
+    dk = tl.trans(dk)
+    dv = tl.trans(dv)
 
     dk_ptrs = dk_offset + offs_n[:, None] * stride_kn + offs_d_qk[None, :] * stride_kk
     tl.store(dk_ptrs, dk, mask=k_mask)
@@ -1381,7 +1380,7 @@ def _attn_bwd_dkdv(
         ds = ds.to(q.dtype)
 
         # compute dv
-        _dv = tl.dot(tl.trans(p.to(k.dtype)), do, out_dtype=tl.float32, allow_tf32=False)
+        _dv = tl.dot(tl.trans(do), p.to(k.dtype), out_dtype=tl.float32, allow_tf32=False)
 
         if USE_FP8:
             dv = tl.fma(_dv, blk_do_descale, dv)
@@ -1389,7 +1388,7 @@ def _attn_bwd_dkdv(
             dv += _dv
 
         # compute dk = dot(ds.T, q)
-        _dk = tl.dot(tl.trans(ds), q)
+        _dk = tl.dot(tl.trans(q), ds)
 
         if USE_FP8:
             dk_descale = blk_q_descale / ds_scale
@@ -1572,7 +1571,7 @@ def _bwd_kernel_dq(
 
     # compute dq
     offs_m = start_m * BLOCK_M + tl.arange(0, BLOCK_M)
-    dq = tl.zeros([BLOCK_M, BLOCK_DMODEL_QK], dtype=tl.float32)
+    dq = tl.zeros([BLOCK_DMODEL_QK, BLOCK_M], dtype=tl.float32)
     q_ptrs = q_offset + offs_m[:, None] * stride_qm + offs_d_qk[None, :] * stride_qk
     do_ptrs = do_offset + offs_m[:, None] * stride_dom + offs_d_v[None, :] * stride_dok
 
@@ -1633,7 +1632,7 @@ def _bwd_kernel_dq(
     )
 
     dq_ptrs = dq_offset + offs_m[:, None] * stride_qm + offs_d_qk[None, :] * stride_qk
-    tl.store(dq_ptrs, dq, mask=mask_q)
+    tl.store(dq_ptrs, tl.trans(dq), mask=mask_q)
 
 
 @triton.jit
@@ -1697,8 +1696,8 @@ def _attn_bwd_dq(
         k = tl.load(k_ptrs, mask=mask_k, other=0.0)
         v = tl.load(v_ptrs, mask=mask_v, other=0.0)
 
-        kt = tl.trans(k)
-        qk = tl.dot(q, kt, out_dtype=tl.float32)
+        k = tl.trans(k)
+        qk = tl.dot(q, k, out_dtype=tl.float32)
 
         if USE_FP8:
             # can fuse with sm_scale
@@ -1735,7 +1734,9 @@ def _attn_bwd_dq(
             ds = ds * ds_scale
 
         ds = ds.to(q.dtype)
-        _dq = tl.dot(ds, k, allow_tf32=False)
+        # _dq = tl.dot(ds, k, allow_tf32=False)
+
+        _dq = tl.dot(k, tl.trans(ds), allow_tf32=False)
 
         if USE_FP8:
             dq_descale = blk_k_descale / ds_scale  # ds_scale # 1. / k_scale
