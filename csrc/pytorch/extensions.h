@@ -14,6 +14,8 @@
 
 #include "primus_turbo/common.h"
 
+#include "deep_ep/deep_ep.hpp"
+
 namespace primus_turbo::pytorch {
 
 /* Quantize */
@@ -46,5 +48,31 @@ torch::Tensor gemm_fp8_blockwise(torch::Tensor &a, torch::Tensor &a_scales, torc
 torch::Tensor gemm_fp8_blockwise_meta(torch::Tensor &a, torch::Tensor &a_scales, torch::Tensor &b,
                                       torch::Tensor &b_scales, torch::Tensor &c, const bool transA,
                                       const bool transB, const int64_t block_size);
+
+std::vector<torch::Tensor> rendezvous_shmem(const std::string          &group_name,
+                                            const std::vector<int64_t> &shape,
+                                            c10::ScalarType             dtype);
+/* Normalization */
+at::Tensor rmsnorm_fwd(const at::Tensor &input, const at::Tensor &gamma, const double eps);
+at::Tensor rmsnorm_fwd_meta(const at::Tensor &input, const at::Tensor &gamma, const double eps);
+
+std::vector<at::Tensor> rmsnorm_bwd(const at::Tensor &input, const at::Tensor &gamma,
+                                    const at::Tensor &grad_output, const double eps);
+std::vector<at::Tensor> rmsnorm_bwd_meta(const at::Tensor &input, const at::Tensor &gamma,
+                                         const at::Tensor &grad_output, const double eps);
+
+// Grouped Gemm
+at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
+                        at::Tensor &group_offs, const bool transA, const bool transB);
+
+at::Tensor grouped_gemm_meta(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
+                             at::Tensor &group_offs, const bool transA, const bool transB);
+
+at::Tensor grouped_gemm_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
+                                   at::Tensor &group_offs, const bool transA, const bool transB);
+
+at::Tensor grouped_gemm_variable_k_meta(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
+                                        at::Tensor &group_offs, const bool transA,
+                                        const bool transB);
 
 } // namespace primus_turbo::pytorch
