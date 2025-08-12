@@ -1195,10 +1195,12 @@ def _bwd_kernel_dkdv(
     dv = tl.zeros([BLOCK_DMODEL_V, BLOCK_N], dtype=tl.float32)
 
     if USE_FP8:
-        k_descale_offset = k_descale_ptr + off_z * stride_kscalez + off_h_k * stride_kscaleh + start_n * stride_kscalem
+        k_descale_offset = (
+            k_descale_ptr + off_z * stride_kscalez + off_h_k * stride_kscaleh + start_n * stride_kscalem
+        )
         blk_k_descale = tl.load(k_descale_offset)
     else:
-        blk_k_descale = 1.
+        blk_k_descale = 1.0
 
     for group_idx in range(GROUP_SIZE):
         dk, dv = _attn_bwd_dkdv(
@@ -1546,14 +1548,18 @@ def _bwd_kernel_dq(
     do = tl.load(do_ptrs, mask=mask_do, other=0.0)
 
     if USE_FP8:
-        q_descale_offset = q_scale_ptr + off_z * stride_qscalez + off_h_q * stride_qscaleh + start_m * stride_qscalem
+        q_descale_offset = (
+            q_scale_ptr + off_z * stride_qscalez + off_h_q * stride_qscaleh + start_m * stride_qscalem
+        )
         blk_q_descale = tl.load(q_descale_offset)
 
-        do_descale_offset = do_descale_ptr + off_z * stride_doscalez + off_h_q * stride_doscaleh + start_m * stride_doscalem
+        do_descale_offset = (
+            do_descale_ptr + off_z * stride_doscalez + off_h_q * stride_doscaleh + start_m * stride_doscalem
+        )
         blk_do_descale = tl.load(do_descale_offset)
     else:
-        blk_q_descale = 1.
-        blk_do_descale = 1.
+        blk_q_descale = 1.0
+        blk_do_descale = 1.0
 
     l_ptrs = ld_offset + (2 * start_m * BLOCK_M + tl.arange(0, 2 * BLOCK_M)) * stride_ldm
     mask_ldm = tl.ravel(tl.join(mask_m, mask_m))
