@@ -208,7 +208,7 @@ def fused_matmul_reduce_scatter(
         >>> comm_method = "pipeline"
         >>> gemm_streams = []
         >>> comm_streams = []
-        >>> if comm_method == "pipeline":  
+        >>> if comm_method == "pipeline":
         >>>     gemm_streams = [torch.cuda.current_stream()]
         >>>     comm_streams = [torch.cuda.Stream() for i in range(tp_group.size())]
         >>> rs_output = primus_turbo.pytorch.ops.fused_matmul_reduce_scatter(A, B, 'NN', 'sum', 0, tp_group.group_name, gemm_streams, comm_streams)
@@ -240,7 +240,7 @@ def fused_matmul_reduce_scatter(
     leading_dims[0] //= group.size()
     x = x.flatten(0, -2)
     M, K = x.shape
-  
+
     if comm_method == "tile" and ((M // group.size() < 256) or (M % 256) or (N % 256) or (K % 256)):
         raise ValueError(
             f"M, N, and K must be divisible by 256, and M divided by group size must not be less than 256 when comm_method use tile."

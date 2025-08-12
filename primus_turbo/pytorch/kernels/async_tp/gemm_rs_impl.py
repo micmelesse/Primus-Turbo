@@ -33,9 +33,7 @@ def matmul_fuse_scatter(a, b, scatter_bufs_ptr, rank, num_ranks, transpose_weigh
 
     # Allocates output.
     def grid(META):
-        return (
-            triton.cdiv(M, META["BLOCK_SIZE_M"]) * triton.cdiv(N, META["BLOCK_SIZE_N"]),
-        )
+        return (triton.cdiv(M, META["BLOCK_SIZE_M"]) * triton.cdiv(N, META["BLOCK_SIZE_N"]),)
 
     compiled = kernel_gemm_rs_producer_fuse_scatter[grid](
         a,
@@ -67,9 +65,7 @@ def ring_reduce_after_scatter(
     M, N = scatter_out.shape
     M_per_rank = M // num_ranks
     if output is None:
-        output = torch.empty(
-            (M_per_rank, N), dtype=scatter_out.dtype, device=scatter_out.device
-        )
+        output = torch.empty((M_per_rank, N), dtype=scatter_out.dtype, device=scatter_out.device)
 
     REDUCE_AVG = True if reduce_op == "avg" else False
 
@@ -117,9 +113,7 @@ def _tiled_fused_matmul_scatter_out_impl(
     scatter_bufs_ptr = get_scatter_buf_ptrs((t.data_ptr() for t in scatter_bufs))
 
     symm_mem.barrier()
-    matmul_fuse_scatter(
-        input, weight, scatter_bufs_ptr, rank, num_ranks, transpose_weight=False
-    )
+    matmul_fuse_scatter(input, weight, scatter_bufs_ptr, rank, num_ranks, transpose_weight=False)
     symm_mem.barrier()
 
     scatter_out = scatter_bufs[rank][:M]
@@ -154,8 +148,7 @@ def get_local_mm_out_bufs(M, N, num_splits, dtype, device):
     key = (M, N, num_splits, str(dtype), str(device))
     if key not in _local_mm_out_bufs_cache:
         _local_mm_out_bufs_cache[key] = [
-            torch.empty((M // num_splits, N), dtype=dtype, device=device)
-            for _ in range(num_splits)
+            torch.empty((M // num_splits, N), dtype=dtype, device=device) for _ in range(num_splits)
         ]
     return _local_mm_out_bufs_cache[key]
 
@@ -167,12 +160,8 @@ def get_events(num_splits):
 
 @lru_cache
 def extract_indices(chunk_idx, num_ranks, m_per_rank, m_per_chunk):
-    start_indices = (
-        torch.arange(num_ranks, device=torch.cuda.current_device()) * m_per_rank
-    )
-    offset = m_per_chunk * chunk_idx + torch.arange(
-        m_per_chunk, device=torch.cuda.current_device()
-    )
+    start_indices = torch.arange(num_ranks, device=torch.cuda.current_device()) * m_per_rank
+    offset = m_per_chunk * chunk_idx + torch.arange(m_per_chunk, device=torch.cuda.current_device())
     row_indices = start_indices[:, None] + offset[None, :]
     row_indices = row_indices.flatten()
     return row_indices
@@ -211,9 +200,7 @@ def _pipeline_matmul_scatter_out_impl(
 
     m_per_rank = M // num_ranks
     m_per_chunk = m_per_rank // num_splits
-    local_tensor_buffers = get_local_mm_out_bufs(
-        M, N, num_splits, out_dtype, input.device
-    )
+    local_tensor_buffers = get_local_mm_out_bufs(M, N, num_splits, out_dtype, input.device)
 
     gemm_events = get_events(num_splits)
     current_stream = torch.cuda.current_stream()
@@ -241,14 +228,8 @@ def _pipeline_matmul_scatter_out_impl(
             M_dst_start_pos = rank * m_per_rank + chunk_idx * m_per_chunk
             M_src_start_pos = remote_rank * m_per_chunk
 
-            src_ptr = (
-                local_tensor_buffers[chunk_idx].data_ptr()
-                + M_src_start_pos * N * data_elem_size
-            )
-            dst_ptr = (
-                scatter_bufs[remote_rank].data_ptr()
-                + M_dst_start_pos * N * data_elem_size
-            )
+            src_ptr = local_tensor_buffers[chunk_idx].data_ptr() + M_src_start_pos * N * data_elem_size
+            dst_ptr = scatter_bufs[remote_rank].data_ptr() + M_dst_start_pos * N * data_elem_size
 
             nbytes = m_per_chunk * N * data_elem_size
             cp_res = hip.hipMemcpyAsync(
