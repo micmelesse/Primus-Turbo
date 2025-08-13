@@ -38,13 +38,13 @@ at::Tensor fp8_dequantize_meta(const at::Tensor input, const at::Tensor scale_in
 
 at::Tensor fp8_quantize_row_col(at::Tensor &input, at::Tensor &scale, const bool is_row_major);
 
-at::Tensor fp8_dequantize_row_col(at::Tensor &input, at::Tensor &scale,
-                                  torch::ScalarType scalar_type, const bool is_row_major);
-
 at::Tensor fp8_quantize_row_col_meta(at::Tensor &input, at::Tensor &scale, const bool is_row_major);
 
-at::Tensor fp8_dequantize_row_col_meta(at::Tensor &input, at::Tensor &scale,
-                                       torch::ScalarType scalar_type, const bool is_row_major);
+at::Tensor grouped_gemm_fp8_dequant(at::Tensor &input, at::Tensor &group_lens, at::Tensor &scale_a,
+                                    at::Tensor &scale_b);
+
+at::Tensor grouped_gemm_fp8_dequant_meta(at::Tensor &input, at::Tensor &group_lens,
+                                         at::Tensor &scale_a, at::Tensor &scale_b);
 
 /* GEMM */
 

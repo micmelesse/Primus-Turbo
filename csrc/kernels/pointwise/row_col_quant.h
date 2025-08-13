@@ -7,9 +7,8 @@
 namespace primus_turbo {
 
 template <typename InDataType, typename ScaleType, typename OutDataType>
-__global__ void quant_dequant_2d_device(const InDataType *a_ptr, const ScaleType *scale,
-                                        OutDataType *b_ptr, ck_tile::index_t M, ck_tile::index_t K,
-                                        bool trans) {
+__global__ void quant_2d_device(const InDataType *a_ptr, const ScaleType *scale, OutDataType *b_ptr,
+                                ck_tile::index_t M, ck_tile::index_t K, bool trans) {
     const ck_tile::index_t total_elements = M * K;
 
     for (ck_tile::index_t idx = blockIdx.x * blockDim.x + threadIdx.x; idx < total_elements;
@@ -36,17 +35,127 @@ __global__ void quant_dequant_2d_device(const InDataType *a_ptr, const ScaleType
 }
 
 template <typename InDataType, typename ScaleType, typename OutDataType>
-void quant_dequant_2d(const InDataType *a_ptr, const ScaleType *scale, OutDataType *b_ptr,
-                      ck_tile::index_t M, ck_tile::index_t K, bool trans, hipStream_t stream) {
+void quant_2d(const InDataType *a_ptr, const ScaleType *scale, OutDataType *b_ptr,
+              ck_tile::index_t M, ck_tile::index_t K, bool trans, hipStream_t stream) {
     const ck_tile::index_t total_elements = M * K;
 
     // Thread block configuration for better GPU utilization
-    const int threads_per_block = 256;   // Optimal for modern GPUs
+    const int threads_per_block = 256;
     const int max_blocks        = 65535; // Maximum grid size
     const int blocks            = min(
         max_blocks, static_cast<int>((total_elements + threads_per_block - 1) / threads_per_block));
 
-    quant_dequant_2d_device<InDataType, ScaleType, OutDataType>
+    quant_2d_device<InDataType, ScaleType, OutDataType>
         <<<blocks, threads_per_block, 0, stream>>>(a_ptr, scale, b_ptr, M, K, trans);
 }
+
+// template <typename InDataType, typename ScaleType, typename OutDataType>
+// __global__ void dequant_grouped_gemm_device(const InDataType *a_ptr, const ScaleType *scale_a,
+//                                             const ScaleType *scale_b, OutDataType *b_ptr,
+//                                             const int64_t *p_seg_lens, ck_tile::index_t B,
+//                                             ck_tile::index_t N) {
+//     // Only one thread performs the update operation
+//     if (blockIdx.x == 0 && threadIdx.x == 0) {
+//         for (int k = 0; k < B; k++) {
+//             int b = p_seg_lens[k];
+//             for (int i = 0; i < b; i++) {
+//                 for (int j = 0; j < N; j++) {
+//                     const InDataType a_val = a_ptr[i * N + j];
+//                     ScaleType scale_a_val = scale_a[0];
+//                     ScaleType scale_b_val = scale_b[j];
+//                     float            a_val_float =
+//                         ck_tile::type_convert<float>(a_val) * scale_a_val * scale_b_val;
+//                     b_ptr[i * N + j] = ck_tile::type_convert<OutDataType>(a_val_float);
+//                 }
+//                 scale_a++;
+//             }
+//             a_ptr += b * N;
+//             b_ptr += b * N;
+//             scale_b += N;
+//         }
+//     }
+// }
+
+template <typename InDataType, typename ScaleType, typename OutDataType>
+__global__ void dequant_grouped_gemm_devirdgrece(const InDataType *a_ptr, const ScaleType *scale_a,
+                                                 const ScaleType *scale_b, OutDataType *b_ptr,
+                                                 const int64_t *p_seg_lens, ck_tile::index_t B,
+                                                 ck_tile::index_t N) {
+    // Calculate total number of elements across all groups
+    ck_tile::index_t total_elements = 0;
+    for (ck_tile::index_t k = 0; k < B; k++) {
+        total_elements += p_seg_lens[k] * N;
+    }
+
+    // Use all threads for parallel processing with grid-stride loop
+    for (ck_tile::index_t = blockIdx.x * blockDim.x + threadIdx.x; global_idx < total_elements;
+         global_idx += blockDim.x * gridDim.x) {
+
+        // Find which group and which element within that group
+        ck_tile::index_t remaining_idx  = global_idx;
+        ck_tile::index_t k              = 0;
+        ck_tile::index_t offset_a       = 0;
+        ck_tile::index_t offset_b       = 0;
+        ck_tile::index_t offset_scale_b = 0;
+
+        // Locate the group this element belongs to
+        while (k < B) {
+            ck_tile::index_t group_size = p_seg_lens[k] * N;
+            if (remaining_idx < group_size) {
+                break;
+            }
+            remaining_idx -= group_size;
+            offset_a += group_size;
+            offset_b += group_size;
+            offset_scale_b += N;
+            k++;
+        }
+
+        // If we've gone through all groups, we're done
+        if (k >= B)
+            continue;
+
+        // Calculate position within the group
+        ck_tile::index_t i = remaining_idx / N; // Row within group
+        ck_tile::index_t j = remaining_idx % N; // Column
+
+        // Calculate actual pointers for this element
+        const InDataType *group_a_ptr   = a_ptr + offset_a;
+        OutDataType      *group_b_ptr   = b_ptr + offset_b;
+        const ScaleType  *group_scale_b = scale_b + offset_scale_b;
+
+        // Perform dequantization
+        const InDataType a_val       = group_a_ptr[i * N + j];
+        ScaleType        scale_a_val = scale_a[k]; // Per-group scale_a
+        if (global_idx == 0) {
+            printf("k: %d\n", k);
+        }
+        ScaleType scale_b_val = group_scale_b[j]; // Per-column scale_b
+
+        float a_val_float = ck_tile::type_convert<float>(a_val) *
+                            ck_tile::type_convert<float>(scale_a_val) *
+                            ck_tile::type_convert<float>(scale_b_val);
+        group_b_ptr[i * N + j] = ck_tile::type_convert<OutDataType>(a_val_float);
+    }
+}
+
+template <typename InDataType, typename ScaleType, typename OutDataType>
+void dequant_grouped_gemm(const InDataType *a_ptr, const ScaleType *scale_a,
+                          const ScaleType *scale_b, OutDataType *b_ptr, const int64_t *p_seg_lens,
+                          ck_tile::index_t B, ck_tile::index_t M, ck_tile::index_t N,
+                          hipStream_t stream) {
+    const ck_tile::index_t total_elements = B * M * N;
+
+    // Thread block configuration for better GPU utilization
+    const int threads_per_block = 256;
+    const int max_blocks        = 65535; // Maximum grid size
+    const int blocks            = min(
+        max_blocks, static_cast<int>((total_elements + threads_per_block - 1) / threads_per_block));
+    printf("sefergdfgsdg\n");
+    safdffg;
+    dequant_grouped_gemm_device<InDataType, ScaleType, OutDataType>
+        <<<blocks, threads_per_block, 0, stream>>>(a_ptr, scale_a, scale_b, b_ptr, p_seg_lens, B,
+                                                   N);
+}
+
 } // namespace primus_turbo

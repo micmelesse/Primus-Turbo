@@ -120,19 +120,19 @@ at::Tensor fp8_quantize_row_col(at::Tensor &input, at::Tensor &scale, const bool
         using ScaleType = typename TorchToCKTileType<torch::kFloat>::type;
         using OutType   = ck_tile::fp8_t;
 
-        quant_dequant_2d<InType, ScaleType, OutType>(
-            reinterpret_cast<const InType *>(input.data_ptr()),
-            reinterpret_cast<const ScaleType *>(scale.data_ptr()),
-            reinterpret_cast<OutType *>(output.data_ptr()), m, k, !is_row_major, stream);
+        quant_2d<InType, ScaleType, OutType>(reinterpret_cast<const InType *>(input.data_ptr()),
+                                             reinterpret_cast<const ScaleType *>(scale.data_ptr()),
+                                             reinterpret_cast<OutType *>(output.data_ptr()), m, k,
+                                             !is_row_major, stream);
     } else if (input.dtype() == at::kHalf) {
         using InType    = typename TorchToCKTileType<at::kHalf>::type;
         using ScaleType = typename TorchToCKTileType<torch::kFloat>::type;
         using OutType   = ck_tile::fp8_t;
 
-        quant_dequant_2d<InType, ScaleType, OutType>(
-            reinterpret_cast<const InType *>(input.data_ptr()),
-            reinterpret_cast<const ScaleType *>(scale.data_ptr()),
-            reinterpret_cast<OutType *>(output.data_ptr()), m, k, !is_row_major, stream);
+        quant_2d<InType, ScaleType, OutType>(reinterpret_cast<const InType *>(input.data_ptr()),
+                                             reinterpret_cast<const ScaleType *>(scale.data_ptr()),
+                                             reinterpret_cast<OutType *>(output.data_ptr()), m, k,
+                                             !is_row_major, stream);
     } else {
         PRIMUS_TURBO_CHECK(false, "Quantization only support float16 and bfloat16");
     }
@@ -142,61 +142,32 @@ at::Tensor fp8_quantize_row_col(at::Tensor &input, at::Tensor &scale, const bool
     return output;
 }
 
-at::Tensor fp8_dequantize_row_col(at::Tensor &input, at::Tensor &scale,
-                                  torch::ScalarType scalar_type, const bool is_row_major) {
+at::Tensor grouped_gemm_fp8_dequant(at::Tensor &input, at::Tensor &group_lens, at::Tensor &scale_a,
+                                    at::Tensor &scale_b) {
     int64_t dims = input.ndimension();
-    PRIMUS_TURBO_CHECK(dims == 2 || dims == 3, "only support 2D or 3D tensor");
-    int64_t    b = 1, m = 0, k = 0;
+    PRIMUS_TURBO_CHECK(dims == 2, "only support 2D tensors");
+    int64_t    m = 0, n = 0;
     at::Tensor output;
-    if (dims == 2) {
-        m = input.size(0);
-        k = input.size(1);
 
-        output = at::empty({m, k}, at::dtype(scalar_type).device(at::kCUDA));
-    }
-
-    else if (dims == 3) {
-        b = input.size(0);
-        m = input.size(1);
-        k = input.size(2);
-        if (is_row_major) {
-            m = b * m;
-        } else {
-            k = b * k;
-        }
-        output = at::empty({b, m, k}, at::dtype(scalar_type).device(at::kCUDA));
-    }
+    m      = input.size(0);
+    n      = input.size(1);
+    output = at::empty({m, n}, at::dtype(input.dtype()).device(at::kCUDA));
 
     auto stream = at::cuda::getCurrentCUDAStream();
-
-    using InType    = ck_tile::fp8_t; // FP8
-    using ScaleType = typename TorchToCKTileType<torch::kFloat>::type;
-
-    switch (scalar_type) {
-    case torch::kHalf: {
-        using OutType = typename TorchToCKTileType<torch::kHalf>::type;
-        quant_dequant_2d<InType, ScaleType, OutType>(
+    if (input.dtype() == at::kBFloat16) {
+        using InType        = typename TorchToCKTileType<torch::kBFloat16>::type;
+        using ScaleType     = typename TorchToCKTileType<torch::kFloat>::type;
+        using OutType       = typename TorchToCKTileType<torch::kBFloat16>::type;
+        ck_tile::index_t bs = group_lens.numel();
+        ck_tile::index_t ms = m / bs;
+        dequant_grouped_gemm<InType, ScaleType, OutType>(
             reinterpret_cast<const InType *>(input.data_ptr()),
-            reinterpret_cast<const ScaleType *>(scale.data_ptr()),
-            reinterpret_cast<OutType *>(output.data_ptr()), m, k, !is_row_major, stream);
-        break;
-    }
-    case torch::kBFloat16: {
-        using OutType = typename TorchToCKTileType<torch::kBFloat16>::type;
-        quant_dequant_2d<InType, ScaleType, OutType>(
-            reinterpret_cast<const InType *>(input.data_ptr()),
-            reinterpret_cast<const ScaleType *>(scale.data_ptr()),
-            reinterpret_cast<OutType *>(output.data_ptr()), m, k, !is_row_major, stream);
-        break;
-    }
-    default: {
-        PRIMUS_TURBO_CHECK(false, "Dequantization only support float16, bfloat16 and float32");
-    }
+            reinterpret_cast<const ScaleType *>(scale_a.data_ptr()),
+            reinterpret_cast<const ScaleType *>(scale_b.data_ptr()),
+            reinterpret_cast<OutType *>(output.data_ptr()),
+            reinterpret_cast<const int64_t *>(group_lens.data_ptr()), bs, ms, n, stream);
     }
 
-    if (dims == 3 && is_row_major == false) {
-        output = output.reshape({m, b, k}).transpose(0, 1).contiguous();
-    }
     return output;
 }
 

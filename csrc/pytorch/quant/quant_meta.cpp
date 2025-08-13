@@ -37,29 +37,16 @@ at::Tensor fp8_quantize_row_col_meta(at::Tensor &input, at::Tensor &scale,
     return output;
 }
 
-at::Tensor fp8_dequantize_row_col_meta(at::Tensor &input, at::Tensor &scale,
-                                       torch::ScalarType scalar_type, const bool is_row_major) {
-    int64_t    b = 1, m = 0, k = 0;
+at::Tensor grouped_gemm_fp8_dequant_meta(at::Tensor &input, at::Tensor &group_lens,
+                                         at::Tensor &scale_a, at::Tensor &scale_b) {
+    int64_t    b = 1, m = 0, n = 0;
     at::Tensor output;
-    int64_t    dims = input.ndimension();
-    if (dims == 2) {
-        m = input.size(0);
-        k = input.size(1);
 
-        output = at::empty({m, k}, at::dtype(scalar_type).device(at::kCUDA));
-    }
+    m = input.size(0);
+    n = input.size(1);
 
-    else if (dims == 3) {
-        b = input.size(0);
-        m = input.size(1);
-        k = input.size(2);
-        if (is_row_major) {
-            m = b * m;
-        } else {
-            k = b * k;
-        }
-        output = at::empty({b, m, k}, at::dtype(scalar_type).device(at::kCUDA));
-    }
+    output = at::empty({m, n}, at::dtype(input.dtype()).device(at::kCUDA));
+
     return output;
 }
 
