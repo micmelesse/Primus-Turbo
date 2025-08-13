@@ -77,7 +77,7 @@ void quant_2d(const InDataType *a_ptr, const ScaleType *scale, OutDataType *b_pt
 // }
 
 template <typename InDataType, typename ScaleType, typename OutDataType>
-__global__ void dequant_grouped_gemm_devirdgrece(const InDataType *a_ptr, const ScaleType *scale_a,
+__global__ void dequant_grouped_gemm_device(const InDataType *a_ptr, const ScaleType *scale_a,
                                                  const ScaleType *scale_b, OutDataType *b_ptr,
                                                  const int64_t *p_seg_lens, ck_tile::index_t B,
                                                  ck_tile::index_t N) {
@@ -88,7 +88,7 @@ __global__ void dequant_grouped_gemm_devirdgrece(const InDataType *a_ptr, const 
     }
 
     // Use all threads for parallel processing with grid-stride loop
-    for (ck_tile::index_t = blockIdx.x * blockDim.x + threadIdx.x; global_idx < total_elements;
+    for (ck_tile::index_t global_idx = blockIdx.x * blockDim.x + threadIdx.x; global_idx < total_elements;
          global_idx += blockDim.x * gridDim.x) {
 
         // Find which group and which element within that group
@@ -97,6 +97,7 @@ __global__ void dequant_grouped_gemm_devirdgrece(const InDataType *a_ptr, const 
         ck_tile::index_t offset_a       = 0;
         ck_tile::index_t offset_b       = 0;
         ck_tile::index_t offset_scale_b = 0;
+        ck_tile::index_t offset_scale_a = 0;
 
         // Locate the group this element belongs to
         while (k < B) {
@@ -108,6 +109,7 @@ __global__ void dequant_grouped_gemm_devirdgrece(const InDataType *a_ptr, const 
             offset_a += group_size;
             offset_b += group_size;
             offset_scale_b += N;
+            offset_scale_a += p_seg_lens[k];  // Accumulate rows for scale_a offset
             k++;
         }
 
@@ -123,14 +125,12 @@ __global__ void dequant_grouped_gemm_devirdgrece(const InDataType *a_ptr, const 
         const InDataType *group_a_ptr   = a_ptr + offset_a;
         OutDataType      *group_b_ptr   = b_ptr + offset_b;
         const ScaleType  *group_scale_b = scale_b + offset_scale_b;
+        const ScaleType  *group_scale_a = scale_a + offset_scale_a + i;  // Per-row scale_a
 
         // Perform dequantization
         const InDataType a_val       = group_a_ptr[i * N + j];
-        ScaleType        scale_a_val = scale_a[k]; // Per-group scale_a
-        if (global_idx == 0) {
-            printf("k: %d\n", k);
-        }
-        ScaleType scale_b_val = group_scale_b[j]; // Per-column scale_b
+        ScaleType        scale_a_val = *group_scale_a; // Dereference the pointer
+        ScaleType        scale_b_val = group_scale_b[j]; // Per-column scale_b
 
         float a_val_float = ck_tile::type_convert<float>(a_val) *
                             ck_tile::type_convert<float>(scale_a_val) *
@@ -145,14 +145,12 @@ void dequant_grouped_gemm(const InDataType *a_ptr, const ScaleType *scale_a,
                           ck_tile::index_t B, ck_tile::index_t M, ck_tile::index_t N,
                           hipStream_t stream) {
     const ck_tile::index_t total_elements = B * M * N;
-
+    printf("test1\n\n\n");
     // Thread block configuration for better GPU utilization
     const int threads_per_block = 256;
     const int max_blocks        = 65535; // Maximum grid size
     const int blocks            = min(
         max_blocks, static_cast<int>((total_elements + threads_per_block - 1) / threads_per_block));
-    printf("sefergdfgsdg\n");
-    safdffg;
     dequant_grouped_gemm_device<InDataType, ScaleType, OutDataType>
         <<<blocks, threads_per_block, 0, stream>>>(a_ptr, scale_a, scale_b, b_ptr, p_seg_lens, B,
                                                    N);
