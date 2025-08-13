@@ -146,7 +146,8 @@ at::Tensor grouped_gemm_fp8_dequant(at::Tensor &input, at::Tensor &group_lens, a
                                     at::Tensor &scale_b) {
     int64_t dims = input.ndimension();
     PRIMUS_TURBO_CHECK(dims == 2, "only support 2D tensors");
-    int64_t    m = 0, n = 0;
+    int64_t m = 0, n = 0;
+    printf("test5\n\n\n");
     at::Tensor output;
 
     m      = input.size(0);

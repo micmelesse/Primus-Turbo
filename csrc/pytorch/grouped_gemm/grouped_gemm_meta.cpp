@@ -31,4 +31,10 @@ at::Tensor grouped_gemm_fp8_meta(at::Tensor &a, at::Tensor &b, at::Tensor &group
     at::Tensor    output = at::empty({m, n}, at::dtype(at::kBFloat16).device(at::kCUDA));
     return output;
 }
+
+at::Tensor grouped_gemm_compute_offs_meta(at::Tensor &group_lens) {
+    at::Tensor group_offs = at::empty({group_lens.numel() + 1}, group_lens.options());
+    return group_offs;
+}
+
 } // namespace primus_turbo::pytorch

@@ -29,4 +29,8 @@ void ck_grouped_gemm_variable_k(void *args_ptr, const ADataType *a_ptr, const BD
                                 const ck_tile::index_t n, const ck_tile::index_t k,
                                 hipStream_t stream);
 
+template <typename IndexType>
+void compute_group_offs(const IndexType *group_lens_ptr, IndexType *group_offs_ptr,
+                        const ck_tile::index_t group_num, hipStream_t stream);
+
 } // namespace primus_turbo

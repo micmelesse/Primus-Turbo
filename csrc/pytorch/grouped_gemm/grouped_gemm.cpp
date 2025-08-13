@@ -8,6 +8,25 @@
 
 namespace primus_turbo::pytorch {
 
+at::Tensor grouped_gemm_compute_offs(at::Tensor &group_lens) {
+    // Check input tensor type
+    PRIMUS_TURBO_CHECK(group_lens.scalar_type() == at::kLong,
+                       "group_lens must be of type Long (int64_t)");
+
+    // Create output tensor with one more element than input
+    at::Tensor group_offs = at::empty({group_lens.numel() + 1}, group_lens.options());
+
+    // Get current CUDA stream
+    auto stream = at::cuda::getCurrentCUDAStream();
+
+    // Call the CUDA implementation to compute group offsets
+    compute_group_offs<int64_t>(reinterpret_cast<const int64_t *>(group_lens.data_ptr()),
+                                reinterpret_cast<int64_t *>(group_offs.data_ptr()),
+                                group_lens.numel(), stream);
+
+    return group_offs;
+}
+
 at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
                         at::Tensor &group_offs, const bool transA, const bool transB) {
     // TODO:

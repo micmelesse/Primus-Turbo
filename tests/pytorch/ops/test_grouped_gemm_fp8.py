@@ -148,16 +148,21 @@ if __name__ == "__main__":
         out_ref = grouped_gemm_ref(a_ref, b_ref, seg_lens, True)
         print(out_ref)
         group_lens_offs = compute_group_offs(seg_lens)
-        out = torch.ops.primus_turbo_cpp_extension.grouped_gemm_fp8(
-            a_fp8, b_fp8, seg_lens, group_lens_offs, transA=False, transB=True
-        )
-        # print(out.shape)
-        # scale1 = a_scale_inv[: seg_lens[0]] * b_scale_inv[0].T
-        # out_1 = out[: seg_lens[0]]
-        # out_o = out_1 * scale1
-        # print(out_o)
-        out_o2 = torch.ops.primus_turbo_cpp_extension.grouped_gemm_fp8_dequant(
-            out, seg_lens, a_scale_inv, b_scale_inv
-        )
-        print(out_o2)
-        print(compute_snr(out_ref, out_o2))
+        print(group_lens_offs)
+        group_lens_offs2 = torch.ops.primus_turbo_cpp_extension.grouped_gemm_compute_offs(seg_lens)
+
+        print(group_lens_offs2)
+
+        # out = torch.ops.primus_turbo_cpp_extension.grouped_gemm_fp8(
+        #     a_fp8, b_fp8, seg_lens, group_lens_offs, transA=False, transB=True
+        # )
+        # # print(out.shape)
+        # # scale1 = a_scale_inv[: seg_lens[0]] * b_scale_inv[0].T
+        # # out_1 = out[: seg_lens[0]]
+        # # out_o = out_1 * scale1
+        # # print(out_o)
+        # out_o2 = torch.ops.primus_turbo_cpp_extension.grouped_gemm_fp8_dequant(
+        #     out, seg_lens, a_scale_inv, b_scale_inv
+        # )
+        # print(out_o2)
+        # print(compute_snr(out_ref, out_o2))
