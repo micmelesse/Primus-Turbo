@@ -30,12 +30,10 @@ class FusedGroupTopkRoutingWithAuxScoreFunction(torch.autograd.Function):
         if groups is None:
             groups = 1
             selected_groups = 1
-        assert (e & (e - 1)) == 0
+
         assert (groups & (groups - 1)) == 0
-        assert (selected_groups & (selected_groups - 1)) == 0
-        if groups > 1:
-            assert (topk & (topk - 1)) == 0
         assert selected_groups <= groups
+        assert e % groups == 0, "experts must be divisible by groups"
         if scaling_factor is None:
             scaling_factor = 1.0
 
