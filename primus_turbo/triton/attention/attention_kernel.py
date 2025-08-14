@@ -31,6 +31,7 @@ PERF = os.environ.get("PRIMUS_TURBO_ATTENTION_TRITON_AMD_PERF", "0").lower() in 
 
 FIXED_BLOCK_M = 64
 FIXED_BLOCK_N = 64
+USE_FP8E5M2_BWD = False
 
 
 def get_shape_from_layout(
@@ -133,7 +134,9 @@ def is_rdna():
 
 
 def get_tl_f8_bwd_dtype():
-    return tl.float8e5b16 if is_hip() and not is_cdna4() else tl.float8e5
+    if USE_FP8E5M2_BWD:
+        return tl.float8e5b16 if is_hip() and not is_cdna4() else tl.float8e5
+    return tl.float8e4b8 if is_hip() and not is_cdna4() else tl.float8e4nv
 
 
 @triton.jit

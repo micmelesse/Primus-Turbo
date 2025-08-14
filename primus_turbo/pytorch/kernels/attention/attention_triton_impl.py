@@ -14,6 +14,7 @@ from primus_turbo.triton.attention.attention_kernel import (
     DEBUG,
     FIXED_BLOCK_M,
     FIXED_BLOCK_N,
+    USE_FP8E5M2_BWD,
     _bwd_kernel_dkdv,
     _bwd_kernel_dq,
     _bwd_preprocess_use_o,
@@ -35,7 +36,7 @@ def get_f8_fwd_dtype():
 
 
 def get_f8_bwd_dtype():
-    return float8_e5m2
+    return float8_e5m2 if USE_FP8E5M2_BWD else float8_e4m3
 
 
 F8_FWD_MAX: tl.constexpr = torch.finfo(get_f8_fwd_dtype()).max
