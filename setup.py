@@ -7,7 +7,7 @@ from pathlib import Path
 from setuptools import find_packages, setup
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 
-from primus_turbo.utils.hip_extension import HIPExtension
+# from primus_turbo.utils.hip_extension import HIPExtension
 
 PROJECT_ROOT = Path(os.path.dirname(__file__)).resolve()
 DEFAULT_HIPCC = "/opt/rocm/bin/hipcc"
@@ -213,27 +213,27 @@ if __name__ == "__main__":
     # set cxx
     setup_cxx_env()
 
-    # Extensions
-    kernels_ext = build_kernels_extension()
-    # TODO: Control build one or all.
-    torch_ext = build_torch_extension()
-    jax_ext = build_jax_extension()
+    # # Extensions
+    # kernels_ext = build_kernels_extension()
+    # # TODO: Control build one or all.
+    # torch_ext = build_torch_extension()
+    # jax_ext = build_jax_extension()
 
     setup(
         name="primus_turbo",
         version=read_version(),
         packages=find_packages(exclude=["tests", "tests.*"]),
         package_data={"primus_turbo": ["lib/*.so"]},
-        ext_modules=[kernels_ext, torch_ext, jax_ext],
+        # ext_modules=[kernels_ext, torch_ext, jax_ext],
         cmdclass={"build_ext": TurboBuildExt.with_options(use_ninja=True)},
-        entry_points={
-            "jax_plugins": [
-                "primus_turbo = primus_turbo.jax",
-            ],
-        },
-        install_requires=[
-            "aiter @ git+https://github.com/ROCm/aiter.git@4822e6755ae66ba727f0d1d33d348673972cbe9c",
-            "hip-python",
-            "jax[rocm]",
-        ],
+        # entry_points={
+        #     "jax_plugins": [
+        #         "primus_turbo = primus_turbo.jax",
+        #     ],
+        # },
+        # install_requires=[
+        #     "aiter @ git+https://github.com/ROCm/aiter.git@4822e6755ae66ba727f0d1d33d348673972cbe9c",
+        #     "hip-python",
+        #     "jax[rocm]",
+        # ],
     )

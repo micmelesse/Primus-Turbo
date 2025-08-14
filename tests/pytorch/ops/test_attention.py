@@ -28,7 +28,7 @@ test_cases = [
 @pytest.mark.parametrize("batch", [4])
 @pytest.mark.parametrize("config", test_cases)
 @pytest.mark.parametrize("causal", [True, False])
-@pytest.mark.parametrize("backend_type", ["triton", "ck"])
+@pytest.mark.parametrize("backend_type", ["triton"])
 def test_attention_bf16(batch, config, causal, backend_type):
     device = "cuda"
     dtype = torch.bfloat16

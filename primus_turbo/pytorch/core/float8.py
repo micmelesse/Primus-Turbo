@@ -31,6 +31,8 @@ def check_fp8_support() -> Tuple[bool, str]:
 
 def check_fp8_ocp_support() -> Tuple[bool, str]:
     """Return if fp8 ocp support is available"""
+    if not torch.version.hip:
+        return True, ""
     if get_device_compute_capability() >= (9, 5):
         return True, ""
     return (

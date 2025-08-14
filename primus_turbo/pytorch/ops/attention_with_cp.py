@@ -3,10 +3,10 @@ from typing import Optional, Tuple
 
 import torch
 
-from primus_turbo.pytorch.kernels.attention.attention_csrc_impl import (
-    attention_aiter_csrc_backward_impl,
-    attention_aiter_csrc_forward_impl,
-)
+# from primus_turbo.pytorch.kernels.attention.attention_csrc_impl import (
+#     attention_aiter_csrc_backward_impl,
+#     attention_aiter_csrc_forward_impl,
+# )
 from primus_turbo.pytorch.kernels.attention.attention_triton_impl import (
     attention_triton_backward_impl,
     attention_triton_forward_impl,
