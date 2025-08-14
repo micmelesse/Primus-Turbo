@@ -66,6 +66,11 @@ def attention_triton_forward_impl(
     assert (
         window_size_left == -1 and window_size_right == -1
     ), "in triton attn kernel, window_size_left and window_size_right must be -1."
+    assert q.is_contiguous()
+    assert k.is_contiguous()
+    assert v.is_contiguous()
+    assert q_descale.is_contiguous()
+    assert k_descale.is_contiguous()
 
     layout = "bshd"
     cu_seqlens_q = 0
@@ -348,12 +353,6 @@ def attention_triton_backward_impl(
         print("use_exp2:", use_exp2)
         print("sequence_parallel:", sequence_parallel)
 
-    # make contigious
-    q = q.contiguous()
-    k = k.contiguous()
-    v = v.contiguous()
-    softmax_lse_delta = softmax_lse_delta.contiguous()
-
     # get strides and shape
     batch, nheads_q, nheads_k, head_size_qk, head_size_v, max_seqlen_q, max_seqlen_k = get_shape_from_layout(
         q, k, v, layout, cu_seqlens_q, cu_seqlens_k, max_seqlen_q, max_seqlen_k
@@ -418,6 +417,9 @@ def attention_triton_backward_impl(
     assert v.is_contiguous()
     assert o.is_contiguous()
     assert softmax_lse_delta.is_contiguous()
+    assert q_scale.is_contiguous()
+    assert k_scale.is_contiguous()
+
     # # init delta
     # delta = torch.empty_like(softmax_lse)
     if is_varlen:
