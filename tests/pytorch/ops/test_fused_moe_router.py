@@ -9,6 +9,10 @@ from tests.pytorch.ref.moe_ref import (
 
 test_cases = [
     MoERouterConfig(seqlen=8, experts=64, groups=1, selected_groups=1, topk=6),
+    MoERouterConfig(seqlen=8, experts=52, groups=1, selected_groups=1, topk=6),
+    MoERouterConfig(seqlen=8, experts=112, groups=8, selected_groups=3, topk=8),
+    MoERouterConfig(seqlen=8, experts=112, groups=8, selected_groups=3, topk=21),
+    MoERouterConfig(seqlen=8, experts=24, groups=4, selected_groups=2, topk=6),
     MoERouterConfig(seqlen=8, experts=64, groups=1, selected_groups=1, topk=8),
     MoERouterConfig(seqlen=8, experts=256, groups=1, selected_groups=1, topk=16),
     MoERouterConfig(seqlen=8, experts=256, groups=1, selected_groups=1, topk=20),

@@ -67,10 +67,9 @@ def fused_moe_router_fwd_triton(
     num_stages = 2
     num_programs = s
 
-    BLOCK_SIZE = e
-    K_ALIGNED = triton.next_power_of_2(topk)
+    E_ALIGNED = triton.next_power_of_2(e)
+    INNER_GROUP_K_ALIGNED = triton.next_power_of_2(topk // selected_groups)
 
-    # output_topk_logits = torch.empty((s, topk), device="cuda", dtype=logits.dtype)
     raw_topk_logits = torch.empty((s, topk), device="cuda", dtype=logits.dtype)
     output_topk_indices = torch.ones((s, topk), device="cuda", dtype=torch.int64)
     output_scores = torch.empty((s, e), device="cuda", dtype=logits.dtype)
@@ -81,7 +80,6 @@ def fused_moe_router_fwd_triton(
     wrap_triton(fused_scaling_group_sum_routing_kernel)[(num_programs,)](
         logits,
         output_scores,
-        # output_topk_logits,
         output_topk_indices,
         raw_topk_logits,
         output_probs,
@@ -91,8 +89,8 @@ def fused_moe_router_fwd_triton(
         groups,
         topk,
         selected_groups,
-        K_ALIGNED,
-        BLOCK_SIZE,
+        E_ALIGNED,
+        INNER_GROUP_K_ALIGNED,
         num_stages,
         0 if score_function == "sigmoid" else 1,
         scaling_factor,
@@ -120,7 +118,7 @@ def fused_moe_router_bkwd_triton(
     num_stages = 2
     num_programs = s
 
-    BLOCK_SIZE = e
+    E_ALIGNED = triton.next_power_of_2(e)
     K_ALIGNED = triton.next_power_of_2(k)
 
     g_probs = g_probs.contiguous()
@@ -144,7 +142,7 @@ def fused_moe_router_bkwd_triton(
         e,
         k,
         K_ALIGNED,
-        BLOCK_SIZE,
+        E_ALIGNED,
         num_stages,
         0 if score_function == "sigmoid" else 1,
         scaling_factor,

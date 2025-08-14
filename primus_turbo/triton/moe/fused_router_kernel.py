@@ -17,8 +17,8 @@ def fused_scaling_group_sum_routing_kernel(
     g: tl.constexpr,  # how many groups
     k: tl.constexpr,  # topk
     selected_groups: tl.constexpr,
-    K_ALIGNED: tl.constexpr,
-    BLOCK_SIZE: tl.constexpr,  # cols
+    E_ALIGNED: tl.constexpr,
+    INNER_GROUP_K_ALIGNED: tl.constexpr,  # align of (k // selected_groups)
     num_stages: tl.constexpr,
     score_function: tl.constexpr,  # 0 sigmoid 1 softmax
     scaling_factor: float = 1.0,
@@ -26,13 +26,27 @@ def fused_scaling_group_sum_routing_kernel(
     row_start = tl.program_id(0)
     row_step = tl.num_programs(0)
     # offset and mask
-    col_offsets = tl.arange(0, BLOCK_SIZE)
+    col_offsets = tl.arange(0, E_ALIGNED)
     col_mask = col_offsets < e
 
-    k_mask = col_offsets < k
-    sort_mask = col_offsets < selected_groups * (e // g)
+    # padding for groups topk expert-6 groups-2 will padded to [0, 1, 2, P, 3, 4, 5, P]
+    padded_e: tl.constexpr = (E_ALIGNED - e) // g
+    padded_group_row_size: tl.constexpr = E_ALIGNED // g
+    col_padded_offsets = col_offsets - ((col_offsets // padded_group_row_size) * padded_e)
+    col_padded_mask = (col_offsets % padded_group_row_size) < (E_ALIGNED // g - padded_e)
 
-    ones = tl.full((e,), 1, tl.int32)
+    k_mask = col_offsets < k
+    sort_mask = col_offsets < selected_groups * (E_ALIGNED // g)
+
+    ones = tl.full((E_ALIGNED,), 1, tl.int32)
+
+    inner_group_gather_idx = (
+        tl.arange(0, INNER_GROUP_K_ALIGNED)
+        .reshape(1, INNER_GROUP_K_ALIGNED)
+        .broadcast_to(g, INNER_GROUP_K_ALIGNED)
+    )
+    inner_group_mask = inner_group_gather_idx < (k // selected_groups)
+
     for row_idx in tl.range(row_start, s, row_step, num_stages=num_stages):
         # load row
         input_logit_row_ptr = input_logit_ptr + row_idx * e + col_offsets
@@ -51,34 +65,43 @@ def fused_scaling_group_sum_routing_kernel(
         row_output_scores_ptr = output_scores_ptr + row_idx * e + col_offsets
         tl.store(row_output_scores_ptr, row_scores, mask=col_mask)
 
+        if padded_e > 0:
+            input_logit_row_ptr = input_logit_ptr + row_idx * e + col_padded_offsets
+            # reload input due to the padding
+            if score_function == 0:
+                input_logit_row = tl.load(input_logit_row_ptr, mask=col_padded_mask, other=-float("inf"))
+                row_logit = tl.sigmoid(input_logit_row.to(tl.float32))
+            else:
+                input_logit_row = tl.load(input_logit_row_ptr, mask=col_padded_mask, other=-float("inf"))
+                row_logit = tl.softmax(input_logit_row.to(tl.float32))
+
         # sort inner groups
-        input_logit_groups = tl.reshape(row_logit, (g, e // g))  # [g, e // g]
-        inner_groups_idx = tl.arange(0, e).reshape(g, e // g)
+        input_logit_groups = tl.reshape(row_logit, (g, E_ALIGNED // g))  # [g, e // g]
+        inner_groups_idx = tl.arange(0, E_ALIGNED).reshape(g, E_ALIGNED // g)
         sorted_groups_logits, sorted_inner_groups_idx = argsort(input_logit_groups, inner_groups_idx, 1, True)
 
         # gather inner groups top_(k // selected_groups)
-        inner_group_gather_idx = (
-            tl.arange(0, K_ALIGNED // selected_groups)
-            .reshape(1, K_ALIGNED // selected_groups)
-            .broadcast_to(g, K_ALIGNED // selected_groups)
-        )
         sorted_groups_logits = sorted_groups_logits.gather(inner_group_gather_idx, axis=1)
         sorted_inner_groups_idx = sorted_inner_groups_idx.gather(inner_group_gather_idx, axis=1)
 
-        groups_topk_sum = tl.sum(sorted_groups_logits, axis=1)
+        groups_topk_sum = tl.sum((sorted_groups_logits * inner_group_mask), axis=1)
         groups_idx = tl.arange(0, g)
         _, sorted_groups_idx = argsort(groups_topk_sum, groups_idx, 0, True)
 
         # gather topk
-        sorted_groups_idx_for_gather = tl.broadcast_to(sorted_groups_idx.reshape(g, 1), (g, e // g))
+        sorted_groups_idx_for_gather = tl.broadcast_to(sorted_groups_idx.reshape(g, 1), (g, E_ALIGNED // g))
         sorted_raw_topk_logits = tl.gather(input_logit_groups, sorted_groups_idx_for_gather, axis=0).reshape(
-            e
+            E_ALIGNED
         )
-        sorted_topk_idxs = tl.gather(inner_groups_idx, sorted_groups_idx_for_gather, axis=0).reshape(e)
+        sorted_topk_idxs = tl.gather(inner_groups_idx, sorted_groups_idx_for_gather, axis=0).reshape(
+            E_ALIGNED
+        )
 
         minus_ones = tl.full(sorted_raw_topk_logits.shape, -1.0, dtype=sorted_raw_topk_logits.dtype)
         sorted_raw_topk_logits = tl.where(sort_mask, sorted_raw_topk_logits, minus_ones)
         sorted_raw_topk_logits, sorted_topk_idxs = argsort(sorted_raw_topk_logits, sorted_topk_idxs, 0, True)
+
+        sorted_topk_idxs = sorted_topk_idxs - ((sorted_topk_idxs // padded_group_row_size) * padded_e)
 
         # cal scaled probs
         if score_function == 0:
@@ -117,7 +140,7 @@ def fused_scaling_group_sum_routing_backward_kernel(
     e: tl.constexpr,  # how many experts
     k: tl.constexpr,  # topk
     K_ALIGNED: tl.constexpr,
-    BLOCK_SIZE: tl.constexpr,  # cols
+    E_ALIGNED: tl.constexpr,  # cols
     num_stages: tl.constexpr,
     score_function: tl.constexpr,  # 0 sigmoid 1 softmax
     scaling_factor: float = 1.0,
@@ -125,7 +148,7 @@ def fused_scaling_group_sum_routing_backward_kernel(
     row_start = tl.program_id(0)
     row_step = tl.num_programs(0)
     # offset and mask
-    col_offsets = tl.arange(0, BLOCK_SIZE)
+    col_offsets = tl.arange(0, E_ALIGNED)
     col_mask = col_offsets < e
 
     k_offsets = tl.arange(0, K_ALIGNED)
@@ -174,7 +197,7 @@ def fused_scaling_group_sum_routing_backward_kernel(
         else:
             input_topk_score_ptr = input_out_scores + row_idx * e + input_topk_indices_offset
             input_topk_score_raw = tl.load(input_topk_score_ptr, mask=k_mask, other=float(0.0))
-            sum_t = tl.sum(input_topk_g_probs_row * input_topk_score_raw).broadcast_to(e)
+            sum_t = tl.sum(input_topk_g_probs_row * input_topk_score_raw).broadcast_to(E_ALIGNED)
 
             input_routing_map_ptr = input_routing_map + row_idx * e + col_offsets
             input_routing_map_row = tl.load(input_routing_map_ptr, mask=col_mask, other=0).to(
@@ -200,12 +223,12 @@ def fused_scaling_group_sum_routing_backward_kernel(
         if score_function == 0:  # sigmoid
             sigmoid_logit_row = tl.sigmoid(input_logits_row.to(tl.float32))
             sum_t = (-1) * (input_g_score_row * input_out_score_row * input_out_score_row / sigmoid_logit_row)
-            sum_t = tl.sum(sum_t).broadcast_to(e)
+            sum_t = tl.sum(sum_t).broadcast_to(E_ALIGNED)
 
             g_score_row = input_g_score_row * input_out_score_row / sigmoid_logit_row + sum_t
             g_score_row = g_score_row * sigmoid_logit_row * (1 - sigmoid_logit_row)
         else:
-            sum_t = tl.sum(input_g_score_row * input_out_score_row).broadcast_to(e)
+            sum_t = tl.sum(input_g_score_row * input_out_score_row).broadcast_to(E_ALIGNED)
             g_score_row = (input_out_score_row) * (input_g_score_row - sum_t)
 
         output_g_scores_ptr = output_g_scores + row_idx * e + col_offsets
