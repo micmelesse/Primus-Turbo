@@ -52,13 +52,11 @@ void quant_2d(const InDataType *a_ptr, const ScaleType *scale, OutDataType *b_pt
 template <typename InDataType, typename ScaleType, typename OutDataType>
 __global__ void dequant_grouped_gemm_device(const InDataType *a_ptr, const ScaleType *scale_a,
                                             const ScaleType *scale_b, OutDataType *b_ptr,
-                                            const int64_t *p_seg_lens, ck_tile::index_t B,
+                                            const int64_t *p_group_lens,
+                                            const int64_t *p_group_offs, ck_tile::index_t B,
                                             ck_tile::index_t N) {
     // Calculate total number of elements across all groups
-    ck_tile::index_t total_elements = 0;
-    for (ck_tile::index_t k = 0; k < B; k++) {
-        total_elements += p_seg_lens[k] * N;
-    }
+    ck_tile::index_t total_elements = p_group_offs[B] * N;
 
     // Use all threads for parallel processing with grid-stride loop
     for (ck_tile::index_t global_idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -74,7 +72,7 @@ __global__ void dequant_grouped_gemm_device(const InDataType *a_ptr, const Scale
 
         // Locate the group this element belongs to
         while (k < B) {
-            ck_tile::index_t group_size = p_seg_lens[k] * N;
+            ck_tile::index_t group_size = p_group_lens[k] * N;
             if (remaining_idx < group_size) {
                 break;
             }
@@ -82,7 +80,7 @@ __global__ void dequant_grouped_gemm_device(const InDataType *a_ptr, const Scale
             offset_a += group_size;
             offset_b += group_size;
             offset_scale_b += N;
-            offset_scale_a += p_seg_lens[k]; // Accumulate rows for scale_a offset
+            offset_scale_a += p_group_lens[k]; // Accumulate rows for scale_a offset
             k++;
         }
 
@@ -114,9 +112,9 @@ __global__ void dequant_grouped_gemm_device(const InDataType *a_ptr, const Scale
 
 template <typename InDataType, typename ScaleType, typename OutDataType>
 void dequant_grouped_gemm(const InDataType *a_ptr, const ScaleType *scale_a,
-                          const ScaleType *scale_b, OutDataType *b_ptr, const int64_t *p_seg_lens,
-                          ck_tile::index_t B, ck_tile::index_t M, ck_tile::index_t N,
-                          hipStream_t stream) {
+                          const ScaleType *scale_b, OutDataType *b_ptr, const int64_t *p_group_lens,
+                          const int64_t *p_group_offs, ck_tile::index_t B, ck_tile::index_t M,
+                          ck_tile::index_t N, hipStream_t stream) {
     const ck_tile::index_t total_elements = B * M * N;
 
     // Thread block configuration for better GPU utilization
@@ -125,8 +123,8 @@ void dequant_grouped_gemm(const InDataType *a_ptr, const ScaleType *scale_a,
     const int blocks            = min(
         max_blocks, static_cast<int>((total_elements + threads_per_block - 1) / threads_per_block));
     dequant_grouped_gemm_device<InDataType, ScaleType, OutDataType>
-        <<<blocks, threads_per_block, 0, stream>>>(a_ptr, scale_a, scale_b, b_ptr, p_seg_lens, B,
-                                                   N);
+        <<<blocks, threads_per_block, 0, stream>>>(a_ptr, scale_a, scale_b, b_ptr, p_group_lens,
+                                                   p_group_offs, B, N);
 }
 
 } // namespace primus_turbo

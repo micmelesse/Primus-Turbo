@@ -90,7 +90,8 @@ at::Tensor fp8_dequantize(const at::Tensor input, const at::Tensor scale_inv,
     return output;
 }
 
-at::Tensor fp8_quantize_row_col(at::Tensor &input, at::Tensor &scale, const bool is_row_major) {
+at::Tensor fp8_quantize_row_col(at::Tensor &input, at::Tensor &scale,
+                                const at::ScalarType dest_dtype, const bool is_row_major) {
     int64_t dims = input.ndimension();
     PRIMUS_TURBO_CHECK(dims == 2 || dims == 3, "only support 2D or 3D tensor");
     int64_t    b = 1, m = 0, k = 0;
@@ -99,14 +100,14 @@ at::Tensor fp8_quantize_row_col(at::Tensor &input, at::Tensor &scale, const bool
         m = input.size(0);
         k = input.size(1);
 
-        output = at::empty({m, k}, at::dtype(at::kFloat8_e4m3fnuz).device(at::kCUDA));
+        output = at::empty({m, k}, at::dtype(dest_dtype).device(at::kCUDA));
     }
 
     else if (dims == 3) {
         b      = input.size(0);
         m      = input.size(1);
         k      = input.size(2);
-        output = at::empty({b, m, k}, at::dtype(at::kFloat8_e4m3fnuz).device(at::kCUDA));
+        output = at::empty({b, m, k}, at::dtype(dest_dtype).device(at::kCUDA));
         if (is_row_major) {
             m = b * m;
         } else {
@@ -142,12 +143,13 @@ at::Tensor fp8_quantize_row_col(at::Tensor &input, at::Tensor &scale, const bool
     return output;
 }
 
-at::Tensor grouped_gemm_fp8_dequant(at::Tensor &input, at::Tensor &group_lens, at::Tensor &scale_a,
+at::Tensor grouped_gemm_fp8_dequant(at::Tensor &input, at::Tensor &group_lens,
+                                    at::Tensor &group_offs, at::Tensor &scale_a,
                                     at::Tensor &scale_b) {
     int64_t dims = input.ndimension();
     PRIMUS_TURBO_CHECK(dims == 2, "only support 2D tensors");
     int64_t m = 0, n = 0;
-    printf("test5\n\n\n");
+    printf("test4\n\n\n");
     at::Tensor output;
 
     m      = input.size(0);
@@ -166,7 +168,8 @@ at::Tensor grouped_gemm_fp8_dequant(at::Tensor &input, at::Tensor &group_lens, a
             reinterpret_cast<const ScaleType *>(scale_a.data_ptr()),
             reinterpret_cast<const ScaleType *>(scale_b.data_ptr()),
             reinterpret_cast<OutType *>(output.data_ptr()),
-            reinterpret_cast<const int64_t *>(group_lens.data_ptr()), bs, ms, n, stream);
+            reinterpret_cast<const int64_t *>(group_lens.data_ptr()),
+            reinterpret_cast<const int64_t *>(group_offs.data_ptr()), bs, ms, n, stream);
     }
 
     return output;

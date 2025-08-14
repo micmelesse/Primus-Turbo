@@ -37,7 +37,20 @@ def dequant_fp8_tensorwise_impl(
 """
 Rowwise Quantization Kernel
 """
-# TODO
+
+
+def quant_fp8_rowwise_impl(
+    x: torch.Tensor,
+    scale: torch.Tensor,
+    dtype: torch.dtype,
+    row_quant: bool = True,
+):
+    x_fp8 = torch.ops.primus_turbo_cpp_extension.fp8_quantize_row_col(x, scale, dtype, row_quant)
+
+    return x_fp8
+
+
+# TODO Dequant
 
 
 """

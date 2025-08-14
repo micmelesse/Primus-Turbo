@@ -7,6 +7,7 @@
 import torch
 import triton
 
+import primus_turbo.pytorch as turbo
 from primus_turbo.triton.grouped_gemm.grouped_gemm_fp8_kernel import (
     compute_m_num_tiles_indptr,
     grouped_gemm_fp8_blockwise_kernel,
@@ -154,3 +155,56 @@ def grouped_gemm_variable_k_fp8_blockwise_impl(
         **config,
     )
     return c
+
+
+def grouped_gemm_compute_offs(group_lens: torch.Tensor) -> torch.Tensor:
+    group_offs = torch.ops.primus_turbo_cpp_extension.grouped_gemm_compute_offs(group_lens)
+    return group_offs
+
+
+# row-wise
+def grouped_gemm_csrc_fp8_row_impl(
+    a: torch.Tensor,
+    b: torch.Tensor,
+    a_scales: torch.Tensor,
+    b_scales: torch.Tensor,
+    group_lens: torch.Tensor,
+    group_offs: torch.Tensor,
+    trans_a: bool,
+    trans_b: bool,
+) -> torch.Tensor:
+    assert a.dim() == 2, f"a must be 2D, got {a.shape}"
+    assert b.dim() == 3, f"b must be 3D, got {b.shape}"
+    assert a.dtype in [turbo.float8_e4m3, turbo.float8_e5m2], f"a must be float8, got {a.dtype}"
+    assert b.dtype in [turbo.float8_e4m3, turbo.float8_e5m2], f"b must be float8, got {b.dtype}"
+    assert trans_a == False
+
+    out = torch.ops.primus_turbo_cpp_extension.grouped_gemm(a, b, group_lens, group_offs, trans_a, trans_b)
+    out = torch.ops.primus_turbo_cpp_extension.grouped_gemm_fp8_dequant(
+        out, group_lens, group_offs, a_scales, b_scales
+    )
+    return out
+
+
+def grouped_gemm_variable_k_fp8_row_csrc_impl(
+    a: torch.Tensor,
+    b: torch.Tensor,
+    a_scales: torch.Tensor,
+    b_scales: torch.Tensor,
+    group_lens: torch.Tensor,
+    group_offs: torch.Tensor,
+    trans_a: bool,
+    trans_b: bool,
+) -> torch.Tensor:
+    assert a.dim() == 2, f"a must be 2D, got {a.shape}"
+    assert b.dim() == 2, f"b must be 2D, got {b.shape}"
+    assert a.dtype in [turbo.float8_e4m3, turbo.float8_e5m2], f"a must be float8, got {a.dtype}"
+    assert b.dtype in [turbo.float8_e4m3, turbo.float8_e5m2], f"b must be float8, got {b.dtype}"
+    assert trans_a == True and trans_b == False, "Only trans_a=True and trans_b=False are supported."
+    out = torch.ops.primus_turbo_cpp_extension.grouped_gemm_fp8_variable_k(
+        a, b, group_lens, group_offs, trans_a, trans_b
+    )
+    out = torch.ops.primus_turbo_cpp_extension.grouped_gemm_fp8_dequant(
+        out, group_lens, group_offs, a_scales, b_scales
+    )
+    return out

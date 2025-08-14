@@ -24,8 +24,10 @@ TORCH_LIBRARY(primus_turbo_cpp_extension, m) {
           ") -> Tensor");
     m.def("fp8_quantize(Tensor input, Tensor scale, ScalarType dest_dtype) -> Tensor");
     m.def("fp8_dequantize(Tensor input, Tensor scale_inv, ScalarType dest_dtype) -> Tensor");
-    m.def("fp8_quantize_row_col(Tensor input, Tensor scale, bool is_row_major) -> Tensor");
-    m.def("grouped_gemm_fp8_dequant(Tensor input, Tensor group_lens, Tensor scale_a, Tensor "
+    m.def("fp8_quantize_row_col(Tensor input, Tensor scale, ScalarType dest_dtype, bool "
+          "is_row_major) -> Tensor");
+    m.def("grouped_gemm_fp8_dequant(Tensor input, Tensor group_lens, Tensor group_offs, Tensor "
+          "scale_a, Tensor "
           "scale_b) -> Tensor ");
     m.def("rmsnorm_fwd(Tensor input, Tensor gamma, float eps) -> Tensor");
     m.def("rmsnorm_bwd(Tensor input, Tensor gamma, Tensor grad_out, float eps) -> Tensor[]");
