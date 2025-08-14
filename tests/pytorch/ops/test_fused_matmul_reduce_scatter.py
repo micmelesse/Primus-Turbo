@@ -4,6 +4,8 @@
 # See LICENSE for license information.
 ###############################################################################
 
+from typing import Dict, List
+
 import torch
 import torch.distributed as dist
 from torch._C._distributed_c10d import ReduceOp
@@ -19,6 +21,18 @@ from torch.testing._internal.common_utils import (
 
 import primus_turbo.pytorch as pt
 from tests.test_utils import get_tolerances
+
+_backend_streams: Dict[int, List[torch.cuda.Stream]] = {}
+
+
+def get_backend_stream(size=1, priority=0, prefix=""):
+    global _backend_streams
+
+    key = (priority, prefix)
+    if key not in _backend_streams or len(_backend_streams[key]) < size:
+        _backend_streams[key] = [torch.cuda.Stream(priority=priority) for _ in range(size)]
+
+    return _backend_streams[key][:size]
 
 
 def native_torch_matmul_reduce_scatter(
@@ -95,7 +109,7 @@ class FusedMatmulReduceScatterTestBase(MultiProcessTestCase):
     def device(self) -> torch.device:
         return torch.device("cuda", self.rank)
 
-    def _init_process(self):
+    def _init_process(self, comm_method):
         torch.cuda.set_device(self.device)
         store = dist.FileStore(self.file_name, self.world_size)
         dist.init_process_group(
@@ -106,12 +120,22 @@ class FusedMatmulReduceScatterTestBase(MultiProcessTestCase):
         )
         torch.manual_seed(42 + self.rank)
 
+        if comm_method == "pipeline":
+            self.gemm_streams = [torch.cuda.current_stream()]
+            self.comm_streams = get_backend_stream(size=self.world_size, priority=0, prefix="comm")
+        else:
+            self.gemm_streams = []
+            self.comm_streams = []
+
     @skip_if_lt_x_gpu(2)
     @parametrize("scatter_dim", [0, 1])
     @parametrize("reduce_op", ["sum", "avg"])
     @parametrize("dtype", [torch.bfloat16, torch.float16])
-    def test_fused_matmul_reduce_scatter(self, scatter_dim: int, reduce_op: str, dtype: torch.dtype) -> None:
-        self._init_process()
+    @parametrize("comm_method", ["pipeline"])
+    def test_fused_matmul_reduce_scatter(
+        self, comm_method: str, scatter_dim: int, reduce_op: str, dtype: torch.dtype
+    ) -> None:
+        self._init_process(comm_method)
 
         BATCH = 8
         M = 256
@@ -142,6 +166,9 @@ class FusedMatmulReduceScatterTestBase(MultiProcessTestCase):
             reduce_op=reduce_op,
             scatter_dim=scatter_dim,
             group_name=group.group_name,
+            gemm_streams=self.gemm_streams,
+            comm_streams=self.comm_streams,
+            comm_method=comm_method,
         )
 
         assert (
@@ -163,8 +190,9 @@ class FusedMatmulReduceScatterTestBase(MultiProcessTestCase):
     @parametrize("M,K,N", [(8192, 8192, 8192), (8192, 28672, 8192)])
     @parametrize("batch_size", [1, 4])
     @parametrize("dtype", [torch.bfloat16])
-    def test_llama3_70b_fused_matmul_reduce_scatter(self, dtype, batch_size, M, K, N) -> None:
-        self._init_process()
+    @parametrize("comm_method", ["tile", "pipeline"])
+    def test_llama3_70b_fused_matmul_reduce_scatter(self, comm_method, dtype, batch_size, M, K, N) -> None:
+        self._init_process(comm_method)
         group = dist.group.WORLD
         rank = self.rank
         scatter_dim = 0
@@ -191,6 +219,9 @@ class FusedMatmulReduceScatterTestBase(MultiProcessTestCase):
             reduce_op=reduce_op,
             scatter_dim=scatter_dim,
             group_name=group.group_name,
+            gemm_streams=self.gemm_streams,
+            comm_streams=self.comm_streams,
+            comm_method=comm_method,
         )
 
         assert rs_output_native.stride() == rs_output_turbo.stride()
