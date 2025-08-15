@@ -184,8 +184,8 @@ class AttentionTritonFunction(torch.autograd.Function):
             ctx.p_scale = p_scale
             ctx.causal = causal
             ctx.use_fp8 = use_fp8
-            ctx.cu_seqlens_q = torch.tensor(0, device="cuda")
-            ctx.cu_seqlens_k = torch.tensor(0, device="cuda")
+            ctx.cu_seqlens_q = 0
+            ctx.cu_seqlens_k = 0
             ctx.max_seqlens_q = q.shape[1]
             ctx.max_seqlens_k = k.shape[1]
 

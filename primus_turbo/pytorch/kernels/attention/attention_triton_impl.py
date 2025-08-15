@@ -155,11 +155,11 @@ def attention_triton_forward_impl(
 
     # stores LSE the log of the normalization constant / sum of expoential score(unnormalzied probablities)
     if is_varlen:
-        softmax_lse = torch.empty((q.shape[0] * 2, nheads_q), device=q.device, dtype=torch.float32)
+        softmax_lse = torch.empty((q.shape[0], nheads_q), device=q.device, dtype=torch.float32)
         stride_lse_m, stride_lse_h = softmax_lse.stride()
         stride_lse_z = 0
     else:
-        softmax_lse = torch.empty((batch, nheads_q, max_seqlens_q * 2), device=q.device, dtype=torch.float32)
+        softmax_lse = torch.empty((batch, nheads_q, max_seqlens_q), device=q.device, dtype=torch.float32)
         stride_lse_z, stride_lse_h, stride_lse_m = softmax_lse.stride()
 
     if bias is not None:
@@ -307,12 +307,12 @@ def attention_triton_backward_impl(
     k_scale: torch.Tensor,
     v_scale: torch.Tensor,
     p_scale: float,
-    softmax_lse_delta: torch.Tensor,
+    softmax_lse: torch.Tensor,
     dq: Optional[torch.Tensor],
     dk: Optional[torch.Tensor],
     dv: Optional[torch.Tensor],
-    cu_seqlens_q: torch.Tensor,
-    cu_seqlens_k: torch.Tensor,
+    cu_seqlens_q: int,
+    cu_seqlens_k: int,
     max_seqlen_q: int,
     max_seqlen_k: int,
     softmax_scale: float,
@@ -338,7 +338,7 @@ def attention_triton_backward_impl(
         print("k:", k, k.shape)
         print("v:", v, v.shape)
         print("o:", o, o.shape)
-        print("softmax_lse:", softmax_lse_delta, softmax_lse_delta.shape)
+        print("softmax_lse:", softmax_lse, softmax_lse.shape)
         print("dq:", dq, dq.shape if dq is not None else None)
         print("dk:", dk, dk.shape if dk is not None else None)
         print("dv:", dv, dv.shape if dv is not None else None)
@@ -390,7 +390,6 @@ def attention_triton_backward_impl(
             copy_back["dq"] = True
 
         dq.zero_()
-    stride_dq_all = dq.stride()[0]
 
     # deal with dk, dv
     if (dk is None) or (dv is None):
@@ -416,17 +415,17 @@ def attention_triton_backward_impl(
     assert k.is_contiguous()
     assert v.is_contiguous()
     assert o.is_contiguous()
-    assert softmax_lse_delta.is_contiguous()
+    assert softmax_lse.is_contiguous()
     assert q_scale.is_contiguous()
     assert k_scale.is_contiguous()
 
-    # # init delta
-    # delta = torch.empty_like(softmax_lse)
+    # init delta
+    delta = torch.zeros_like(softmax_lse)
     if is_varlen:
-        stride_lse_delta_m, stride_lse_delta_h = softmax_lse_delta.stride()
+        stride_lse_delta_m, stride_lse_delta_h = softmax_lse.stride()
         stride_lse_delta_z = 0
     else:
-        stride_lse_delta_z, stride_lse_delta_h, stride_lse_delta_m = softmax_lse_delta.stride()
+        stride_lse_delta_z, stride_lse_delta_h, stride_lse_delta_m = softmax_lse.stride()
 
     if use_fp8:
         do_fp8 = torch.empty_like(do, dtype=get_f8_bwd_dtype())
@@ -454,7 +453,7 @@ def attention_triton_backward_impl(
         do,
         do_fp8,
         do_scale,
-        softmax_lse_delta,
+        delta,
         use_fp8,
         stride_oz,
         stride_oh,
@@ -496,7 +495,7 @@ def attention_triton_backward_impl(
         print("dq:", dq, dq.shape)
         print("dk:", dk, dk.shape)
         print("dv:", dv, dv.shape)
-        print("L:", softmax_lse_delta, softmax_lse_delta.shape)
+        print("L:", softmax_lse, softmax_lse.shape)
         print("stride_qz, stride_qh, stride_qm, stride_qk:", stride_qz, stride_qh, stride_qm, stride_qk)
         print("stride_kz, stride_kh, stride_kn, stride_kk:", stride_kz, stride_kh, stride_kn, stride_kk)
         print("stride_vz, stride_vh, stride_vn, stride_vk:", stride_vz, stride_vh, stride_vn, stride_vk)
@@ -526,13 +525,10 @@ def attention_triton_backward_impl(
         v_scale,
         p_scale,
         do_scale,
-        o,
         do_fp8 if use_fp8 else do,
         dq,
-        dk,
-        dv,
-        softmax_lse_delta,
-        stride_dq_all,
+        softmax_lse,
+        delta,
         stride_qz,
         stride_qh,
         stride_qm,
@@ -611,13 +607,11 @@ def attention_triton_backward_impl(
         v_scale,
         p_scale,
         do_scale,
-        o,
         do_fp8 if use_fp8 else do,
-        dq,
         dk,
         dv,
-        softmax_lse_delta,
-        stride_dq_all,
+        softmax_lse,
+        delta,
         stride_qz,
         stride_qh,
         stride_qm,
@@ -717,8 +711,8 @@ def _attention_triton_backward_impl_fake(
     dq: Optional[torch.Tensor],
     dk: Optional[torch.Tensor],
     dv: Optional[torch.Tensor],
-    cu_seqlens_q: torch.Tensor,
-    cu_seqlens_k: torch.Tensor,
+    cu_seqlens_q: int,
+    cu_seqlens_k: int,
     max_seqlen_q: int,
     max_seqlen_k: int,
     softmax_scale: float,

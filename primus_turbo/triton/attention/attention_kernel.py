@@ -852,7 +852,7 @@ def attn_fwd(
     l_offset = LSE + off_z * stride_lse_z + off_h_q * stride_lse_h + cu_seqlens_q_start * stride_lse_m
     # leave an extra BLOCK_M for delta in backward
     # so we can load them together
-    offs_l_m = start_m * BLOCK_M * 2 + tl.arange(0, BLOCK_M)
+    offs_l_m = start_m * BLOCK_M + tl.arange(0, BLOCK_M)
     l_ptrs = l_offset + offs_l_m * stride_lse_m
     if USE_EXP2:
         RCP_LN2: tl.constexpr = 1.4426950408889634
@@ -983,7 +983,7 @@ def _bwd_preprocess_use_o(
     delta = tl.sum(o * do, axis=1)
 
     # write-back delta
-    off_d_m = pid_m * BLOCK_M * 2 + tl.arange(BLOCK_M, 2 * BLOCK_M)
+    off_d_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
     delta_offset = Delta + off_z * stride_deltaz + off_h * stride_deltah + q_start * stride_deltam
     delta_ptrs = delta_offset + off_d_m * stride_deltam
     tl.store(delta_ptrs, delta, mask=mask_m)
@@ -1038,13 +1038,11 @@ def _bwd_kernel_dkdv(
     v_scale_ptr,
     p_scale: tl.constexpr,
     do_descale_ptr,
-    Out,
     DO,
-    DQ,
     DK,
     DV,
-    LD,
-    stride_dq_all,
+    M,
+    Delta,
     stride_qz,
     stride_qh,
     stride_qm,
@@ -1132,7 +1130,9 @@ def _bwd_kernel_dkdv(
     k_offset = K + off_z * stride_kz + off_h_k * stride_kh + k_start * stride_kn
     v_offset = V + off_z * stride_vz + off_h_k * stride_vh + k_start * stride_vn
     do_offset = DO + off_z * stride_doz + off_h_q * stride_doh + q_start * stride_dom
-    ld_offset = LD + off_z * stride_ldz + off_h_q * stride_ldh + q_start * stride_ldm
+    adj_delta = off_z * stride_ldz + off_h_q * stride_ldh + q_start * stride_ldm
+    l_offset = M + adj_delta
+    d_offset = Delta + adj_delta
 
     # output tensor offsets
     # sume dk and dv
@@ -1224,7 +1224,8 @@ def _bwd_kernel_dkdv(
             stride_qk,
             stride_dom,
             stride_dok,
-            ld_offset,
+            l_offset,
+            d_offset,
             stride_ldm,
             BLOCK_M,
             BLOCK_N,
@@ -1249,7 +1250,8 @@ def _bwd_kernel_dkdv(
 
         q_offset += stride_qh
         do_offset += stride_qh
-        ld_offset += stride_ldh
+        l_offset += stride_ldh
+        d_offset += stride_ldh
 
     if USE_FP8:
         dv_descale = 1.0 / (p_scale)
@@ -1281,7 +1283,8 @@ def _attn_bwd_dkdv(
     stride_qk,
     stride_dom,
     stride_dok,
-    ld_offset,
+    l_offset,
+    d_offset,
     stride_ldm,
     BLOCK_M: tl.constexpr,
     BLOCK_N: tl.constexpr,
@@ -1338,10 +1341,8 @@ def _attn_bwd_dkdv(
             causal_mask = offs_m[:, None] >= (col_offset + offs_n[None, :])
             qk = tl.where(causal_mask, qk, float("-inf"))
 
-        l_ptrs = ld_offset + (2 * start_m + tl.arange(0, 2 * BLOCK_M)) * stride_ldm
-        mask_ldm = tl.ravel(tl.join(mask_m, mask_m))
-        lds = tl.load(l_ptrs, mask=mask_ldm, other=0.0)
-        l_i = tl.gather(lds, index=tl.arange(0, BLOCK_M), axis=0)
+        l_ptrs = l_offset + offs_m * stride_ldm
+        l_i = tl.load(l_ptrs, mask=mask_m, other=0.0)
 
         # compute p
         if USE_EXP2:
@@ -1362,7 +1363,8 @@ def _attn_bwd_dkdv(
             dp_descale = blk_do_descale / v_scale
             dp = dp * dp_descale
 
-        Di = tl.gather(lds, index=tl.arange(BLOCK_M, 2 * BLOCK_M), axis=0)
+        d_ptrs = d_offset + offs_m * stride_ldm
+        Di = tl.load(d_ptrs, mask=mask_m, other=0.0)
         ds = p * (dp - Di[:, None])
 
         if USE_FP8:
@@ -1406,13 +1408,10 @@ def _bwd_kernel_dq(
     v_scale_ptr,
     p_scale: tl.constexpr,
     do_descale_ptr,
-    Out,
     DO,
     DQ,
-    DK,
-    DV,
-    LD,
-    stride_dq_all,
+    M,
+    Delta,
     stride_qz,
     stride_qh,
     stride_qm,
@@ -1502,7 +1501,9 @@ def _bwd_kernel_dq(
     k_offset = K + off_z * stride_kz + off_h_k * stride_kh + k_start * stride_kn
     v_offset = V + off_z * stride_vz + off_h_k * stride_vh + k_start * stride_vn
     do_offset = DO + off_z * stride_doz + off_h_q * stride_doh + q_start * stride_dom
-    ld_offset = LD + off_z * stride_ldz + off_h_q * stride_ldh + q_start * stride_ldm
+    adj_delta = off_z * stride_ldz + off_h_q * stride_ldh + q_start * stride_ldm
+    l_offset = M + adj_delta
+    d_offset = Delta + adj_delta
 
     # output tensor offsets
     dq_offset = DQ + off_z * stride_qz + off_h_q * stride_qh + q_start * stride_qm
@@ -1565,9 +1566,10 @@ def _bwd_kernel_dq(
         blk_q_descale = 1.0
         blk_do_descale = 1.0
 
-    l_ptrs = ld_offset + (2 * start_m * BLOCK_M + tl.arange(0, 2 * BLOCK_M)) * stride_ldm
-    mask_ldm = tl.ravel(tl.join(mask_m, mask_m))
-    lds = tl.load(l_ptrs, mask=mask_ldm, other=0.0)
+    l_ptrs = l_offset + offs_m * stride_ldm
+    l_i = tl.load(l_ptrs, mask=mask_m, other=0.0)
+    d_ptrs = d_offset + offs_m * stride_ldm
+    Di = tl.load(d_ptrs, mask=mask_m, other=0.0)  # D stored in fp32
 
     dq = _attn_bwd_dq(
         dq,
@@ -1575,7 +1577,8 @@ def _bwd_kernel_dq(
         offs_d_qk,
         offs_d_v,
         offs_m,
-        lds,
+        l_i,
+        Di,
         do,
         mask_d_qk,
         mask_d_v,
@@ -1617,7 +1620,8 @@ def _attn_bwd_dq(
     offs_d_qk,
     offs_d_v,
     offs_m,
-    lds,
+    l_i,
+    Di,
     do,
     mask_d_qk,
     mask_d_v,
@@ -1647,8 +1651,6 @@ def _attn_bwd_dq(
     CAUSAL: tl.constexpr,
 ):
     idx_block_n = tl.full([1], -1, dtype=tl.int32)
-    l_i = tl.gather(lds, index=tl.arange(0, BLOCK_M), axis=0)
-    Di = tl.gather(lds, index=tl.arange(BLOCK_M, 2 * BLOCK_M), axis=0)
 
     RCP_LN2: tl.constexpr = 1.4426950408889634
     if USE_EXP2:
