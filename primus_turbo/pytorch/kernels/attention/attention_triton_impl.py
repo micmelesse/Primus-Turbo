@@ -382,7 +382,7 @@ def attention_triton_backward_impl(
 
     # deal with dq
     if dq is None:
-        dq = torch.zeros(q.shape, device=q.device, dtype=bwd_torch_dtype)
+        dq = torch.zeros_like(q, dtype=bwd_torch_dtype)
     else:
         dq_og = dq
         if not dq.is_contiguous():
@@ -429,7 +429,7 @@ def attention_triton_backward_impl(
         stride_lse_delta_z, stride_lse_delta_h, stride_lse_delta_m = softmax_lse_delta.stride()
 
     if use_fp8:
-        do_fp8 = torch.empty(do.shape, dtype=get_f8_bwd_dtype(), device=q.device)
+        do_fp8 = torch.empty_like(do, dtype=get_f8_bwd_dtype())
         _shape = (batch, nheads_q, triton.cdiv(max_seqlen_q, FIXED_BLOCK_M))
         do_scale = torch.empty(_shape, dtype=torch.float32, device=q.device)
         stride_descalez, stride_descaleh, stride_descalem = do_scale.stride()

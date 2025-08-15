@@ -992,7 +992,7 @@ def _bwd_preprocess_use_o(
         do_scale = F8_BWD_MAX / (tl.max(tl.abs(do)) + 1e-7)
         do_fp8 = (do * do_scale).to(F8_BWD_DTYPE)
 
-        do_fp8_offset = DO_FP8 + off_z * stride_oz + off_h * stride_oh + q_start * stride_om
+        do_fp8_offset = DO_FP8 + off_z * stride_doz + off_h * stride_doh + q_start * stride_dom
         do_fp8_ptrs = do_fp8_offset + off_m[:, None] * stride_dom + off_d_v[None, :] * stride_dok
 
         tl.store(do_fp8_ptrs, do_fp8, mask=mask_o)

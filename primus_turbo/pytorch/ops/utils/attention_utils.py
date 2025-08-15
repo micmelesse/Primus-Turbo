@@ -61,7 +61,6 @@ def quant_v_get_p_scale(v, use_fp8: bool):
     else:
         v_scale = torch.tensor([1.0], device=v.device)
         p_scale = 1.0
-        p_scale = 1.0
 
     return v, v_scale, p_scale
 
