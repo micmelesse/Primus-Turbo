@@ -308,7 +308,7 @@ def _attn_fwd_inner(
         qk += tl.dot(q, k)
 
         if USE_FP8:
-            qk_scaled = qk * q_descale * blk_k_descale * SM_SCALE
+            qk_scaled = qk * (q_descale * blk_k_descale * SM_SCALE)
         else:
             qk_scaled = qk * SM_SCALE
 
@@ -1196,9 +1196,8 @@ def _bwd_kernel_dkdv(
     k = tl.trans(k)
     v = tl.trans(v)
 
-    # FIXME: possible race conditions if not transposed?
-    dk = tl.zeros([BLOCK_DMODEL_QK, BLOCK_N], dtype=tl.float32)
-    dv = tl.zeros([BLOCK_DMODEL_V, BLOCK_N], dtype=tl.float32)
+    dk = tl.zeros([BLOCK_N, BLOCK_DMODEL_QK], dtype=tl.float32)
+    dv = tl.zeros([BLOCK_N, BLOCK_DMODEL_V], dtype=tl.float32)
 
     if USE_FP8:
         k_descale_offset = (
@@ -1256,8 +1255,7 @@ def _bwd_kernel_dkdv(
         dv_descale = 1.0 / (p_scale)
         dv *= dv_descale
 
-    dk = tl.trans(dk)
-    dv = tl.trans(dv)
+    dk *= sm_scale / p_scale
 
     dk_ptrs = dk_offset + offs_n[:, None] * stride_kn + offs_d_qk[None, :] * stride_kk
     tl.store(dk_ptrs, dk, mask=k_mask)
@@ -1365,7 +1363,7 @@ def _attn_bwd_dkdv(
             dp = dp * dp_descale
 
         Di = tl.gather(lds, index=tl.arange(BLOCK_M, 2 * BLOCK_M), axis=0)
-        ds = (p * (dp - Di[:, None])) * (sm_scale / p_scale)
+        ds = p * (dp - Di[:, None])
 
         if USE_FP8:
             ds_scale = F8_FWD_MAX / tl.max(tl.abs(ds) + 1e-7)
@@ -1374,7 +1372,7 @@ def _attn_bwd_dkdv(
         ds = ds.to(q.dtype)
 
         # compute dv
-        _dv = tl.dot(tl.trans(do), p.to(k.dtype), out_dtype=tl.float32, allow_tf32=False)
+        _dv = tl.dot(tl.trans(p.to(k.dtype)), do, out_dtype=tl.float32, allow_tf32=False)
 
         if USE_FP8:
             dv = tl.fma(_dv, blk_do_descale, dv)
@@ -1382,7 +1380,7 @@ def _attn_bwd_dkdv(
             dv += _dv
 
         # compute dk = dot(ds.T, q)
-        _dk = tl.dot(tl.trans(q), ds)
+        _dk = tl.dot(tl.trans(ds), q)
 
         if USE_FP8:
             dk_descale = blk_q_descale / ds_scale
@@ -1540,8 +1538,7 @@ def _bwd_kernel_dq(
 
     # compute dq
     offs_m = start_m * BLOCK_M + tl.arange(0, BLOCK_M)
-    # FIXME: possible race conditions if not transposed?
-    dq = tl.zeros([BLOCK_DMODEL_QK, BLOCK_M], dtype=tl.float32)
+    dq = tl.zeros([BLOCK_M, BLOCK_DMODEL_QK], dtype=tl.float32)
     q_ptrs = q_offset + offs_m[:, None] * stride_qm + offs_d_qk[None, :] * stride_qk
     do_ptrs = do_offset + offs_m[:, None] * stride_dom + offs_d_v[None, :] * stride_dok
 
@@ -1609,7 +1606,8 @@ def _bwd_kernel_dq(
     )
 
     dq_ptrs = dq_offset + offs_m[:, None] * stride_qm + offs_d_qk[None, :] * stride_qk
-    tl.store(dq_ptrs, tl.trans(dq), mask=mask_q)
+    dq *= sm_scale / p_scale
+    tl.store(dq_ptrs, dq, mask=mask_q)
 
 
 @triton.jit
@@ -1673,8 +1671,8 @@ def _attn_bwd_dq(
         k = tl.load(k_ptrs, mask=mask_k, other=0.0)
         v = tl.load(v_ptrs, mask=mask_v, other=0.0)
 
-        k = tl.trans(k)
-        qk = tl.dot(q, k, out_dtype=tl.float32)
+        kt = tl.trans(k)
+        qk = tl.dot(q, kt, out_dtype=tl.float32)
 
         if USE_FP8:
             # can fuse with sm_scale
@@ -1704,16 +1702,14 @@ def _attn_bwd_dq(
             dp_descale = do_descale / v_scale
             dp = dp * dp_descale
 
-        ds = (p * (dp - Di[:, None])) * (sm_scale / p_scale)
+        ds = p * (dp - Di[:, None])
 
         if USE_FP8:
             ds_scale = F8_FWD_MAX / tl.max(tl.abs(ds) + 1e-7)
             ds = ds * ds_scale
 
         ds = ds.to(q.dtype)
-        # _dq = tl.dot(ds, k, allow_tf32=False)
-
-        _dq = tl.dot(k, tl.trans(ds), allow_tf32=False)
+        _dq = tl.dot(ds, k, allow_tf32=False)
 
         if USE_FP8:
             dq_descale = blk_k_descale / ds_scale  # ds_scale # 1. / k_scale
