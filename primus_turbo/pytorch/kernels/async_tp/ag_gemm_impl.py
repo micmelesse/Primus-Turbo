@@ -11,7 +11,7 @@ from torch.distributed._symmetric_memory import (
 )
 
 from .amd_symmetric_memory import get_amd_symm_mem_workspace
-from .common_ops import batch_wait_eq_sys, ipc_create_tensor_lists
+from .common_ops import ipc_create_tensor_lists, put_signal_rel_sys, wait_signal_acq_sys
 
 
 def hip_check(call_result):
@@ -22,10 +22,6 @@ def hip_check(call_result):
     if isinstance(err, hip.hipError_t) and err != hip.hipError_t.hipSuccess:
         raise RuntimeError(str(err))
     return result
-
-
-def wait_all_gather(rank, num_ranks, barrier_ptr: int):
-    batch_wait_eq_sys[(1,)](rank, barrier_ptr, num_ranks)
 
 
 @lru_cache
@@ -89,7 +85,6 @@ def pipelined_all_gather_copy_send(
     comm_kind_type,
 ):
 
-    one = get_one_tensor()
     num_ag = len(send_n_bytes)
 
     comm_event = get_comm_event()
@@ -114,15 +109,8 @@ def pipelined_all_gather_copy_send(
 
             dst_ptrs[dst_rank][i] += send_n_bytes[i] * (num_ranks - 1)
 
-        hip_check(
-            hip.hipMemcpyAsync(
-                barrier_ptrs[dst_rank] + rank * 4,
-                one.data_ptr(),
-                one.nbytes,
-                comm_kind_type,
-                ag_stream.cuda_stream,
-            )
-        )
+        with ag_stream:
+            put_signal_rel_sys[(1,)](barrier_ptrs[dst_rank] + rank * 4)
         comm_event.record(ag_stream)
         barrier_ptrs[dst_rank] += num_ranks * 4
 
@@ -131,7 +119,7 @@ def pipelined_all_gather_copy_send(
         @staticmethod
         def wait():
             torch.cuda.current_stream().wait_event(comm_event)
-            wait_all_gather(rank, num_ranks, barrier_ptrs[rank])
+            wait_signal_acq_sys[(1,)](rank, barrier_ptrs[rank], num_ranks)
 
     return _CustomHandle
 
