@@ -114,8 +114,18 @@ at::Tensor grouped_gemm_fp8(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens
             reinterpret_cast<const int64_t *>(group_lens.data_ptr()),
             reinterpret_cast<const int64_t *>(group_offs.data_ptr()), transA, transB, bs, m, n, k,
             stream);
+    } else if (a.dtype() == at::kFloat8_e5m2fnuz || a.dtype() == at::kFloat8_e5m2) {
+        using AType = ck_tile::bf8_t;
+        using BType = AType;
+        using CType = ck_tile::bfloat16_t;
+        ck_grouped_gemm<AType, BType, CType>(
+            args_tensor.data_ptr(), reinterpret_cast<const AType *>(a.data_ptr()),
+            reinterpret_cast<const BType *>(b.data_ptr()), reinterpret_cast<CType *>(c.data_ptr()),
+            reinterpret_cast<const int64_t *>(group_lens.data_ptr()),
+            reinterpret_cast<const int64_t *>(group_offs.data_ptr()), transA, transB, bs, m, n, k,
+            stream);
     } else {
-        PRIMUS_TURBO_CHECK(false, "GroupedGemmFp8 only support fp8");
+        PRIMUS_TURBO_CHECK(false, "GroupedGemmFp8 only support fp8/bf8");
     }
     return c;
 }

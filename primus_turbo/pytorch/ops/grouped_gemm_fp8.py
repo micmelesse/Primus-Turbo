@@ -226,6 +226,9 @@ class GroupedGemmFP8RowFunc(torch.autograd.Function):
         trans_b: bool = True,
     ):
 
+        assert config.granularity == ScalingGranularity.ROWWISE
+        assert a.ndim == 2, "Input tensor must be 3-dimensions."
+        assert b.ndim == 3, "Weight tensor must be 3-dimensional."
         a_dtype = float8_e4m3
         b_dtype = float8_e4m3
 

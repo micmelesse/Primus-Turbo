@@ -51,4 +51,18 @@ at::Tensor grouped_gemm_fp8_dequant_meta(at::Tensor &input, at::Tensor &group_le
     return output;
 }
 
+at::Tensor grouped_gemm_fp8_dequant_variable_k_meta(at::Tensor &input, at::Tensor &scale_a,
+                                                    at::Tensor &scale_b) {
+    int64_t    b = 0, n = 0, k = 0;
+    at::Tensor output;
+
+    b = input.size(0);
+    n = input.size(1);
+    k = input.size(2);
+
+    output = at::empty({b, n, k}, at::dtype(input.dtype()).device(at::kCUDA));
+
+    return output;
+}
+
 } // namespace primus_turbo::pytorch

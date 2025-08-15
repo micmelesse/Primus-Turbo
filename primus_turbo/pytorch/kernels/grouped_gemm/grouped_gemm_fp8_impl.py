@@ -206,50 +206,9 @@ def grouped_gemm_variable_k_fp8_row_csrc_impl(
     out = torch.ops.primus_turbo_cpp_extension.grouped_gemm_fp8_variable_k(
         a, b, group_lens, group_offs, trans_a, trans_b
     )
-    out = dequantize_grouped_gemm_fp8_output(
+    out = torch.ops.primus_turbo_cpp_extension.grouped_gemm_fp8_dequant_variable_k(
         out,
         a_scales,
         b_scales,
     )
     return out
-
-
-def dequantize_grouped_gemm_fp8_output(
-    input: torch.Tensor,  # [B, N, K] (FP8 quantized)
-    a_scales: torch.Tensor,  # [1, N] (row-wise scales for A)
-    b_scales: torch.Tensor,  # [1, K] (per-column scales for B)
-    output_dtype: torch.dtype = torch.bfloat16,
-) -> torch.Tensor:
-    """
-    Dequantize the result of grouped GEMM FP8 operation.
-
-    Args:
-        input: The output from grouped GEMM FP8 operation with shape [B, N, K]
-        a_scales: Scale factors for tensor A with shape [1, N]
-        b_scales: Scale factors for tensor B with shape [1, K]
-        group_lens: Length of each group with shape [B]
-        group_offs: Offset of each group with shape [B]
-        output_dtype: The output data type
-
-    Returns:
-        torch.Tensor: Dequantized result with shape [B, N, K]
-    """
-    # Apply the scaling: out = out * a_scales * b_scales
-    B, N, K = input.shape
-
-    # Create output tensor
-    dequantized_out = torch.empty_like(input, dtype=output_dtype)
-
-    # Expand a_scales from [1, N] to [B, N, 1] and then to [B, N, K]
-    a_scales_expanded = a_scales.unsqueeze(-1).expand(B, N, 1).expand(B, N, K)
-
-    # Expand b_scales from [1, K] to [B, N, K]
-    b_scales_expanded = b_scales.expand(B, N, K)
-
-    # Combine both scales
-    combined_scales = a_scales_expanded * b_scales_expanded
-
-    # Apply scales to the entire output
-    dequantized_out = input * combined_scales
-
-    return dequantized_out

@@ -96,7 +96,7 @@ def test_rowwise_fp8_grouped_gemm_func(B, M, NK, ori_dtype):
     seg_lens[3] = 256
     #
     x = torch.randn((B * M, K), dtype=ori_dtype, device=device, requires_grad=True)
-    w = torch.randn((B, N, K), dtype=ori_dtype, device=device, requires_grad=True)
+    w = torch.randn((B, K, N), dtype=ori_dtype, device=device, requires_grad=True)
     x_ref = x.detach().clone().requires_grad_(True)
     w_ref = w.detach().clone().requires_grad_(True)
 
@@ -106,14 +106,14 @@ def test_rowwise_fp8_grouped_gemm_func(B, M, NK, ori_dtype):
     # print(seg_indptr)
 
     # Ref
-    out_ref = grouped_gemm_ref(x_ref, w_ref, seg_lens, True)
+    out_ref = grouped_gemm_ref(x_ref, w_ref, seg_lens, False)
     grad_out = torch.randn_like(out_ref)
     out_ref.backward(grad_out)
     x_grad_ref = x_ref.grad
     w_grad_ref = w_ref.grad
 
     # Turbo
-    out = grouped_gemm_fp8_rowwise(x, w, seg_lens, trans_b=True)
+    out = grouped_gemm_fp8_rowwise(x, w, seg_lens, trans_b=False)
     out.backward(grad_out)
     x_grad = x.grad
     w_grad = w.grad
@@ -135,8 +135,7 @@ def test_rowwise_fp8_grouped_gemm_func(B, M, NK, ori_dtype):
     # assert xgrad_snr > 20, "xgrad_snr too low"
 
     print("wgrad")
-    print(w_grad, w_grad.shape)
-    print(w_grad_ref, w_grad_ref.shape)
+    # print(w_grad_ref, w_grad_ref.shape)
     wgrad_snr = compute_snr(w_grad_ref, w_grad)
     print(f"WGrad-SNR: {wgrad_snr:.2f} dB")
     # assert wgrad_snr > 20, "wgrad_snr too low"
