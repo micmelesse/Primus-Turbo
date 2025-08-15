@@ -192,11 +192,23 @@ def grouped_gemm_fp8_blockwise(
     return BlockwiseFP8GroupedGemmFunc.apply(x, weight, seg_lens, block_size, dtype)
 
 
-# TODO grouped_gemm_fp8 tensorwise
 @torch.compile
-def calc_scale_and_scale_inv(x: torch.Tensor, fp8_max: float):
-    amax = x.abs().amax()
-    scale = torch.full([1], fill_value=fp8_max, dtype=torch.float32, device=x.device) / amax
+def calc_scale_and_scale_inv(x: torch.Tensor, fp8_max: float, row_wise: bool = True):
+    if row_wise:
+        if x.dim() == 2:
+            amax = x.abs().amax(dim=1, keepdim=True)
+        elif x.dim() == 3:
+            amax = x.abs().amax(dim=2, keepdim=True)
+        else:
+            raise ValueError(f"Unsupported tensor dimension: {x.dim()}")
+    else:
+        if x.dim() == 2:
+            amax = x.abs().amax(dim=0, keepdim=True)
+        elif x.dim() == 3:
+            amax = x.abs().amax(dim=(1), keepdim=True)
+        else:
+            raise ValueError(f"Unsupported tensor dimension: {x.dim()}")
+    scale = torch.full_like(amax, fill_value=fp8_max, dtype=torch.float32, device=x.device) / amax
     scale_inv = 1.0 / scale
 
     return scale, scale_inv
@@ -217,15 +229,15 @@ class GroupedGemmFP8RowFunc(torch.autograd.Function):
         a_dtype = float8_e4m3
         b_dtype = float8_e4m3
 
-        a_scale, a_scale_inv = calc_scale_and_scale_inv(a, torch.finfo(a_dtype).max)
-        b_scale, b_scale_inv = calc_scale_and_scale_inv(b, torch.finfo(b_dtype).max)
+        a_scale, a_scale_inv = calc_scale_and_scale_inv(a, torch.finfo(a_dtype).max, row_wise=True)
+        b_scale, b_scale_inv = calc_scale_and_scale_inv(b, torch.finfo(b_dtype).max, row_wise=trans_b)
 
-        a_fp8 = quant_fp8_rowwise_impl(a, a_scale, a_dtype, row_quant=True)
-        b_fp8 = quant_fp8_rowwise_impl(b, b_scale, b_dtype, row_quant=trans_b)
+        a_fp8_row = quant_fp8_rowwise_impl(a, a_scale, a_dtype, row_quant=True)
+        b_fp8_row = quant_fp8_rowwise_impl(b, b_scale, b_dtype, row_quant=trans_b)
 
         out = grouped_gemm_csrc_fp8_row_impl(
-            a_fp8,
-            b_fp8,
+            a_fp8_row,
+            b_fp8_row,
             a_scale_inv,
             b_scale_inv,
             group_lens,
@@ -234,7 +246,14 @@ class GroupedGemmFP8RowFunc(torch.autograd.Function):
             trans_b=trans_b,
         )
 
-        ctx.save_for_backward(a_fp8, b_fp8, a_scale_inv, b_scale_inv, group_lens, group_offs)
+        # we need a/b do col quant for backward.
+        a_scale, a_scale_inv = calc_scale_and_scale_inv(a, torch.finfo(a_dtype).max, row_wise=False)
+        b_scale, b_scale_inv = calc_scale_and_scale_inv(b, torch.finfo(b_dtype).max, row_wise=not trans_b)
+
+        a_fp8_col = quant_fp8_rowwise_impl(a, a_scale, a_dtype, row_quant=False)
+        b_fp8_col = quant_fp8_rowwise_impl(b, b_scale, b_dtype, row_quant=not trans_b)
+
+        ctx.save_for_backward(a_fp8_col, b_fp8_col, a_scale_inv, b_scale_inv, group_lens, group_offs)
         ctx.trans_a = False
         ctx.trans_b = trans_b
         ctx.config = config
@@ -242,20 +261,20 @@ class GroupedGemmFP8RowFunc(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_out):
-        a_fp8, b_fp8, a_scale_inv, b_scale_inv, group_lens, group_offs = ctx.saved_tensors
+        a_fp8_col, b_fp8_col, a_scale_inv, b_scale_inv, group_lens, group_offs = ctx.saved_tensors
         config = ctx.config
 
         grad_out_dtype = float8_e4m3 if config.format == Format.E4M3 else float8_e5m2
 
         grad_out_scale, grad_out_scale_inv = calc_scale_and_scale_inv(
-            grad_out, torch.finfo(grad_out_dtype).max
+            grad_out, torch.finfo(grad_out_dtype).max, row_wise=True
         )
 
-        grad_out_fp8 = quant_fp8_rowwise_impl(grad_out, grad_out_scale, row_quant=True)
+        grad_out_fp8 = quant_fp8_rowwise_impl(grad_out, grad_out_scale, grad_out_dtype, row_quant=True)
 
         grad_a = grouped_gemm_csrc_fp8_row_impl(
             grad_out_fp8,
-            b_fp8,
+            b_fp8_col,
             grad_out_scale_inv,
             b_scale_inv,
             group_lens,
@@ -264,7 +283,12 @@ class GroupedGemmFP8RowFunc(torch.autograd.Function):
             trans_b=not ctx.trans_b,
         )
 
-        lhs, rhs = (grad_out, a_fp8) if ctx.trans_b else (a_fp8, grad_out)
+        grad_out_scale, grad_out_scale_inv = calc_scale_and_scale_inv(
+            grad_out, torch.finfo(grad_out_dtype).max, row_wise=False
+        )
+        grad_out_fp8 = quant_fp8_rowwise_impl(grad_out, grad_out_scale, grad_out_dtype, row_quant=False)
+
+        lhs, rhs = (grad_out_fp8, a_fp8_col) if ctx.trans_b else (a_fp8_col, grad_out_fp8)
         lhs_scale, rhs_scale = (
             (grad_out_scale_inv, a_scale_inv) if ctx.trans_b else (a_scale_inv, grad_out_scale_inv)
         )
@@ -297,4 +321,4 @@ def grouped_gemm_fp8_rowwise(
     if config is None:
         config = Float8QuantConfig(granularity=ScalingGranularity.ROWWISE)
 
-    return GroupedGemmFP8RowFunc.apply(a, b, group_lens, group_offs, trans_b)
+    return GroupedGemmFP8RowFunc.apply(a, b, group_lens, group_offs, config, trans_b)

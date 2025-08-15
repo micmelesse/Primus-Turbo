@@ -35,6 +35,31 @@ __global__ void quant_2d_device(const InDataType *a_ptr, const ScaleType *scale,
 }
 
 template <typename InDataType, typename ScaleType, typename OutDataType>
+__global__ void quant_3d_trans_device(const InDataType *a_ptr, const ScaleType *scale,
+                                      OutDataType *b_ptr, ck_tile::index_t N, ck_tile::index_t M,
+                                      ck_tile::index_t K) {
+    const ck_tile::index_t total_elements = N * M * K;
+
+    for (ck_tile::index_t idx = blockIdx.x * blockDim.x + threadIdx.x; idx < total_elements;
+         idx += blockDim.x * gridDim.x) {
+
+        // Calculate indices for 3D tensor
+        ck_tile::index_t n, m, k; // n: batch index, m: row index, k: column index
+        n = idx / (M * K);        // Batch index
+        m = (idx % (M * K)) / K;  // Row index
+        k = idx % K;              // Column index
+
+        // Apply scaling based on transposition mode
+        float scale_val;
+        scale_val              = scale[n * K + k]; // Per-column scaling within each batch
+        const InDataType a_val = a_ptr[idx];
+        float            a_val_float =
+            ck_tile::type_convert<float>(a_val) * ck_tile::type_convert<float>(scale_val);
+        b_ptr[idx] = ck_tile::type_convert<OutDataType>(a_val_float);
+    }
+}
+
+template <typename InDataType, typename ScaleType, typename OutDataType>
 void quant_2d(const InDataType *a_ptr, const ScaleType *scale, OutDataType *b_ptr,
               ck_tile::index_t M, ck_tile::index_t K, bool trans, hipStream_t stream) {
     const ck_tile::index_t total_elements = M * K;
@@ -47,6 +72,26 @@ void quant_2d(const InDataType *a_ptr, const ScaleType *scale, OutDataType *b_pt
 
     quant_2d_device<InDataType, ScaleType, OutDataType>
         <<<blocks, threads_per_block, 0, stream>>>(a_ptr, scale, b_ptr, M, K, trans);
+}
+
+template <typename InDataType, typename ScaleType, typename OutDataType>
+void quant_3d(const InDataType *a_ptr, const ScaleType *scale, OutDataType *b_ptr,
+              ck_tile::index_t N, ck_tile::index_t M, ck_tile::index_t K, bool trans,
+              hipStream_t stream) {
+    const ck_tile::index_t total_elements = N * M * K;
+
+    // Thread block configuration for better GPU utilization
+    const int threads_per_block = 256;
+    const int max_blocks        = 65535; // Maximum grid size
+    const int blocks            = min(
+        max_blocks, static_cast<int>((total_elements + threads_per_block - 1) / threads_per_block));
+    if (trans) {
+        quant_3d_trans_device<InDataType, ScaleType, OutDataType>
+            <<<blocks, threads_per_block, 0, stream>>>(a_ptr, scale, b_ptr, N, M, K);
+    } else {
+        quant_2d_device<InDataType, ScaleType, OutDataType>
+            <<<blocks, threads_per_block, 0, stream>>>(a_ptr, scale, b_ptr, N * M, K, trans);
+    }
 }
 
 template <typename InDataType, typename ScaleType, typename OutDataType>
@@ -110,6 +155,7 @@ __global__ void dequant_grouped_gemm_device(const InDataType *a_ptr, const Scale
     }
 }
 
+// a must be row-wise and b must be column-wise
 template <typename InDataType, typename ScaleType, typename OutDataType>
 void dequant_grouped_gemm(const InDataType *a_ptr, const ScaleType *scale_a,
                           const ScaleType *scale_b, OutDataType *b_ptr, const int64_t *p_group_lens,
