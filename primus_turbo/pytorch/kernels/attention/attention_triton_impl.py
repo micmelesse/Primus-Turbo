@@ -330,6 +330,8 @@ def attention_triton_backward_impl(
     use_exp2 = True
     layout = "bshd"
     sequence_parallel = True
+    do = do.contiguous()
+
     if DEBUG:
         print("####################################################")
         print("attention_backward_triton_new_impl")
@@ -376,7 +378,6 @@ def attention_triton_backward_impl(
     padded_d_model_qk = get_padded_head_dim(head_size_qk)
     padded_d_model_v = get_padded_head_dim(head_size_v)
 
-    do = do.contiguous()
     # NOTE: we might need to copy the output tensor if they are not continuous or have other issues
     copy_back = {"dq": False, "dk": False, "dv": False}
 
