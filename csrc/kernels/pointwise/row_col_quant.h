@@ -1,8 +1,10 @@
+// Copyright (c) 2025, Advanced Micro Devices, Inc. All rights reserved.
+//
+// See LICENSE for license information.
+
 #include <string>
 
 #include "ck_tile/core.hpp"
-
-#include "ck_tile/core/numeric/half.hpp"
 #include <hip/hip_runtime.h>
 namespace primus_turbo {
 
@@ -35,6 +37,27 @@ __global__ void quant_2d_device(const InDataType *a_ptr, const ScaleType *scale,
 }
 
 template <typename InDataType, typename ScaleType, typename OutDataType>
+__global__ void quant_2d_row_device(const InDataType *a_ptr, const ScaleType *scale,
+                                    OutDataType *b_ptr, ck_tile::index_t M, ck_tile::index_t K) {
+    const ck_tile::index_t total_elements = M * K;
+
+    for (ck_tile::index_t idx = blockIdx.x * blockDim.x + threadIdx.x; idx < total_elements;
+         idx += blockDim.x * gridDim.x) {
+
+        // Calculate row and column indices
+        ck_tile::index_t i, j;      // i: row index, j: column index
+        i               = idx / K;  // Row index
+        j               = idx % K;  // Column index
+        float scale_val = scale[i]; // Per-row scaling when trans=false
+
+        const InDataType a_val = a_ptr[idx];
+        float            a_val_float =
+            ck_tile::type_convert<float>(a_val) * ck_tile::type_convert<float>(scale_val);
+        b_ptr[idx] = ck_tile::type_convert<OutDataType>(a_val_float);
+    }
+}
+
+template <typename InDataType, typename ScaleType, typename OutDataType>
 __global__ void quant_3d_trans_device(const InDataType *a_ptr, const ScaleType *scale,
                                       OutDataType *b_ptr, ck_tile::index_t N, ck_tile::index_t M,
                                       ck_tile::index_t K) {
@@ -48,7 +71,6 @@ __global__ void quant_3d_trans_device(const InDataType *a_ptr, const ScaleType *
         n = idx / (M * K);        // Batch index
         m = (idx % (M * K)) / K;  // Row index
         k = idx % K;              // Column index
-
         // Apply scaling based on transposition mode
         float scale_val;
         scale_val              = scale[n * K + k]; // Per-column scaling within each batch
@@ -69,9 +91,13 @@ void quant_2d(const InDataType *a_ptr, const ScaleType *scale, OutDataType *b_pt
     const int max_blocks        = 65535; // Maximum grid size
     const int blocks            = min(
         max_blocks, static_cast<int>((total_elements + threads_per_block - 1) / threads_per_block));
-
-    quant_2d_device<InDataType, ScaleType, OutDataType>
-        <<<blocks, threads_per_block, 0, stream>>>(a_ptr, scale, b_ptr, M, K, trans);
+    if (trans == true) {
+        quant_2d_device<InDataType, ScaleType, OutDataType>
+            <<<blocks, threads_per_block, 0, stream>>>(a_ptr, scale, b_ptr, M, K, trans);
+    } else {
+        quant_2d_row_device<InDataType, ScaleType, OutDataType>
+            <<<blocks, threads_per_block, 0, stream>>>(a_ptr, scale, b_ptr, M, K);
+    }
 }
 
 template <typename InDataType, typename ScaleType, typename OutDataType>

@@ -36,11 +36,11 @@ TORCH_LIBRARY(primus_turbo_cpp_extension, m) {
     m.def("grouped_gemm(Tensor a, Tensor b, Tensor group_lens, Tensor group_offs, bool transA, "
           "bool transB) -> Tensor");
     m.def("grouped_gemm_fp8(Tensor a, Tensor b, Tensor group_lens, Tensor group_offs, bool transA, "
-          "bool transB) -> Tensor");
+          "bool transB, ScalarType out_dtype) -> Tensor");
     m.def("grouped_gemm_variable_k(Tensor a, Tensor b, Tensor group_lens, Tensor group_offs, "
           "bool transA, bool transB) -> Tensor");
     m.def("grouped_gemm_fp8_variable_k(Tensor a, Tensor b, Tensor group_lens, Tensor group_offs, "
-          "bool transA, bool transB) -> Tensor");
+          "bool transA, bool transB, ScalarType out_dtype) -> Tensor");
     m.def("grouped_gemm_compute_offs(Tensor group_lens) -> Tensor");
 }
 

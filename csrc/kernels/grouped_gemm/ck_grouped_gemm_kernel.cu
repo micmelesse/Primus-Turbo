@@ -103,6 +103,24 @@ template std::unique_ptr<CKGroupedGemmRunnerInterFace>
     get_ck_grouped_gemm_instance<ck_tile::fp8_t, ck_tile::fp8_t, ck_tile::bfloat16_t, float,
                                  ColMajor, RowMajor, RowMajor>(ck_tile::index_t, ck_tile::index_t,
                                                                ck_tile::index_t, ck_tile::index_t);
+
+// ** FP8 IN FP16 OUT**
+// NT
+template std::unique_ptr<CKGroupedGemmRunnerInterFace>
+    get_ck_grouped_gemm_instance<ck_tile::fp8_t, ck_tile::fp8_t, ck_tile::half_t, float, RowMajor,
+                                 ColMajor, RowMajor>(ck_tile::index_t, ck_tile::index_t,
+                                                     ck_tile::index_t, ck_tile::index_t);
+// NN
+template std::unique_ptr<CKGroupedGemmRunnerInterFace>
+    get_ck_grouped_gemm_instance<ck_tile::fp8_t, ck_tile::fp8_t, ck_tile::half_t, float, RowMajor,
+                                 RowMajor, RowMajor>(ck_tile::index_t, ck_tile::index_t,
+                                                     ck_tile::index_t, ck_tile::index_t);
+// TN
+template std::unique_ptr<CKGroupedGemmRunnerInterFace>
+    get_ck_grouped_gemm_instance<ck_tile::fp8_t, ck_tile::fp8_t, ck_tile::half_t, float, ColMajor,
+                                 RowMajor, RowMajor>(ck_tile::index_t, ck_tile::index_t,
+                                                     ck_tile::index_t, ck_tile::index_t);
+
 // ** BF8 IN BF16 OUT**
 // NT
 template std::unique_ptr<CKGroupedGemmRunnerInterFace>
@@ -119,4 +137,21 @@ template std::unique_ptr<CKGroupedGemmRunnerInterFace>
     get_ck_grouped_gemm_instance<ck_tile::bf8_t, ck_tile::bf8_t, ck_tile::bfloat16_t, float,
                                  ColMajor, RowMajor, RowMajor>(ck_tile::index_t, ck_tile::index_t,
                                                                ck_tile::index_t, ck_tile::index_t);
+
+// ** BF8 IN FP16 OUT**
+// NT
+template std::unique_ptr<CKGroupedGemmRunnerInterFace>
+    get_ck_grouped_gemm_instance<ck_tile::bf8_t, ck_tile::bf8_t, ck_tile::half_t, float, RowMajor,
+                                 ColMajor, RowMajor>(ck_tile::index_t, ck_tile::index_t,
+                                                     ck_tile::index_t, ck_tile::index_t);
+// NN
+template std::unique_ptr<CKGroupedGemmRunnerInterFace>
+    get_ck_grouped_gemm_instance<ck_tile::bf8_t, ck_tile::bf8_t, ck_tile::half_t, float, RowMajor,
+                                 RowMajor, RowMajor>(ck_tile::index_t, ck_tile::index_t,
+                                                     ck_tile::index_t, ck_tile::index_t);
+// TN
+template std::unique_ptr<CKGroupedGemmRunnerInterFace>
+    get_ck_grouped_gemm_instance<ck_tile::bf8_t, ck_tile::bf8_t, ck_tile::half_t, float, ColMajor,
+                                 RowMajor, RowMajor>(ck_tile::index_t, ck_tile::index_t,
+                                                     ck_tile::index_t, ck_tile::index_t);
 } // namespace primus_turbo

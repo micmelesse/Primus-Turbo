@@ -205,7 +205,7 @@ def calc_scale_and_scale_inv(x: torch.Tensor, fp8_max: float, row_wise: bool = T
         if x.dim() == 2:
             amax = x.abs().amax(dim=0, keepdim=True)
         elif x.dim() == 3:
-            amax = x.abs().amax(dim=(1), keepdim=True)
+            amax = x.abs().amax(dim=1, keepdim=True)
         else:
             raise ValueError(f"Unsupported tensor dimension: {x.dim()}")
     scale = torch.full_like(amax, fill_value=fp8_max, dtype=torch.float32, device=x.device) / amax
@@ -247,6 +247,7 @@ class GroupedGemmFP8RowFunc(torch.autograd.Function):
             group_offs,
             trans_a=False,
             trans_b=trans_b,
+            out_dtype=a.dtype,
         )
 
         # we need a/b do col quant for backward.
@@ -260,6 +261,7 @@ class GroupedGemmFP8RowFunc(torch.autograd.Function):
         ctx.trans_a = False
         ctx.trans_b = trans_b
         ctx.config = config
+        ctx.dtype = a.dtype
         return out
 
     @staticmethod
@@ -284,6 +286,7 @@ class GroupedGemmFP8RowFunc(torch.autograd.Function):
             group_offs,
             trans_a=False,
             trans_b=not ctx.trans_b,
+            out_dtype=ctx.dtype,
         )
 
         grad_out_scale, grad_out_scale_inv = calc_scale_and_scale_inv(
@@ -305,6 +308,7 @@ class GroupedGemmFP8RowFunc(torch.autograd.Function):
             group_offs,
             trans_a=True,
             trans_b=False,
+            out_dtype=ctx.dtype,
         )
 
         return grad_a, grad_b, None, None, None, None

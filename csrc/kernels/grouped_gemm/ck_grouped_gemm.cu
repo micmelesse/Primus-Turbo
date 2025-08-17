@@ -228,6 +228,19 @@ template void ck_grouped_gemm<ck_tile::fp8_t, ck_tile::fp8_t, ck_tile::bfloat16_
     const ck_tile::index_t m, const ck_tile::index_t n, const ck_tile::index_t k,
     hipStream_t stream);
 
+template void ck_grouped_gemm<ck_tile::bf8_t, ck_tile::bf8_t, ck_tile::half_t>(
+    void *args_ptr, const ck_tile::bf8_t *a_ptr, const ck_tile::bf8_t *b_ptr,
+    ck_tile::half_t *c_ptr, const int64_t *group_lens_ptr, const int64_t *group_offs_ptr,
+    const bool transA, const bool transB, const ck_tile::index_t group_num,
+    const ck_tile::index_t m, const ck_tile::index_t n, const ck_tile::index_t k,
+    hipStream_t stream);
+template void ck_grouped_gemm<ck_tile::fp8_t, ck_tile::fp8_t, ck_tile::half_t>(
+    void *args_ptr, const ck_tile::fp8_t *a_ptr, const ck_tile::fp8_t *b_ptr,
+    ck_tile::half_t *c_ptr, const int64_t *group_lens_ptr, const int64_t *group_offs_ptr,
+    const bool transA, const bool transB, const ck_tile::index_t group_num,
+    const ck_tile::index_t m, const ck_tile::index_t n, const ck_tile::index_t k,
+    hipStream_t stream);
+
 template void ck_grouped_gemm<ck_tile::bf8_t, ck_tile::bf8_t, ck_tile::bfloat16_t>(
     void *args_ptr, const ck_tile::bf8_t *a_ptr, const ck_tile::bf8_t *b_ptr,
     ck_tile::bfloat16_t *c_ptr, const int64_t *group_lens_ptr, const int64_t *group_offs_ptr,
@@ -260,6 +273,20 @@ template void ck_grouped_gemm_variable_k<ck_tile::fp8_t, ck_tile::fp8_t, ck_tile
 template void ck_grouped_gemm_variable_k<ck_tile::bf8_t, ck_tile::bf8_t, ck_tile::bfloat16_t>(
     void *args_ptr, const ck_tile::bf8_t *a_ptr, const ck_tile::bf8_t *b_ptr,
     ck_tile::bfloat16_t *c_ptr, const int64_t *group_lens_ptr, const int64_t *group_offs_ptr,
+    const bool transA, const bool transB, const ck_tile::index_t group_num,
+    const ck_tile::index_t m, const ck_tile::index_t n, const ck_tile::index_t k,
+    hipStream_t stream);
+
+template void ck_grouped_gemm_variable_k<ck_tile::fp8_t, ck_tile::fp8_t, ck_tile::half_t>(
+    void *args_ptr, const ck_tile::fp8_t *a_ptr, const ck_tile::fp8_t *b_ptr,
+    ck_tile::half_t *c_ptr, const int64_t *group_lens_ptr, const int64_t *group_offs_ptr,
+    const bool transA, const bool transB, const ck_tile::index_t group_num,
+    const ck_tile::index_t m, const ck_tile::index_t n, const ck_tile::index_t k,
+    hipStream_t stream);
+
+template void ck_grouped_gemm_variable_k<ck_tile::bf8_t, ck_tile::bf8_t, ck_tile::half_t>(
+    void *args_ptr, const ck_tile::bf8_t *a_ptr, const ck_tile::bf8_t *b_ptr,
+    ck_tile::half_t *c_ptr, const int64_t *group_lens_ptr, const int64_t *group_offs_ptr,
     const bool transA, const bool transB, const ck_tile::index_t group_num,
     const ck_tile::index_t m, const ck_tile::index_t n, const ck_tile::index_t k,
     hipStream_t stream);

@@ -99,17 +99,19 @@ at::Tensor grouped_gemm_variable_k_meta(at::Tensor &a, at::Tensor &b, at::Tensor
                                         at::Tensor &group_offs, const bool transA,
                                         const bool transB);
 at::Tensor grouped_gemm_fp8(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
-                            at::Tensor &group_offs, const bool transA, const bool transB);
+                            at::Tensor &group_offs, const bool transA, const bool transB,
+                            at::ScalarType out_dtype);
 at::Tensor grouped_gemm_fp8_meta(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
-                                 at::Tensor &group_offs, const bool transA, const bool transB);
+                                 at::Tensor &group_offs, const bool transA, const bool transB,
+                                 at::ScalarType out_dtype);
 
 at::Tensor grouped_gemm_fp8_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
-                                       at::Tensor &group_offs, const bool transA,
-                                       const bool transB);
+                                       at::Tensor &group_offs, const bool transA, const bool transB,
+                                       at::ScalarType out_dtype);
 
 at::Tensor grouped_gemm_fp8_variable_k_meta(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
                                             at::Tensor &group_offs, const bool transA,
-                                            const bool transB);
+                                            const bool transB, at::ScalarType out_dtype);
 
 at::Tensor grouped_gemm_compute_offs(at::Tensor &group_lens);
 at::Tensor grouped_gemm_compute_offs_meta(at::Tensor &group_lens);
