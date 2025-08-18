@@ -901,6 +901,16 @@ def get_padded_head_dim(head_size: int):
 
 
 @triton.jit
+def compute_fp8_scaling_factors(x, fp8_max: tl.constexpr):
+    x_amax = tl.max(tl.abs(x))
+    x_amax = tl.where(x_amax == 0.0, 1.0, x_amax)
+    x_amax = tl.where(x_amax <= 1e-7, 1e-7, x_amax)
+    x_amax = tl.where(x_amax >= 1e7, 1e7, x_amax)
+    scale_x = fp8_max / x_amax
+    return scale_x
+
+
+@triton.jit
 def _bwd_preprocess_use_o(
     Out,
     DO,
@@ -989,8 +999,8 @@ def _bwd_preprocess_use_o(
     tl.store(delta_ptrs, delta, mask=mask_m)
 
     if USE_FP8:
-        do_scale = F8_BWD_MAX / (tl.max(tl.abs(do)) + 1e-7)
-        do_fp8 = (do * do_scale).to(F8_BWD_DTYPE)
+        do_scale = compute_fp8_scaling_factors(do, F8_BWD_MAX)
+        do_fp8 = tl.clamp(do * do_scale, -F8_BWD_MAX, F8_BWD_MAX).to(F8_BWD_DTYPE)
 
         do_fp8_offset = DO_FP8 + off_z * stride_doz + off_h * stride_doh + q_start * stride_dom
         do_fp8_ptrs = do_fp8_offset + off_m[:, None] * stride_dom + off_d_v[None, :] * stride_dok
@@ -1366,8 +1376,8 @@ def _attn_bwd_dkdv(
         ds = p * (dp - Di[:, None])
 
         if USE_FP8:
-            ds_scale = F8_FWD_MAX / tl.max(tl.abs(ds) + 1e-7)
-            ds = ds * ds_scale
+            ds_scale = compute_fp8_scaling_factors(ds, F8_FWD_MAX)
+            ds = tl.clamp(ds * ds_scale, -F8_FWD_MAX, F8_FWD_MAX)
 
         ds = ds.to(q.dtype)
 
@@ -1705,8 +1715,8 @@ def _attn_bwd_dq(
         ds = p * (dp - Di[:, None])
 
         if USE_FP8:
-            ds_scale = F8_FWD_MAX / tl.max(tl.abs(ds) + 1e-7)
-            ds = ds * ds_scale
+            ds_scale = compute_fp8_scaling_factors(ds, F8_FWD_MAX)
+            ds = tl.clamp(ds * ds_scale, -F8_FWD_MAX, F8_FWD_MAX)
 
         ds = ds.to(q.dtype)
         _dq = tl.dot(ds, k, allow_tf32=False)
