@@ -16,7 +16,7 @@ def is_ROCM():
 
 def load_tensor(dir_path, file_name):
     file_path = dir_path / file_name
-    return torch.load(file_path)
+    return torch.load(file_path, map_location='cpu')
 
 
 def dump_tensor(tensor, dir_path, file_name):
@@ -32,8 +32,12 @@ def get_device_type():
     return torch.cuda.get_device_name(0).split()[0]
 
 
-def get_tensor_name(device_type, func_name, dtype, shape):
-    return f"{device_type}_{func_name}_{str(dtype).split('.')[-1]}_{'_'.join(map(str, shape))}.pt"
+def get_tensor_name(device_type, func_name, dtype, shape=None, config=None):
+    if shape is not None:
+        return f"{device_type}_{func_name}_{str(dtype).split('.')[-1]}_{'_'.join(map(str, shape))}.pt"
+    if config is not None:
+        return f"{device_type}_{func_name}_{str(dtype).split('.')[-1]}_{config.to_string()}.pt"
+    return f"{device_type}_{func_name}_{str(dtype).split('.')[-1]}"
 
 
 def save_to_excel(data, file_path):
