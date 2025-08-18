@@ -47,7 +47,6 @@ __global__ void quant_2d_row_device(const InDataType *a_ptr, const ScaleType *sc
         // Calculate row and column indices
         ck_tile::index_t i, j;      // i: row index, j: column index
         i               = idx / K;  // Row index
-        j               = idx % K;  // Column index
         float scale_val = scale[i]; // Per-row scaling when trans=false
 
         const InDataType a_val = a_ptr[idx];
