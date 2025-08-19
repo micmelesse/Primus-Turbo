@@ -1150,31 +1150,16 @@ def _bwd_kernel_dkdv(
         # we keep v in per-tensor scaling
         # while q, k, do in per-block scaling
         v_scale = tl.load(v_scale_ptr)  # + tl.arange(0, num_block_n)
-
-        actual_doscale_block_num = stride_doscaleh * GROUP_SIZE
-        actual_qscale_block_num = stride_qscaleh * GROUP_SIZE
-
-        doscale_mask = tl.arange(0, padded_doscale_block_num) < actual_doscale_block_num
-        do_descale_offset = (
-            do_descale_ptr
-            + off_z * stride_doscalez
-            + off_h_q * stride_doscaleh
-            + tl.arange(0, padded_doscale_block_num)
-        )
-        do_descale = tl.load(do_descale_offset, mask=doscale_mask, other=1.0)
-
-        qscale_mask = tl.arange(0, padded_qscale_block_num) < actual_qscale_block_num
         q_descale_offset = (
-            q_scale_ptr
-            + off_z * stride_qscalez
-            + off_h_q * stride_qscaleh
-            + tl.arange(0, padded_qscale_block_num)
-        )  #  + q_start * stride_qm
-        q_descale = tl.load(q_descale_offset, mask=qscale_mask, other=1.0)
+            q_scale_ptr + off_z * stride_qscalez + off_h_q * stride_qscaleh + q_start * stride_qscalem
+        )
+        do_descale_offset = (
+            do_descale_ptr + off_z * stride_doscalez + off_h_q * stride_doscaleh + q_start * stride_doscalem
+        )
     else:
-        q_descale = 1.0
         v_scale = 1.0
-        do_descale = 1.0
+        q_descale_offset = None
+        do_descale_offset = None
 
     if CAUSAL:
         causal_boundary = start_n * BLOCK_N - BLOCK_M
@@ -1235,8 +1220,8 @@ def _bwd_kernel_dkdv(
             stride_ldm,
             BLOCK_M,
             BLOCK_N,
-            q_descale,
-            do_descale,
+            q_descale_offset,
+            do_descale_offset,
             blk_k_descale,
             v_scale,
             p_scale,
@@ -1257,6 +1242,9 @@ def _bwd_kernel_dkdv(
         q_offset += stride_qh
         do_offset += stride_qh
         ld_offset += stride_ldh
+        if USE_FP8:
+            q_descale_offset += stride_qscaleh
+            do_descale_offset += stride_doscaleh
 
     if USE_FP8:
         dv_descale = 1.0 / (p_scale)
@@ -1292,8 +1280,8 @@ def _attn_bwd_dkdv(
     stride_ldm,
     BLOCK_M: tl.constexpr,
     BLOCK_N: tl.constexpr,
-    q_descale,
-    do_descale,
+    q_descale_offset,
+    do_descale_offset,
     k_descale,
     v_scale,
     p_scale: tl.constexpr,
@@ -1325,8 +1313,8 @@ def _attn_bwd_dkdv(
 
         if USE_FP8:
             idx_block_m += 1
-            blk_q_descale = q_descale.gather(index=idx_block_m, axis=0)
-            blk_do_descale = do_descale.gather(index=idx_block_m, axis=0)
+            blk_q_descale = tl.load(q_descale_offset + start_m // BLOCK_M)
+            blk_do_descale = tl.load(do_descale_offset + start_m // BLOCK_M)
         else:
             blk_q_descale = 1.0
             blk_do_descale = 1.0
