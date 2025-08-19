@@ -7,15 +7,13 @@
 import argparse
 import json
 import math
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from einops import rearrange, repeat
 from pathlib import Path
 
 import torch
-# import aiter
 from flash_attn import flash_attn_func
 
-import primus_turbo.pytorch as pt
 
 from metrics import (
     cosine_similarity,
@@ -58,8 +56,55 @@ class AttnModelCfg:
 
 g_model_cfg = [
     AttnModelCfg(
-        model_name="llama", seqlen_q=8, seqlen_kv=8, num_head_q=16, num_head_kv=4, head_dim_qk=128, head_dim_v=128, batch_size=1
+        model_name="llama2-7B",
+        seqlen_q=4096,
+        seqlen_kv=4096,
+        num_head_q=32,
+        num_head_kv=32,
+        head_dim_qk=128,
+        head_dim_v=128,
+        batch_size=1,
     ),
+    AttnModelCfg(
+        model_name="llama2-70B",
+        seqlen_q=4096,
+        seqlen_kv=4096,
+        num_head_q=64,
+        num_head_kv=8,
+        head_dim_qk=128,
+        head_dim_v=128,
+        batch_size=1,
+    ),
+    AttnModelCfg(
+        model_name="llama3-8B",
+        seqlen_q=8192,
+        seqlen_kv=8192,
+        num_head_q=32,
+        num_head_kv=8,
+        head_dim_qk=128,
+        head_dim_v=128,
+        batch_size=1,
+    ),
+    AttnModelCfg(
+        model_name="llama3-70B",
+        seqlen_q=8192,
+        seqlen_kv=8192,
+        num_head_q=64,
+        num_head_kv=8,
+        head_dim_qk=128,
+        head_dim_v=128,
+        batch_size=1,
+    ),
+    # AttnModelCfg(
+    #     model_name="llama3.1-405B",
+    #     seqlen_q=16384,
+    #     seqlen_kv=16384,
+    #     num_head_q=128,
+    #     num_head_kv=8,
+    #     head_dim_qk=128,
+    #     head_dim_v=128,
+    #     batch_size=1,
+    # ),
 ]
 
 
@@ -72,7 +117,9 @@ def construct_local_mask(
     device=None,
     key_leftpad=None,
 ):
-    row_idx = rearrange(torch.arange(seqlen_q, device=device, dtype=torch.long), "s -> s 1")
+    row_idx = rearrange(
+        torch.arange(seqlen_q, device=device, dtype=torch.long), "s -> s 1"
+    )
     col_idx = torch.arange(seqlen_k, device=device, dtype=torch.long)
     if key_leftpad is not None:
         key_leftpad = rearrange(key_leftpad, "b -> b 1 1 1")
@@ -115,6 +162,7 @@ def attention_ref(
     key_leftpad=None,
 ):
     """
+    Compute reference output and softmax_lse using FlashAttn's test function
     Arguments:
         q: (batch_size, seqlen_q, nheads, head_dim)
         k: (batch_size, seqlen_k, nheads_k, head_dim)
@@ -153,7 +201,9 @@ def attention_ref(
         scores = scores.tanh()
         scores = scores * softcap
     if key_padding_mask is not None:
-        scores.masked_fill_(rearrange(~key_padding_mask, "b s -> b 1 1 s"), float("-inf"))
+        scores.masked_fill_(
+            rearrange(~key_padding_mask, "b s -> b 1 1 s"), float("-inf")
+        )
     if window_size[0] >= 0 or window_size[1] >= 0:
         local_mask = construct_local_mask(
             seqlen_q,
@@ -170,53 +220,81 @@ def attention_ref(
     attention = torch.softmax(scores, dim=-1).to(v.dtype)
     # Some rows might be completely masked out so we fill them with zero instead of NaN
     if window_size[0] >= 0 or window_size[1] >= 0:
-        attention = attention.masked_fill(torch.all(local_mask, dim=-1, keepdim=True), 0.0)
+        attention = attention.masked_fill(
+            torch.all(local_mask, dim=-1, keepdim=True), 0.0
+        )
     # We want to mask here so that the attention matrix doesn't have any NaNs
     # Otherwise we'll get NaN in dV
     if query_padding_mask is not None:
-        attention = attention.masked_fill(rearrange(~query_padding_mask, "b s -> b 1 s 1"), 0.0)
+        attention = attention.masked_fill(
+            rearrange(~query_padding_mask, "b s -> b 1 s 1"), 0.0
+        )
     dropout_scaling = 1.0 / (1 - dropout_p)
-    # attention_drop = attention.masked_fill(~dropout_mask, 0.0) * dropout_scaling
-    # output = torch.einsum('bhts,bshd->bthd', attention_drop , v)
+
     if dropout_mask is not None:
         attention_drop = attention.masked_fill(~dropout_mask, 0.0)
     else:
         attention_drop = attention
-    import pdb;pdb.set_trace()
+
     output = torch.einsum("bhts,bshd->bthd", attention_drop, v * dropout_scaling)
-    # v_re = v.permute(0, 2, 1, 3).contiguous()  # [b, h, s, d]
-    # attn_out = torch.matmul(attention_drop, v_re)  # [b, h, t, d]
-    # output = attn_out.permute(0, 2, 1, 3).contiguous()  # [b, t, h, d]
 
     if query_padding_mask is not None:
         output.masked_fill_(rearrange(~query_padding_mask, "b s -> b s 1 1"), 0.0)
     return output.to(dtype=dtype_og), attention.to(dtype=dtype_og)
 
 
-def attention(model_config, dtype, seed, backend='FA'):
+def attention(model_config, dtype, seed, backend="FA"):
     torch.manual_seed(seed)
-    q_layout = (model_config.batch_size, model_config.seqlen_q, model_config.num_head_q, model_config.head_dim_qk)
-    k_layout = (model_config.batch_size, model_config.seqlen_kv, model_config.num_head_kv, model_config.head_dim_qk)
-    v_layout = (model_config.batch_size, model_config.seqlen_kv, model_config.num_head_kv, model_config.head_dim_v)
-	
+    q_layout = (
+        model_config.batch_size,
+        model_config.seqlen_q,
+        model_config.num_head_q,
+        model_config.head_dim_qk,
+    )
+    k_layout = (
+        model_config.batch_size,
+        model_config.seqlen_kv,
+        model_config.num_head_kv,
+        model_config.head_dim_qk,
+    )
+    v_layout = (
+        model_config.batch_size,
+        model_config.seqlen_kv,
+        model_config.num_head_kv,
+        model_config.head_dim_v,
+    )
+    out_layout = (
+        model_config.batch_size,
+        model_config.seqlen_q,
+        model_config.num_head_q,
+        model_config.head_dim_v,
+    )
+
     query_cpu = torch.randn(q_layout, dtype=dtype, requires_grad=True)
     key_cpu = torch.randn(k_layout, dtype=dtype, requires_grad=True)
     value_cpu = torch.randn(v_layout, dtype=dtype, requires_grad=True)
+    grad_out_cpu = torch.randn(out_layout, dtype=dtype)
 
     query = query_cpu.detach().to(DEVICE).requires_grad_()
     key = key_cpu.detach().to(DEVICE).requires_grad_()
     value = value_cpu.detach().to(DEVICE).requires_grad_()
-	
-    out_ref, attn_ref = attention_ref(
-		query_cpu,
-		key_cpu,
-		value_cpu,
-		causal=True,
-		upcast=False,
-	)
+    grad_out = grad_out_cpu.detach().to(DEVICE)
 
-    if backend == 'FA':
-        out, lse, S_dmask = flash_attn_func(
+    query_ref = query.clone().detach().requires_grad_()
+    key_ref = key.clone().detach().requires_grad_()
+    value_ref = value.clone().detach().requires_grad_()
+    grad_out_ref = grad_out.clone().detach()
+
+    out_ref, _ = attention_ref(
+        query_ref,
+        key_ref,
+        value_ref,
+        causal=True,
+        upcast=False,
+    )
+
+    if backend == "FA":
+        out, _, _ = flash_attn_func(
             query,
             key,
             value,
@@ -229,37 +307,21 @@ def attention(model_config, dtype, seed, backend='FA'):
             return_attn_probs=True,
         )
     else:
-        out = pt.ops.attention(
+        import aiter
+
+        out, _, _ = aiter.flash_attn_func(
             query,
             key,
             value,
             dropout_p=0.0,
-            softmax_scale=query.shape[-1] ** (-0.5),
             causal=True,
             window_size=(-1, -1),
             bias=None,
             alibi_slopes=None,
             deterministic=False,
-            return_lse=False,
-            return_attn_probs=False,
-            backend_type="ck",
+            return_lse=True,
+            return_attn_probs=True,
         )
-        # out, _, S_dmask = aiter.flash_attn_func(
-		# 	query,
-        #     key,
-        #     value,
-		# 	dropout_p=0.0,
-		# 	causal=True,
-		# 	window_size=(-1, -1),
-		# 	bias=None,
-		# 	alibi_slopes=None,
-		# 	deterministic=False,
-		# 	return_lse=True,
-		# 	return_attn_probs=True,
-		# )
-
-    grad_out_cpu = torch.randn_like(out_ref)
-    grad_out = grad_out_cpu.detach().to(DEVICE)
 
     (
         dq,
@@ -270,16 +332,26 @@ def attention(model_config, dtype, seed, backend='FA'):
         dq_ref,
         dk_ref,
         dv_ref,
-    ) = torch.autograd.grad(out_ref, (query_cpu, key_cpu, value_cpu), grad_out_cpu)
+    ) = torch.autograd.grad(out_ref, (query_ref, key_ref, value_ref), grad_out_ref)
 
-    return out_ref, dq_ref, dk_ref, dv_ref, out, dq, dk, dv
+    return (
+        out_ref.cpu(),
+        dq_ref.cpu(),
+        dk_ref.cpu(),
+        dv_ref.cpu(),
+        out.cpu(),
+        dq.cpu(),
+        dk.cpu(),
+        dv.cpu(),
+    )
 
 
-def benchmark(seed, report_dir_path, load_config_path=None, dump_dir_path=None, backend='FA'):
-    import pdb;pdb.set_trace()
+def benchmark(
+    seed, report_dir_path, load_config_path=None, dump_dir_path=None, backend="FA"
+):
     device_type = get_device_type()
     device_name = get_device_name()
-    ref_device = "CPU"
+    ref_device = device_name
 
     report_dir = Path(report_dir_path) / Path(FUNC_NAME) / Path(backend)
     report_dir.mkdir(parents=True, exist_ok=True)
@@ -293,103 +365,130 @@ def benchmark(seed, report_dir_path, load_config_path=None, dump_dir_path=None, 
         dump_dir = Path(dump_dir_path) / Path(FUNC_NAME) / Path(backend)
         dump_dir.mkdir(parents=True, exist_ok=True)
 
-    results_with_cpu = []
-    results_with_gpu = []
+    results_with_unfused = []
+    results_with_load = []
 
     def item(metric):
         return f"{metric:.3e}" if isinstance(metric, float) else str(metric)
 
     for config in g_model_cfg:
         for dtype in [torch.float16, torch.bfloat16]:
-            out_ref, dq_ref, dk_ref, dv_ref, out, dq, dk, dv = attention(config, dtype, seed, backend)
+            out_ref, dq_ref, dk_ref, dv_ref, out, dq, dk, dv = attention(
+                config, dtype, seed, backend
+            )
 
             result = {
                 "func": f"{FUNC_NAME.upper()} ({device_name} vs {ref_device})",
-				"backend": backend,
+                "backend": backend,
                 "dtype": str(dtype).split(".")[-1],
-                "config": config.to_string(),
-                "RelError(out)": item(relative_error(out_ref, out.cpu())),
-                "RelError(dq)": item(relative_error(dq_ref, dq.cpu())),
-                "RelError(dk)": item(relative_error(dk_ref, dk.cpu())),
-                "RelError(dv)": item(relative_error(dv_ref, dv.cpu())),
-                "MaxAbsErr(out)": item(max_abs_error(out_ref, out.cpu())),
-                "MaxAbsErr(dq)": item(max_abs_error(dq_ref, dq.cpu())),
-                "MaxAbsErr(dk)": item(max_abs_error(dk_ref, dk.cpu())),
-                "MaxAbsErr(dv)": item(max_abs_error(dv_ref, dv.cpu())),
-                "CosSim(out)": f"{cosine_similarity(out_ref, out.cpu()):.6f}",
-                "CosSim(dq)": f"{cosine_similarity(dq_ref, dq.cpu()):.6f}",
-                "CosSim(dk)": f"{cosine_similarity(dk_ref, dk.cpu()):.6f}",
-                "CosSim(dv)": f"{cosine_similarity(dv_ref, dv.cpu()):.6f}",
-				"SNR(out)": f"{compute_snr(out_ref, out.cpu()):.2f}",
-				"SNR(dq)": f"{compute_snr(dq_ref, dq.cpu()):.2f}",
-				"SNR(dk)": f"{compute_snr(dk_ref, dk.cpu()):.2f}",
-				"SNR(dv)": f"{compute_snr(dv_ref, dv.cpu()):.2f}", 
+                "config": str(config),
+                "RelError(out)": item(relative_error(out_ref, out)),
+                "RelError(dq)": item(relative_error(dq_ref, dq)),
+                "RelError(dk)": item(relative_error(dk_ref, dk)),
+                "RelError(dv)": item(relative_error(dv_ref, dv)),
+                "MaxAbsErr(out)": item(max_abs_error(out_ref, out)),
+                "MaxAbsErr(dq)": item(max_abs_error(dq_ref, dq)),
+                "MaxAbsErr(dk)": item(max_abs_error(dk_ref, dk)),
+                "MaxAbsErr(dv)": item(max_abs_error(dv_ref, dv)),
+                "CosSim(out)": f"{cosine_similarity(out_ref, out):.6f}",
+                "CosSim(dq)": f"{cosine_similarity(dq_ref, dq):.6f}",
+                "CosSim(dk)": f"{cosine_similarity(dk_ref, dk):.6f}",
+                "CosSim(dv)": f"{cosine_similarity(dv_ref, dv):.6f}",
+                "SNR(out)": f"{compute_snr(out_ref, out):.2f}",
+                "SNR(dq)": f"{compute_snr(dq_ref, dq):.2f}",
+                "SNR(dk)": f"{compute_snr(dk_ref, dk):.2f}",
+                "SNR(dv)": f"{compute_snr(dv_ref, dv):.2f}",
             }
-            results_with_cpu.append(result)
+            results_with_unfused.append(result)
 
             if dump_dir_path is not None:
-                dump_file = get_tensor_name(device_type, FUNC_NAME, dtype, config=config)
+                dump_file = get_tensor_name(
+                    device_type, FUNC_NAME, dtype, config=config
+                )
                 output_dict = {
-                    'output': out.cpu(),
-                    'dq': dq.cpu(),
-                    'dk': dk.cpu(),
-                    'dv': dv.cpu(),
+                    "output": out,
+                    "dq": dq,
+                    "dk": dk,
+                    "dv": dv,
                 }
                 dump_tensor(output_dict, dump_dir, dump_file)
 
             if load_config_path is not None:
-                load_file = get_tensor_name(load_config.get("device_type"), FUNC_NAME, dtype, config=config)
+                load_file = get_tensor_name(
+                    load_config.get("device_type"), FUNC_NAME, dtype, config=config
+                )
                 tensors_load = load_tensor(load_dir, load_file)
-                out_load = tensors_load['output']
-                dq_load = tensors_load['dq']
-                dk_load = tensors_load['dk']
-                dv_load = tensors_load['dv']
-                          
-                gpu_result = {
+                out_load = tensors_load["output"]
+                dq_load = tensors_load["dq"]
+                dk_load = tensors_load["dk"]
+                dv_load = tensors_load["dv"]
+
+                load_result = {
                     "func": f"{FUNC_NAME.upper()} ({device_name} vs {load_config.get('device_name')})",
                     "backend": f"{load_config.get('backend', 'FA')} vs {backend}",
                     "dtype": str(dtype).split(".")[-1],
                     "config": str(config),
-					"RelError(out)": item(relative_error(out_load, out.cpu())),
-                    "RelError(dq)": item(relative_error(dq_load, dq.cpu())),
-                    "RelError(dk)": item(relative_error(dk_load, dk.cpu())),
-                    "RelError(dv)": item(relative_error(dv_load, dv.cpu())),
-                    "MaxAbsErr(out)": item(max_abs_error(out_load, out.cpu())),
-                    "MaxAbsErr(dq)": item(max_abs_error(dq_load, dq.cpu())),
-                    "MaxAbsErr(dk)": item(max_abs_error(dk_load, dk.cpu())),
-                    "MaxAbsErr(dv)": item(max_abs_error(dv_load, dv.cpu())),
-                    "CosSim(out)": f"{cosine_similarity(out_load, out.cpu()):.6f}",
-                    "CosSim(dq)": f"{cosine_similarity(dq_load, dq.cpu()):.6f}",
-                    "CosSim(dk)": f"{cosine_similarity(dk_load, dk.cpu()):.6f}",
-                    "CosSim(dv)": f"{cosine_similarity(dv_load, dv.cpu()):.6f}",
-                    "SNR(out)": f"{compute_snr(out_load, out.cpu()):.2f}",
-                    "SNR(dq)": f"{compute_snr(dq_load, dq.cpu()):.2f}",
-                    "SNR(dk)": f"{compute_snr(dk_load, dk.cpu()):.2f}",
-                    "SNR(dv)": f"{compute_snr(dv_load, dv.cpu()):.2f}",  
+                    "RelError(out)": item(relative_error(out_load, out)),
+                    "RelError(dq)": item(relative_error(dq_load, dq)),
+                    "RelError(dk)": item(relative_error(dk_load, dk)),
+                    "RelError(dv)": item(relative_error(dv_load, dv)),
+                    "MaxAbsErr(out)": item(max_abs_error(out_load, out)),
+                    "MaxAbsErr(dq)": item(max_abs_error(dq_load, dq)),
+                    "MaxAbsErr(dk)": item(max_abs_error(dk_load, dk)),
+                    "MaxAbsErr(dv)": item(max_abs_error(dv_load, dv)),
+                    "CosSim(out)": f"{cosine_similarity(out_load, out):.6f}",
+                    "CosSim(dq)": f"{cosine_similarity(dq_load, dq):.6f}",
+                    "CosSim(dk)": f"{cosine_similarity(dk_load, dk):.6f}",
+                    "CosSim(dv)": f"{cosine_similarity(dv_load, dv):.6f}",
+                    "SNR(out)": f"{compute_snr(out_load, out):.2f}",
+                    "SNR(dq)": f"{compute_snr(dq_load, dq):.2f}",
+                    "SNR(dk)": f"{compute_snr(dk_load, dk):.2f}",
+                    "SNR(dv)": f"{compute_snr(dv_load, dv):.2f}",
                 }
-                results_with_gpu.append(gpu_result)
-        results_with_cpu.append({k: "" for k in results_with_cpu[-1].keys()})
-        if len(results_with_gpu) > 0:
-            results_with_gpu.append({k: "" for k in results_with_gpu[-1].keys()})
+                results_with_load.append(load_result)
 
-    report_with_cpu = report_dir / f"benchmark_{device_type}_{FUNC_NAME}.xlsx"
-    report_with_gpu = report_dir / f"benchmark_GPU_{FUNC_NAME}.xlsx"
+        results_with_unfused.append({k: "" for k in results_with_unfused[-1].keys()})
+        if len(results_with_load) > 0:
+            results_with_load.append({k: "" for k in results_with_load[-1].keys()})
 
-    save_to_excel(results_with_cpu, report_with_cpu)
-    save_to_excel(results_with_gpu, report_with_gpu)
+    report_with_unfused = (
+        report_dir / f"benchmark_{device_type}_vs_unfused_{FUNC_NAME}.xlsx"
+    )
+    report_with_load = report_dir / f"benchmark_{device_type}_vs_load_{FUNC_NAME}.xlsx"
+    save_to_excel(results_with_unfused, report_with_unfused)
+    save_to_excel(results_with_load, report_with_load)
 
-    benchmark_reports = [report_with_cpu]
-    if load_config_path and load_config.get("report_path") and Path(load_config.get("report_path")).exists():
+    benchmark_reports = [report_with_unfused]
+    if (
+        load_config_path
+        and load_config.get("report_path")
+        and Path(load_config.get("report_path")).exists()
+    ):
         benchmark_reports.append(Path(load_config.get("report_path")))
-    if Path(report_with_gpu).exists():
-        benchmark_reports.append(report_with_gpu)
+    if Path(report_with_load).exists():
+        benchmark_reports.append(report_with_load)
     if len(benchmark_reports) >= 2:
         report_path = report_dir / f"benchmark_{FUNC_NAME}.xlsx"
         merge_excels(benchmark_reports, report_path)
 
 
 if __name__ == "__main__":
-    # python eval_attention_accuracy.py --report-dir-path output --backend AITER --dump-dir-path dump
+    """
+    Example:
+    [NV PLATFORM]python eval_attention_accuracy.py --report-dir-path output --dump-dir-path dump
+    [NV PLATFORM]tar -cvzf data.tar.gz output dump
+    [AMD PLATFORM]tar -xvzf data.tar.gz
+    [AMD PLATFORM]python eval_attention_accuracy.py --report-dir-path output --backend "AITER" --load-config-path load_config.json
+    [AMD PLATFORM]python eval_attention_accuracy.py --report-dir-path output --load-config-path load_config.json
+    load_config.json:
+    {
+        "device_type": "NVIDIA",
+        "device_name": "H200",
+        "backend": "FA",
+        "load_dir": "dump/attention/FA",
+        "report_path": "output/attention/FA/benchmark_NVIDIA_vs_unfused_attention.xlsx"
+    }
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--load-config-path", default=None, type=str)
     parser.add_argument("--dump-dir-path", default=None, type=str)
@@ -398,4 +497,10 @@ if __name__ == "__main__":
     parser.add_argument("--backend", default="FA", type=str, choices=["FA", "AITER"])
 
     args = parser.parse_args()
-    benchmark(args.seed, args.report_dir_path, args.load_config_path, args.dump_dir_path, args.backend)
+    benchmark(
+        args.seed,
+        args.report_dir_path,
+        args.load_config_path,
+        args.dump_dir_path,
+        args.backend,
+    )
