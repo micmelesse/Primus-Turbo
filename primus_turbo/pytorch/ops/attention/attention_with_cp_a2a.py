@@ -17,7 +17,7 @@ from primus_turbo.pytorch.kernels.attention.attention_triton_impl import (
     attention_triton_backward_impl,
     attention_triton_forward_impl,
 )
-from primus_turbo.pytorch.ops.utils.attention_utils import (
+from primus_turbo.pytorch.ops.attention.attention_utils import (
     block_scaling_node,
     quant_v_get_p_scale,
 )
