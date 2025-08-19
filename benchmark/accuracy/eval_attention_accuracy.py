@@ -274,6 +274,12 @@ def attention(model_config, dtype, seed, backend="FA"):
     key_cpu = torch.randn(k_layout, dtype=dtype, requires_grad=True)
     value_cpu = torch.randn(v_layout, dtype=dtype, requires_grad=True)
     grad_out_cpu = torch.randn(out_layout, dtype=dtype)
+    print(f"query_cpu:{query_cpu.min()}-{query_cpu.max()}-{query_cpu.mean()}")
+    print(f"key_cpu:{key_cpu.min()}-{key_cpu.max()}-{key_cpu.mean()}")
+    print(f"value_cpu:{value_cpu.min()}-{value_cpu.max()}-{value_cpu.mean()}")
+    print(
+        f"grad_out_cpu:{grad_out_cpu.min()}-{grad_out_cpu.max()}-{grad_out_cpu.mean()}"
+    )
 
     query = query_cpu.detach().to(DEVICE).requires_grad_()
     key = key_cpu.detach().to(DEVICE).requires_grad_()
@@ -290,7 +296,7 @@ def attention(model_config, dtype, seed, backend="FA"):
         key_ref,
         value_ref,
         causal=True,
-        upcast=False,
+        upcast=True,
     )
 
     if backend == "FA":
@@ -335,6 +341,10 @@ def attention(model_config, dtype, seed, backend="FA"):
     ) = torch.autograd.grad(out_ref, (query_ref, key_ref, value_ref), grad_out_ref)
 
     return (
+        query_cpu,
+        key_cpu,
+        value_cpu,
+        grad_out_cpu,
         out_ref.cpu(),
         dq_ref.cpu(),
         dk_ref.cpu(),
@@ -351,7 +361,6 @@ def benchmark(
 ):
     device_type = get_device_type()
     device_name = get_device_name()
-    ref_device = device_name
 
     report_dir = Path(report_dir_path) / Path(FUNC_NAME) / Path(backend)
     report_dir.mkdir(parents=True, exist_ok=True)
@@ -362,7 +371,7 @@ def benchmark(
             load_dir = Path(load_config.get("load_dir"))
 
     if dump_dir_path is not None:
-        dump_dir = Path(dump_dir_path) / Path(FUNC_NAME) / Path(backend)
+        dump_dir = Path(dump_dir_path) / Path(FUNC_NAME)
         dump_dir.mkdir(parents=True, exist_ok=True)
 
     results_with_unfused = []
@@ -371,34 +380,50 @@ def benchmark(
     def item(metric):
         return f"{metric:.3e}" if isinstance(metric, float) else str(metric)
 
+    def make_tensor_result_dict(prefix, ref, value):
+        return {
+            f"RelError({prefix})": item(relative_error(ref, value)),
+            f"MaxAbsErr({prefix})": item(max_abs_error(ref, value)),
+            f"CosSim({prefix})": f"{cosine_similarity(ref, value):.6f}",
+            f"SNR({prefix})": f"{compute_snr(ref, value):.2f}",
+        }
+
     for config in g_model_cfg:
         for dtype in [torch.float16, torch.bfloat16]:
-            out_ref, dq_ref, dk_ref, dv_ref, out, dq, dk, dv = attention(
-                config, dtype, seed, backend
-            )
+            (
+                query_cpu,
+                key_cpu,
+                value_cpu,
+                grad_out_cpu,
+                out_ref,
+                dq_ref,
+                dk_ref,
+                dv_ref,
+                out,
+                dq,
+                dk,
+                dv,
+            ) = attention(config, dtype, seed, backend)
 
-            result = {
-                "func": f"{FUNC_NAME.upper()} ({device_name} vs {ref_device})",
-                "backend": backend,
+            base_info = {
+                "func": f"{FUNC_NAME.upper()}({device_name})",
+                "backend": f"unfused vs {backend}",
                 "dtype": str(dtype).split(".")[-1],
                 "config": str(config),
-                "RelError(out)": item(relative_error(out_ref, out)),
-                "RelError(dq)": item(relative_error(dq_ref, dq)),
-                "RelError(dk)": item(relative_error(dk_ref, dk)),
-                "RelError(dv)": item(relative_error(dv_ref, dv)),
-                "MaxAbsErr(out)": item(max_abs_error(out_ref, out)),
-                "MaxAbsErr(dq)": item(max_abs_error(dq_ref, dq)),
-                "MaxAbsErr(dk)": item(max_abs_error(dk_ref, dk)),
-                "MaxAbsErr(dv)": item(max_abs_error(dv_ref, dv)),
-                "CosSim(out)": f"{cosine_similarity(out_ref, out):.6f}",
-                "CosSim(dq)": f"{cosine_similarity(dq_ref, dq):.6f}",
-                "CosSim(dk)": f"{cosine_similarity(dk_ref, dk):.6f}",
-                "CosSim(dv)": f"{cosine_similarity(dv_ref, dv):.6f}",
-                "SNR(out)": f"{compute_snr(out_ref, out):.2f}",
-                "SNR(dq)": f"{compute_snr(dq_ref, dq):.2f}",
-                "SNR(dk)": f"{compute_snr(dk_ref, dk):.2f}",
-                "SNR(dv)": f"{compute_snr(dv_ref, dv):.2f}",
             }
+
+            tensor_accuracy = {}
+            for name, ref, val in [
+                ("output", out_ref, out),
+                ("dq", dq_ref, dq),
+                ("dk", dk_ref, dk),
+                ("dv", dv_ref, dv),
+            ]:
+                tensor_accuracy.update(make_tensor_result_dict(name, ref, val))
+            tensor_accuracy = dict(
+                sorted(tensor_accuracy.items(), key=lambda item: item[0])
+            )
+            result = {**base_info, **tensor_accuracy}
             results_with_unfused.append(result)
 
             if dump_dir_path is not None:
@@ -406,10 +431,14 @@ def benchmark(
                     device_type, FUNC_NAME, dtype, config=config
                 )
                 output_dict = {
-                    "output": out,
-                    "dq": dq,
-                    "dk": dk,
-                    "dv": dv,
+                    "query": query_cpu,
+                    "key": key_cpu,
+                    "value": value_cpu,
+                    "grad_out": grad_out_cpu,
+                    "output": out_ref,
+                    "dq": dq_ref,
+                    "dk": dk_ref,
+                    "dv": dv_ref,
                 }
                 dump_tensor(output_dict, dump_dir, dump_file)
 
@@ -418,33 +447,43 @@ def benchmark(
                     load_config.get("device_type"), FUNC_NAME, dtype, config=config
                 )
                 tensors_load = load_tensor(load_dir, load_file)
-                out_load = tensors_load["output"]
-                dq_load = tensors_load["dq"]
-                dk_load = tensors_load["dk"]
-                dv_load = tensors_load["dv"]
+                query_load, key_load, value_load = (
+                    tensors_load["query"],
+                    tensors_load["key"],
+                    tensors_load["value"],
+                )
+                grad_out_load, out_load = (
+                    tensors_load["grad_out"],
+                    tensors_load["output"],
+                )
+                dq_load, dk_load, dv_load = (
+                    tensors_load["dq"],
+                    tensors_load["dk"],
+                    tensors_load["dv"],
+                )
 
-                load_result = {
-                    "func": f"{FUNC_NAME.upper()} ({device_name} vs {load_config.get('device_name')})",
-                    "backend": f"{load_config.get('backend', 'FA')} vs {backend}",
+                load_info = {
+                    "func": f"{FUNC_NAME.upper()} ",
+                    "backend": f"unfused({device_name} vs {load_config.get('device_name')})",
                     "dtype": str(dtype).split(".")[-1],
                     "config": str(config),
-                    "RelError(out)": item(relative_error(out_load, out)),
-                    "RelError(dq)": item(relative_error(dq_load, dq)),
-                    "RelError(dk)": item(relative_error(dk_load, dk)),
-                    "RelError(dv)": item(relative_error(dv_load, dv)),
-                    "MaxAbsErr(out)": item(max_abs_error(out_load, out)),
-                    "MaxAbsErr(dq)": item(max_abs_error(dq_load, dq)),
-                    "MaxAbsErr(dk)": item(max_abs_error(dk_load, dk)),
-                    "MaxAbsErr(dv)": item(max_abs_error(dv_load, dv)),
-                    "CosSim(out)": f"{cosine_similarity(out_load, out):.6f}",
-                    "CosSim(dq)": f"{cosine_similarity(dq_load, dq):.6f}",
-                    "CosSim(dk)": f"{cosine_similarity(dk_load, dk):.6f}",
-                    "CosSim(dv)": f"{cosine_similarity(dv_load, dv):.6f}",
-                    "SNR(out)": f"{compute_snr(out_load, out):.2f}",
-                    "SNR(dq)": f"{compute_snr(dq_load, dq):.2f}",
-                    "SNR(dk)": f"{compute_snr(dk_load, dk):.2f}",
-                    "SNR(dv)": f"{compute_snr(dv_load, dv):.2f}",
                 }
+                tensor_accuracy = {}
+                for name, ref, val in [
+                    ("output", out_load, out_ref),
+                    ("dq", dq_load, dq_ref),
+                    ("dk", dk_load, dk_ref),
+                    ("dv", dv_load, dv_ref),
+                    ("query", query_load, query_cpu),
+                    ("key", key_load, key_cpu),
+                    ("value", value_load, value_cpu),
+                    ("grad_out", grad_out_load, grad_out_cpu),
+                ]:
+                    tensor_accuracy.update(make_tensor_result_dict(name, ref, val))
+                tensor_accuracy = dict(
+                    sorted(tensor_accuracy.items(), key=lambda item: item[0])
+                )
+                load_result = {**load_info, **tensor_accuracy}
                 results_with_load.append(load_result)
 
         results_with_unfused.append({k: "" for k in results_with_unfused[-1].keys()})
@@ -452,25 +491,16 @@ def benchmark(
             results_with_load.append({k: "" for k in results_with_load[-1].keys()})
 
     report_with_unfused = (
-        report_dir / f"benchmark_{device_type}_vs_unfused_{FUNC_NAME}.xlsx"
+        report_dir / f"benchmark_{device_type}_{backend}_vs_unfused_{FUNC_NAME}.xlsx"
     )
-    report_with_load = report_dir / f"benchmark_{device_type}_vs_load_{FUNC_NAME}.xlsx"
     save_to_excel(results_with_unfused, report_with_unfused)
-    save_to_excel(results_with_load, report_with_load)
-
-    benchmark_reports = [report_with_unfused]
-    if (
-        load_config_path
-        and load_config.get("report_path")
-        and Path(load_config.get("report_path")).exists()
-    ):
-        benchmark_reports.append(Path(load_config.get("report_path")))
-    if Path(report_with_load).exists():
-        benchmark_reports.append(report_with_load)
-    if len(benchmark_reports) >= 2:
-        report_path = report_dir / f"benchmark_{FUNC_NAME}.xlsx"
-        merge_excels(benchmark_reports, report_path)
-
+    if len(results_with_load) > 0:
+        report_with_load = (
+            report_dir
+            / f"benchmark_{device_type}_vs_{load_config.get('device_type')}_baseline_{FUNC_NAME}.xlsx"
+        )
+        save_to_excel(results_with_load, report_with_load)
+   
 
 if __name__ == "__main__":
     """
@@ -484,9 +514,7 @@ if __name__ == "__main__":
     {
         "device_type": "NVIDIA",
         "device_name": "H200",
-        "backend": "FA",
-        "load_dir": "dump/attention/FA",
-        "report_path": "output/attention/FA/benchmark_NVIDIA_vs_unfused_attention.xlsx"
+        "load_dir": "dump/attention",
     }
     """
     parser = argparse.ArgumentParser()
