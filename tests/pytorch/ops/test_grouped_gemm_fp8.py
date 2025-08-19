@@ -11,6 +11,7 @@ import primus_turbo.pytorch as turbo
 from primus_turbo.pytorch.ops import (
     grouped_gemm_fp8_blockwise,
     grouped_gemm_fp8_rowwise,
+    grouped_gemm_fp8_tensorwise,
 )
 from tests.pytorch.ref.gemm_ref import (
     generate_grouped_gemm_group_lens,
@@ -123,6 +124,63 @@ def test_rowwise_fp8_grouped_gemm_func(B, M, NK, ori_dtype, transB):
 
     out_snr = compute_snr(out_ref, out)
 
+    print("fwd")
+
+    # print(out_ref, out.shape)
+    out_snr = compute_snr(out_ref, out)
+    print(f"Out-SNR: {out_snr:.2f} dB")
+    assert out_snr > 20, "out_snr too low"
+
+    print("dgrad")
+    # print(x_grad_ref, x_grad_ref.shape)
+    xgrad_snr = compute_snr(x_grad_ref, x_grad)
+    print(f"XGrad-SNR: {xgrad_snr:.2f} dB")
+    assert xgrad_snr > 20, "xgrad_snr too low"
+
+    print("wgrad")
+    # print(w_grad_ref, w_grad_ref.shape)
+    wgrad_snr = compute_snr(w_grad_ref, w_grad)
+    print(f"WGrad-SNR: {wgrad_snr:.2f} dB")
+    assert wgrad_snr > 20, "wgrad_snr too low"
+
+
+@pytest.mark.parametrize("B", [2, 4, 8])
+@pytest.mark.parametrize("M", [256, 1024, 2048])
+@pytest.mark.parametrize("NK", [(4096, 7168)])
+@pytest.mark.parametrize("ori_dtype", [torch.bfloat16])
+@pytest.mark.parametrize("transB", [True, False])
+def test_tensorwise_fp8_grouped_gemm_func(B, M, NK, ori_dtype, transB):
+    N, K = NK
+    device = "cuda:0"
+
+    group_lens = generate_grouped_gemm_group_lens(B, M, balance=False).to(device)
+    print(B, M, N, K, ori_dtype)
+
+    x = torch.randn((B * M, K), dtype=ori_dtype, device=device, requires_grad=True)
+    b_shape = (B, N, K) if transB else (B, K, N)
+    w = torch.randn(b_shape, dtype=ori_dtype, device=device, requires_grad=True)
+    x_ref = x.detach().clone().requires_grad_(True)
+    w_ref = w.detach().clone().requires_grad_(True)
+
+    print(x.shape, x.dtype)
+    print(w.shape, w.dtype)
+    # print(seg_lens)
+    # print(seg_indptr)
+
+    # Ref
+    out_ref = grouped_gemm_ref(x_ref, w_ref, group_lens, transB)
+    grad_out = torch.randn_like(out_ref)
+    out_ref.backward(grad_out)
+    x_grad_ref = x_ref.grad
+    w_grad_ref = w_ref.grad
+
+    # Turbo
+    out = grouped_gemm_fp8_tensorwise(x, w, group_lens, trans_b=transB)
+    out.backward(grad_out)
+    x_grad = x.grad
+    w_grad = w.grad
+
+    out_snr = compute_snr(out_ref, out)
     print("fwd")
 
     # print(out_ref, out.shape)
