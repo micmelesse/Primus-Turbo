@@ -1237,7 +1237,6 @@ def _bwd_kernel_dkdv(
             N_CTX_Q,
             N_CTX_K,
             CAUSAL,
-            group_idx,
         )
 
         q_offset += stride_qh
@@ -1299,9 +1298,8 @@ def _attn_bwd_dkdv(
     N_CTX_Q: tl.constexpr,
     N_CTX_K: tl.constexpr,
     CAUSAL: tl.constexpr,
-    GROUP_IDX: tl.constexpr = 0,
 ):
-    idx_block_m = tl.full([1], lo // BLOCK_M - 1 + GROUP_IDX * num_block_m, dtype=tl.int32)
+    idx_block_m = lo // BLOCK_M - 1
 
     # loop over rows
     for start_m in range(lo, num_block_m * BLOCK_M, BLOCK_M):
@@ -1316,8 +1314,8 @@ def _attn_bwd_dkdv(
 
         if USE_FP8:
             idx_block_m += 1
-            blk_q_descale = tl.load(q_descale_offset + start_m // BLOCK_M)
-            blk_do_descale = tl.load(do_descale_offset + start_m // BLOCK_M)
+            blk_q_descale = tl.load(q_descale_offset + idx_block_m)
+            blk_do_descale = tl.load(do_descale_offset + idx_block_m)
         else:
             blk_q_descale = 1.0
             blk_do_descale = 1.0
