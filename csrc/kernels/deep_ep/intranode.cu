@@ -873,53 +873,80 @@ __global__ void __launch_bounds__(kNumThreads, 1)
                     }
                 }
 
+                // **************************************
+                {
+                    constexpr int UNROLL_TMP = 2;
+                    int4          bias_0_value_int4[UNROLL_TMP];
+                    int4          bias_1_value_int4[UNROLL_TMP];
+                    int4          recv_value_int4[UNROLL_TMP][kNumRanks];
+                    float         values[UNROLL_TMP][kDtypePerInt4];
+                    int4          out_int4[UNROLL_TMP];
+                    int           offs = lane_id;
+                    while (offs < hidden_int4) {
 #pragma unroll
-                for (int i = lane_id; i < hidden_int4; i += kWarpSize) {
-                    // Read bias
-                    // TODO: make it as a template
-                    int4 bias_0_value_int4 = bias_0_int4 != nullptr
-                                                 ? __ldg(bias_0_int4 + token_idx * hidden_int4 + i)
-                                                 : make_int4(0, 0, 0, 0);
-                    int4 bias_1_value_int4 = bias_1_int4 != nullptr
-                                                 ? __ldg(bias_1_int4 + token_idx * hidden_int4 + i)
-                                                 : make_int4(0, 0, 0, 0);
+                        for (int i = 0; i < UNROLL_TMP; ++i) {
+                            const int64_t offs_tmp = token_idx * hidden_int4 + offs + i * kWarpSize;
+                            bias_0_value_int4[i]   = bias_0_int4 != nullptr
+                                                         ? __ldg(bias_0_int4 + offs_tmp)
+                                                         : make_int4(0, 0, 0, 0);
+                            bias_1_value_int4[i]   = bias_1_int4 != nullptr
+                                                         ? __ldg(bias_1_int4 + offs_tmp)
+                                                         : make_int4(0, 0, 0, 0);
+                        }
 
-                    // Read buffers
-                    int4 recv_value_int4[kNumRanks];
+                        for (int j = 0; j < num_topk_ranks; ++j) {
 #pragma unroll
-                    for (int j = 0; j < num_topk_ranks; ++j)
-                        recv_value_int4[j] =
-                            ld_nc_global(channel_x_buffers[topk_ranks[j]].buffer() +
-                                         slot_indices[j] * hidden_int4 + i);
+                            for (int i = 0; i < UNROLL_TMP; ++i) {
+                                recv_value_int4[i][j] = ld_nc_global(
+                                    channel_x_buffers[topk_ranks[j]].buffer() +
+                                    slot_indices[j] * hidden_int4 + offs + i * kWarpSize);
+                            }
+                        }
 
-                    // Reduce bias
-                    float values[kDtypePerInt4];
-                    auto  bias_0_values = reinterpret_cast<const dtype_t *>(&bias_0_value_int4);
-                    auto  bias_1_values = reinterpret_cast<const dtype_t *>(&bias_1_value_int4);
 #pragma unroll
-                    for (int j = 0; j < kDtypePerInt4; ++j)
-                        values[j] = static_cast<float>(bias_0_values[j]) +
-                                    static_cast<float>(bias_1_values[j]);
+                        for (int i = 0; i < UNROLL_TMP; ++i) {
+                            auto bias_0_values =
+                                reinterpret_cast<const dtype_t *>(&bias_0_value_int4[i]);
+                            auto bias_1_values =
+                                reinterpret_cast<const dtype_t *>(&bias_1_value_int4[i]);
+#pragma unroll
+                            for (int j = 0; j < kDtypePerInt4; ++j) {
+                                values[i][j] = static_cast<float>(bias_0_values[j]) +
+                                               static_cast<float>(bias_1_values[j]);
+                            }
+                        }
 
-// Reduce all-to-all results
+                        // Reduce all-to-all results
+                        for (int j = 0; j < num_topk_ranks; ++j) {
 #pragma unroll
-                    for (int j = 0; j < num_topk_ranks; ++j) {
-                        auto recv_value_dtypes =
-                            reinterpret_cast<const dtype_t *>(&recv_value_int4[j]);
+                            for (int i = 0; i < UNROLL_TMP; ++i) {
+                                auto recv_value_dtypes =
+                                    reinterpret_cast<const dtype_t *>(&recv_value_int4[i][j]);
 #pragma unroll
-                        for (int k = 0; k < kDtypePerInt4; ++k)
-                            values[k] += static_cast<float>(recv_value_dtypes[k]);
-                    }
+                                for (int k = 0; k < kDtypePerInt4; ++k) {
+                                    values[i][k] += static_cast<float>(recv_value_dtypes[k]);
+                                }
+                            }
+                        }
 
-                    // Cast back to `dtype_t`
-                    int4 out_int4;
-                    auto out_dtypes = reinterpret_cast<dtype_t *>(&out_int4);
+// Cast back to `dtype_t`
 #pragma unroll
-                    for (int j = 0; j < kDtypePerInt4; ++j)
-                        out_dtypes[j] = static_cast<dtype_t>(values[j]);
+                        for (int i = 0; i < UNROLL_TMP; ++i) {
+                            auto out_dtypes = reinterpret_cast<dtype_t *>(&out_int4[i]);
+#pragma unroll
+                            for (int j = 0; j < kDtypePerInt4; ++j) {
+                                out_dtypes[j] = static_cast<dtype_t>(values[i][j]);
+                            }
+                        }
 
-                    recv_int4[token_idx * hidden_int4 + i] = out_int4;
+#pragma unroll
+                        for (int i = 0; i < UNROLL_TMP; ++i) {
+                            recv_int4[token_idx * hidden_int4 + offs + i * kWarpSize] = out_int4[i];
+                        }
+                        offs += (kWarpSize * UNROLL_TMP);
+                    } // While
                 }
+                // **************************************
 
                 // Reduce `topk_weights`
                 if (lane_id < num_topk) {
