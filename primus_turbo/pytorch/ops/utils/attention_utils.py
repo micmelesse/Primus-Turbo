@@ -32,7 +32,9 @@ def block_scaling_node(tensor, use_fp8, BLOCK_M=FIXED_BLOCK_M, float8_dtype=get_
         B, H, L, D = tensor.shape
         tensor = tensor.reshape(B, H, L // BLOCK_M, BLOCK_M, D).reshape(B, H, L // BLOCK_M, BLOCK_M * D)
         MAX_E4M3 = torch.finfo(float8_dtype).max
-        scale = MAX_E4M3 / tensor.abs().max(dim=-1)[0]
+        tensor_max = tensor.abs().max(dim=-1)[0]
+        tensor_max = torch.where(tensor_max == 0, MAX_E4M3, tensor_max)
+        scale = MAX_E4M3 / tensor_max
         tensor = tensor * scale.reshape(scale.shape + (1,))
         tensor = tensor.clamp(-MAX_E4M3, MAX_E4M3)
         tensor = tensor.to(float8_dtype)
