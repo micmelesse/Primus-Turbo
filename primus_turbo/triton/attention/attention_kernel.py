@@ -305,7 +305,7 @@ def _attn_fwd_inner(
                 qk = tl.where(mask, qk, float("-inf"))
 
         # -- compute qk ----
-        qk += tl.dot(q, k)
+        qk += tl.dot(q, k, out_dtype=tl.float32, allow_tf32=False)
 
         if USE_FP8:
             qk_scaled = qk * (q_descale * blk_k_descale * SM_SCALE)
@@ -903,9 +903,8 @@ def get_padded_head_dim(head_size: int):
 @triton.jit
 def compute_fp8_scaling_factors(x, fp8_max: tl.constexpr):
     x_amax = tl.max(tl.abs(x))
-    x_amax = tl.where(x_amax == 0.0, 1.0, x_amax)
-    x_amax = tl.where(x_amax <= 1e-7, 1e-7, x_amax)
-    x_amax = tl.where(x_amax >= 1e7, 1e7, x_amax)
+    # x_amax = tl.where(x_amax <= 1e-7, 1e-7, x_amax)
+    x_amax = tl.where(x_amax == 0, fp8_max, x_amax)
     scale_x = fp8_max / x_amax
     return scale_x
 
@@ -1007,9 +1006,7 @@ def _bwd_preprocess_use_o(
 
         tl.store(do_fp8_ptrs, do_fp8, mask=mask_o)
 
-        do_scale_offset = (
-            do_scale_ptr + off_z * stride_doscalez + off_h * stride_doscaleh + pid_m
-        )  #  + q_start * stride_om
+        do_scale_offset = do_scale_ptr + off_z * stride_doscalez + off_h * stride_doscaleh + pid_m
         tl.store(do_scale_offset, 1.0 / do_scale)
 
 
@@ -1163,7 +1160,7 @@ def _bwd_kernel_dkdv(
             + off_z * stride_doscalez
             + off_h_q * stride_doscaleh
             + tl.arange(0, padded_doscale_block_num)
-        )  #  + q_start * stride_qm
+        )
         do_descale = tl.load(do_descale_offset, mask=doscale_mask, other=1.0)
 
         qscale_mask = tl.arange(0, padded_qscale_block_num) < actual_qscale_block_num
@@ -1335,7 +1332,7 @@ def _attn_bwd_dkdv(
             blk_do_descale = 1.0
 
         q = tl.load(q_ptrs, mask=q_mask, other=0.0)
-        qk = tl.dot(q, k, out_dtype=tl.float32)
+        qk = tl.dot(q, k, out_dtype=tl.float32, allow_tf32=False)
 
         if USE_FP8:
             # can fuse with sm_scale
@@ -1366,7 +1363,7 @@ def _attn_bwd_dkdv(
         do = tl.load(do_ptrs, mask=do_mask, other=0.0)
 
         # compute dp
-        dp = tl.dot(do, v, out_dtype=tl.float32)
+        dp = tl.dot(do, v, out_dtype=tl.float32, allow_tf32=False)
 
         if USE_FP8:
             dp_descale = blk_do_descale / v_scale
@@ -1390,7 +1387,7 @@ def _attn_bwd_dkdv(
             dv += _dv
 
         # compute dk = dot(ds.T, q)
-        _dk = tl.dot(tl.trans(ds), q)
+        _dk = tl.dot(tl.trans(ds), q, out_dtype=tl.float32, allow_tf32=False)
 
         if USE_FP8:
             dk_descale = blk_q_descale / ds_scale
@@ -1682,7 +1679,7 @@ def _attn_bwd_dq(
         v = tl.load(v_ptrs, mask=mask_v, other=0.0)
 
         kt = tl.trans(k)
-        qk = tl.dot(q, kt, out_dtype=tl.float32)
+        qk = tl.dot(q, kt, out_dtype=tl.float32, allow_tf32=False)
 
         if USE_FP8:
             # can fuse with sm_scale
@@ -1706,7 +1703,7 @@ def _attn_bwd_dq(
             p = tl.math.exp(qk - l_i[:, None] + log_p_scale)
 
         # compute dp
-        dp = tl.dot(do, tl.trans(v))
+        dp = tl.dot(do, tl.trans(v), out_dtype=tl.float32, allow_tf32=False)
 
         if USE_FP8:
             dp_descale = do_descale / v_scale
@@ -1719,7 +1716,7 @@ def _attn_bwd_dq(
             ds = tl.clamp(ds * ds_scale, -F8_FWD_MAX, F8_FWD_MAX)
 
         ds = ds.to(q.dtype)
-        _dq = tl.dot(ds, k, allow_tf32=False)
+        _dq = tl.dot(ds, k, out_dtype=tl.float32, allow_tf32=False)
 
         if USE_FP8:
             dq_descale = blk_k_descale / ds_scale  # ds_scale # 1. / k_scale
