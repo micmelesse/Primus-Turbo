@@ -29,6 +29,10 @@ Primus-Turbo uses or references the following third-party projects:
    - License: MIT License (DeepSeek)
    - Repository: https://github.com/deepseek-ai/DeepEP.git
 
+2. torchtitan
+   - License: BSD License
+   - Repository: https://github.com/pytorch/torchtitan.git
+
 Please comply with the respective licenses of these third-party projects when using or distributing Primus.
 
 --------------------------------------------------------------------------------

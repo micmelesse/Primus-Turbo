@@ -1,6 +1,11 @@
+// Copyright (c) 2025, Advanced Micro Devices, Inc. All rights reserved.
+//
+// See LICENSE for license information.
+
 #include "primus_turbo/hipblaslt_gemm.h"
 
 #include "../extensions.h"
+#include "../type_traits.h"
 
 namespace primus_turbo::pytorch {
 
@@ -28,10 +33,6 @@ static hipDataType get_hipblaslt_dtype(const at::ScalarType t) {
 static inline bool is_8bit_floating_point_dtype(at::ScalarType dtype) {
     return dtype == at::kFloat8_e4m3fnuz || dtype == at::kFloat8_e4m3fn ||
            dtype == at::kFloat8_e5m2fnuz || dtype == at::kFloat8_e5m2;
-}
-
-static inline bool is_16bit_floating_point_dtype(at::ScalarType dtype) {
-    return dtype == at::kHalf || dtype == at::kBFloat16;
 }
 
 static inline bool is_floating_point_dtype(at::ScalarType dtype) {

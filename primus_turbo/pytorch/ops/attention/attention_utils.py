@@ -1,3 +1,9 @@
+###############################################################################
+# Copyright (c) 2025, Advanced Micro Devices, Inc. All rights reserved.
+#
+# See LICENSE for license information.
+###############################################################################
+
 from abc import ABC
 from typing import List
 
@@ -92,60 +98,3 @@ class All2AllAttentionSharder(AttentionSharder):
             output_list.append(t.chunk(cp_size, seq_dim)[cp_rank].contiguous())
 
         return output_list
-
-
-class All2AllAttentionCommunicator:
-    """All2AllAttentionCommunicator Impl"""
-
-    cp_comm_streams = []
-
-    def __init__(self, cp_group):
-        self.cp_group = cp_group
-        self.done_flags = None
-        if len(All2AllAttentionCommunicator.cp_comm_streams) == 0:
-            All2AllAttentionCommunicator.cp_comm_streams.append(torch.cuda.Stream())
-            All2AllAttentionCommunicator.cp_comm_streams.append(torch.cuda.Stream())
-
-    def data_exchange_over_cp_groups(
-        self, send_buffers: List[torch.Tensor], before_all2all_funcs=None, after_all2all_funcs=None
-    ):
-        recv_buffers = [torch.empty_like(x) for x in send_buffers]
-
-        cp_streams = All2AllAttentionCommunicator.cp_comm_streams
-        for stream in cp_streams:
-            stream.wait_stream(torch.cuda.current_stream())
-
-        before_all2all_done_events = [torch.cuda.Event() for _ in range(len(send_buffers))]
-        all2all_done_flags = [None for _ in range(len(send_buffers))]
-
-        # 3-stages pipeline
-        pipeline_rounds = len(send_buffers) + 2
-        for i in range(pipeline_rounds):
-            if i < pipeline_rounds - 2:
-                with torch.cuda.stream(cp_streams[0]):
-                    if before_all2all_funcs is not None:
-                        send_buffers[i], recv_buffers[i] = before_all2all_funcs[i](
-                            send_buffers[i], recv_buffers[i]
-                        )
-                    send_buffers[i] = send_buffers[i].contiguous().flatten()
-                    before_all2all_done_events[i].record()
-
-            if i > 0 and i < pipeline_rounds - 1:
-                before_all2all_done_events[i - 1].wait()
-                send_tensor = send_buffers[i - 1]
-                recv_tensor = recv_buffers[i - 1]
-
-                all2all_done_flags[i - 1] = torch.distributed.all_to_all_single(
-                    recv_tensor, send_tensor, group=self.cp_group, async_op=True
-                )
-
-            if i > 1:
-                with torch.cuda.stream(cp_streams[1]):
-                    all2all_done_flags[i - 2].wait()
-                    all2all_done_tensor = recv_buffers[i - 2]
-                    if after_all2all_funcs is not None:
-                        recv_buffers[i - 2] = after_all2all_funcs[i - 2](all2all_done_tensor)
-
-        for stream in cp_streams:
-            torch.cuda.current_stream().wait_stream(stream)
-        return recv_buffers

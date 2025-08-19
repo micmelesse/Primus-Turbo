@@ -1,3 +1,7 @@
+// Copyright (c) 2025, Advanced Micro Devices, Inc. All rights reserved.
+//
+// See LICENSE for license information.
+
 #include <torch/extension.h>
 
 #include "extensions.h"
@@ -22,6 +26,10 @@ TORCH_LIBRARY(primus_turbo_cpp_extension, m) {
     m.def("fp8_dequantize(Tensor input, Tensor scale_inv, ScalarType dest_dtype) -> Tensor");
     m.def("rmsnorm_fwd(Tensor input, Tensor gamma, float eps) -> Tensor");
     m.def("rmsnorm_bwd(Tensor input, Tensor gamma, Tensor grad_out, float eps) -> Tensor[]");
+    m.def("grouped_gemm(Tensor a, Tensor b, Tensor group_lens, Tensor group_offs, bool transA, "
+          "bool transB) -> Tensor");
+    m.def("grouped_gemm_variable_k(Tensor a, Tensor b, Tensor group_lens, Tensor group_offs, "
+          "bool transA, bool transB) -> Tensor");
 }
 
 TORCH_LIBRARY_IMPL(primus_turbo_cpp_extension, CUDA, m) {
@@ -31,6 +39,8 @@ TORCH_LIBRARY_IMPL(primus_turbo_cpp_extension, CUDA, m) {
     m.impl("fp8_dequantize", fp8_dequantize);
     m.impl("rmsnorm_fwd", rmsnorm_fwd);
     m.impl("rmsnorm_bwd", rmsnorm_bwd);
+    m.impl("grouped_gemm", grouped_gemm);
+    m.impl("grouped_gemm_variable_k", grouped_gemm_variable_k);
 }
 
 TORCH_LIBRARY_IMPL(primus_turbo_cpp_extension, Meta, m) {
@@ -40,6 +50,8 @@ TORCH_LIBRARY_IMPL(primus_turbo_cpp_extension, Meta, m) {
     m.impl("fp8_dequantize", fp8_dequantize_meta);
     m.impl("rmsnorm_fwd", rmsnorm_fwd_meta);
     m.impl("rmsnorm_bwd", rmsnorm_bwd_meta);
+    m.impl("grouped_gemm", grouped_gemm_meta);
+    m.impl("grouped_gemm_variable_k", grouped_gemm_variable_k_meta);
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
@@ -61,24 +73,24 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         .def("get_rdma_buffer_size_hint", &deep_ep::Config::get_rdma_buffer_size_hint);
 
     deep_ep_module.def("get_low_latency_rdma_size_hint", &deep_ep::get_low_latency_rdma_size_hint);
+
     pybind11::class_<deep_ep::EventHandle>(deep_ep_module, "EventHandle")
         .def(pybind11::init<>())
         .def("current_stream_wait", &deep_ep::EventHandle::current_stream_wait);
 
     pybind11::class_<deep_ep::Buffer>(deep_ep_module, "Buffer")
-        .def(pybind11::init<int, int, int64_t, int64_t, bool>())
+        .def(pybind11::init<int, int, int64_t, int64_t, bool, bool>())
         .def("is_available", &deep_ep::Buffer::is_available)
-        .def("is_low_latency_optimize", &deep_ep::Buffer::is_low_latency_optimize)
         .def("get_num_rdma_ranks", &deep_ep::Buffer::get_num_rdma_ranks)
         .def("get_rdma_rank", &deep_ep::Buffer::get_rdma_rank)
         .def("get_root_rdma_rank", &deep_ep::Buffer::get_root_rdma_rank)
         .def("get_local_device_id", &deep_ep::Buffer::get_local_device_id)
         .def("get_local_ipc_handle", &deep_ep::Buffer::get_local_ipc_handle)
-        .def("get_local_pxn_ipc_handle", &deep_ep::Buffer::get_local_pxn_ipc_handle)
         .def("get_local_nvshmem_unique_id", &deep_ep::Buffer::get_local_nvshmem_unique_id)
         .def("get_local_buffer_tensor", &deep_ep::Buffer::get_local_buffer_tensor)
+        .def("get_comm_stream", &deep_ep::Buffer::get_comm_stream)
         .def("sync", &deep_ep::Buffer::sync)
-        .def("sync_pxn_handles", &deep_ep::Buffer::sync_pxn_handles)
+        .def("destroy", &deep_ep::Buffer::destroy)
         .def("get_dispatch_layout", &deep_ep::Buffer::get_dispatch_layout)
         .def("intranode_dispatch", &deep_ep::Buffer::intranode_dispatch)
         .def("intranode_combine", &deep_ep::Buffer::intranode_combine)
