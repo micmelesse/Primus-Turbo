@@ -15,11 +15,17 @@ from pathlib import Path
 import torch
 from einops import rearrange, repeat
 from flash_attn import flash_attn_func
-from metrics import (compute_snr, cosine_similarity, max_abs_error,
-                     relative_error)
+from metrics import compute_snr, cosine_similarity, max_abs_error, relative_error
 from tqdm import tqdm
-from utils import (DEVICE, dump_tensor, get_device_name, get_device_type,
-                   get_tensor_name, load_tensor, save_to_sheets)
+from utils import (
+    DEVICE,
+    dump_tensor,
+    get_device_name,
+    get_device_type,
+    get_tensor_name,
+    load_tensor,
+    save_to_sheets,
+)
 
 FUNC_NAME = "attention"
 
