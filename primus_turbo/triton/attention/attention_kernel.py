@@ -1038,7 +1038,7 @@ def _bwd_kernel_dkdv(
     K,
     V,
     sm_scale: tl.constexpr,
-    q_scale_ptr,
+    q_descale_ptr,
     k_descale_ptr,
     v_scale_ptr,
     p_scale: tl.constexpr,
@@ -1149,7 +1149,7 @@ def _bwd_kernel_dkdv(
         # while q, k, do in per-block scaling
         v_scale = tl.load(v_scale_ptr)  # + tl.arange(0, num_block_n)
         q_descale_offset = (
-            q_scale_ptr + off_z * stride_qscalez + off_h_q * stride_qscaleh + q_start * stride_qscalem
+            q_descale_ptr + off_z * stride_qscalez + off_h_q * stride_qscaleh + q_start * stride_qscalem
         )
         do_descale_offset = (
             do_descale_ptr + off_z * stride_doscalez + off_h_q * stride_doscaleh + q_start * stride_doscalem
@@ -1392,7 +1392,7 @@ def _bwd_kernel_dq(
     K,
     V,
     sm_scale: tl.constexpr,
-    q_scale_ptr,
+    q_descale_ptr,
     k_descale_ptr,
     v_scale_ptr,
     p_scale: tl.constexpr,
@@ -1544,7 +1544,7 @@ def _bwd_kernel_dq(
 
     if USE_FP8:
         q_descale_offset = (
-            q_scale_ptr + off_z * stride_qscalez + off_h_q * stride_qscaleh + start_m * stride_qscalem
+            q_descale_ptr + off_z * stride_qscalez + off_h_q * stride_qscaleh + start_m * stride_qscalem
         )
         blk_q_descale = tl.load(q_descale_offset)
 
@@ -1703,7 +1703,7 @@ def _attn_bwd_dq(
         _dq = tl.dot(ds, k, out_dtype=tl.float32, allow_tf32=False)
 
         if USE_FP8:
-            dq_descale = blk_k_descale / ds_scale  # ds_scale # 1. / k_scale
+            dq_descale = blk_k_descale / ds_scale
             _dq = _dq * dq_descale
 
         dq += _dq
