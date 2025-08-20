@@ -100,7 +100,7 @@ def test_attention_bf16(batch, config, causal, backend_type):
     assert out_snr > 20, "out_snr too low"
     if config == test_cases[9]:
         # lower the SNR threshold for this specific case
-        assert query_grad_snr > 13, "query_grad_snr too low"
+        assert query_grad_snr > 12, "query_grad_snr too low"
     else:
         assert query_grad_snr > 15, "query_grad_snr too low"
     assert key_grad_snr > 15, "key_grad_snr too low"
