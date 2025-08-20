@@ -114,7 +114,7 @@ __device__ __forceinline__ void memory_fence_cta() {
 }
 
 __device__ __forceinline__ void st_relaxed_sys_global(int *ptr, int val) {
-    __hip_atomic_store(ptr, val, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
+    __builtin_nontemporal_store(val, ptr);
 }
 
 __device__ __forceinline__ void st_release_sys_global(const int *ptr, int val) {
@@ -126,9 +126,8 @@ __device__ __forceinline__ void st_release_cta(const int *ptr, int val) {
 }
 
 __device__ __forceinline__ int ld_relaxed_sys_global(const int *ptr) {
-    int ret;
-    ret = __hip_atomic_load(ptr, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
-    return ret;
+    int res = __builtin_nontemporal_load(ptr);
+    return res;
 }
 __device__ __forceinline__ int ld_relaxed_sys_global(const uint64_t *ptr) {
     uint64_t ret;
