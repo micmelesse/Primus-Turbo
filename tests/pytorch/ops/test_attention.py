@@ -8,6 +8,15 @@ import pytest
 import torch
 
 import primus_turbo.pytorch as pt
+from primus_turbo.pytorch.kernels.attention.attention_triton_impl import (
+    F8_FWD_MAX,
+    attention_triton_backward_impl,
+    attention_triton_forward_impl,
+)
+from primus_turbo.pytorch.ops.attention.attention_utils import (
+    block_scaling_node,
+    quant_v_get_p_scale,
+)
 from tests.pytorch.ref.attention_ref import (
     AttnConfig,
     attention_vanilla_forward_pytorch_ref_impl,
@@ -149,3 +158,109 @@ def test_attention_fp8(batch, config, causal, backend_type):
     assert query_grad_snr > 15, "query_grad_snr too low"
     assert key_grad_snr > 15, "key_grad_snr too low"
     assert value_grad_snr > 15, "value_grad_snr too low"
+
+
+def test_attention_fp8_with_sparse_do():
+    # regression test for https://ontrack-internal.amd.com/browse/SWDEV-548136
+    device = torch.device("cuda")
+    torch.manual_seed(1234)
+
+    q_shape = (1, 2048, 64, 128)
+    kv_shape = (1, 2048, 8, 128)
+
+    do = torch.randn(q_shape, device=device, dtype=torch.bfloat16) * 1e-3
+    do_mask_0 = (
+        (torch.randn(q_shape[:-2], device=device, dtype=torch.bfloat16) > 0.9).unsqueeze(-1).unsqueeze(-1)
+    )
+    do_mask_1 = (torch.randn(q_shape[:-1], device=device, dtype=torch.bfloat16) > 0.9).unsqueeze(-1)
+
+    do = do * do_mask_0 * do_mask_1
+
+    q = torch.randn(q_shape, device=device, dtype=torch.bfloat16)
+    k = torch.randn(kv_shape, device=device, dtype=torch.bfloat16)
+    v = torch.randn(kv_shape, device=device, dtype=torch.bfloat16)
+
+    sm_scale = q.shape[-1] ** -0.5
+
+    q_fp8, q_descale = block_scaling_node(q, True)
+    k_fp8, k_descale = block_scaling_node(k, True)
+    v_fp8, v_scale, _ = quant_v_get_p_scale(v, True)
+
+    o, softmax_lse, _ = attention_triton_forward_impl(
+        q_fp8,
+        k_fp8,
+        v_fp8,
+        F8_FWD_MAX,
+        q_descale,
+        k_descale,
+        v_scale,
+        0,
+        sm_scale,
+        True,
+        -1,
+        -1,
+        None,
+        None,
+        False,
+        True,
+    )
+
+    dq, dk, dv = attention_triton_backward_impl(
+        do,
+        q,
+        k,
+        v,
+        o,
+        torch.scalar_tensor(1.0, device=device),
+        torch.scalar_tensor(1.0, device=device),
+        torch.scalar_tensor(1.0, device=device),
+        1.0,
+        softmax_lse,
+        None,
+        None,
+        None,
+        torch.tensor([0], device=q.device),
+        torch.tensor([0], device=q.device),
+        q_fp8.shape[1],
+        k_fp8.shape[1],
+        sm_scale,
+        True,
+        -1,
+        -1,
+        None,
+        False,
+    )
+
+    dq_fp8, dk_fp8, dv_fp8 = attention_triton_backward_impl(
+        do,
+        q_fp8,
+        k_fp8,
+        v_fp8,
+        o,
+        q_descale,
+        k_descale,
+        v_scale,
+        F8_FWD_MAX,
+        softmax_lse,
+        None,
+        None,
+        None,
+        torch.tensor([0], device=q.device),
+        torch.tensor([0], device=q.device),
+        q_fp8.shape[1],
+        k_fp8.shape[1],
+        sm_scale,
+        True,
+        -1,
+        -1,
+        None,
+        True,
+    )
+
+    dq_snr = compute_snr(dq, dq_fp8)
+    dk_snr = compute_snr(dk, dk_fp8)
+    dv_snr = compute_snr(dv, dv_fp8)
+    print(f"dq_snr: {dq_snr}, dk_snr: {dk_snr}, dv_snr: {dv_snr}")
+    assert dq_snr > 15, "query_grad_snr too low"
+    assert dk_snr > 15, "key_grad_snr too low"
+    assert dv_snr > 15, "value_grad_snr too low"
