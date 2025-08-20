@@ -698,7 +698,7 @@ __global__ void __launch_bounds__(kNumThreads, 1)
         int current_channel_tail_idx = 0;
         for (int64_t token_idx = token_start_idx; token_idx < token_end_idx;) {
             // Check destination queue emptiness, or wait a buffer to be released (rare cases)
-            auto start_time = clock64();
+            auto start_time = wall_clock64();
             int  num_round_tokens =
                 min(num_max_send_tokens, token_end_idx - static_cast<int>(token_idx));
             while (lane_id == 0) {
@@ -710,7 +710,7 @@ __global__ void __launch_bounds__(kNumThreads, 1)
                     break;
 
                 // Rare cases to loop again
-                if (clock64() - start_time > NUM_TIMEOUT_CYCLES) {
+                if (wall_clock64() - start_time > NUM_TIMEOUT_CYCLES) {
                     printf(
                         "DeepEP timeout for combine senders, rank %d, responsible_channel = %d\n",
                         rank, responsible_channel);
@@ -750,7 +750,7 @@ __global__ void __launch_bounds__(kNumThreads, 1)
                 syncwarp();
             }
             if (lane_id == 0 and send_warp_id_in_rank == 0)
-                st_release_sys_global(channel_tail_idx.buffer(), current_channel_tail_idx);
+                st_relaxed_sys_global(channel_tail_idx.buffer(), current_channel_tail_idx);
         }
     } else {
         // Workers for receiving
@@ -790,7 +790,7 @@ __global__ void __launch_bounds__(kNumThreads, 1)
                     break;
 
                 // Update queue tail
-                channel_tail_idx[lane_id] = ld_acquire_sys_global(channel_tail_idx_ptr);
+                channel_tail_idx[lane_id] = ld_relaxed_sys_global(channel_tail_idx_ptr);
 
                 // Update minimum head
                 int min_head = std::numeric_limits<int>::max();
@@ -849,11 +849,10 @@ __global__ void __launch_bounds__(kNumThreads, 1)
                 if (lane_id < kNumRanks)
                     expected_head = ld_nc_global(send_head + token_idx * kNumRanks + lane_id);
 
-                auto start_time = clock64();
-                while (__any_sync(kFullWarpMask, channel_tail_idx[lane_id] <= expected_head and
-                                                     expected_head >= 0)) {
+                auto start_time = wall_clock64();
+                while (__any(channel_tail_idx[lane_id] <= expected_head and expected_head >= 0)) {
                     // Timeout check
-                    if (clock64() - start_time > NUM_TIMEOUT_CYCLES) {
+                    if (wall_clock64() - start_time > NUM_TIMEOUT_CYCLES) {
                         printf("DeepEP timeout for combine receivers, rank %d, responsible_channel "
                                "= %d, expect = %d\n",
                                rank, responsible_channel, expected_head);
@@ -866,49 +865,40 @@ __global__ void __launch_bounds__(kNumThreads, 1)
                 int num_topk_ranks = 0, topk_ranks[kNumRanks], slot_indices[kNumRanks];
 #pragma unroll
                 for (int i = 0; i < kNumRanks; ++i) {
-                    auto expected_head_i = __shfl_sync(kFullWarpMask, expected_head, i);
+                    auto expected_head_i = __shfl(expected_head, i);
                     if (expected_head_i >= 0) {
                         slot_indices[num_topk_ranks] = expected_head_i % num_recv_buffer_tokens;
                         topk_ranks[num_topk_ranks++] = i;
                     }
                 }
 
+// Reduce data
 #pragma unroll
                 for (int i = lane_id; i < hidden_int4; i += kWarpSize) {
                     // Read bias
                     // TODO: make it as a template
-                    int4 bias_0_value_int4 = bias_0_int4 != nullptr
-                                                 ? __ldg(bias_0_int4 + token_idx * hidden_int4 + i)
-                                                 : make_int4(0, 0, 0, 0);
-                    int4 bias_1_value_int4 = bias_1_int4 != nullptr
-                                                 ? __ldg(bias_1_int4 + token_idx * hidden_int4 + i)
-                                                 : make_int4(0, 0, 0, 0);
-
-                    // Read buffers
-                    int4 recv_value_int4[kNumRanks];
-#pragma unroll
-                    for (int j = 0; j < num_topk_ranks; ++j)
-                        recv_value_int4[j] =
-                            ld_nc_global(channel_x_buffers[topk_ranks[j]].buffer() +
-                                         slot_indices[j] * hidden_int4 + i);
-
-                    // Reduce bias
-                    float values[kDtypePerInt4];
+                    int4  bias_0_value_int4     = bias_0_int4 != nullptr
+                                                      ? __ldg(bias_0_int4 + token_idx * hidden_int4 + i)
+                                                      : make_int4(0, 0, 0, 0);
+                    int4  bias_1_value_int4     = bias_1_int4 != nullptr
+                                                      ? __ldg(bias_1_int4 + token_idx * hidden_int4 + i)
+                                                      : make_int4(0, 0, 0, 0);
+                    float values[kDtypePerInt4] = {0};
                     auto  bias_0_values = reinterpret_cast<const dtype_t *>(&bias_0_value_int4);
                     auto  bias_1_values = reinterpret_cast<const dtype_t *>(&bias_1_value_int4);
 #pragma unroll
                     for (int j = 0; j < kDtypePerInt4; ++j)
                         values[j] = static_cast<float>(bias_0_values[j]) +
                                     static_cast<float>(bias_1_values[j]);
-
-// Reduce all-to-all results
 #pragma unroll
                     for (int j = 0; j < num_topk_ranks; ++j) {
-                        auto recv_value_dtypes =
-                            reinterpret_cast<const dtype_t *>(&recv_value_int4[j]);
+                        int4 recv_value = __ldg(channel_x_buffers[topk_ranks[j]].buffer() +
+                                                slot_indices[j] * hidden_int4 + i);
+                        const dtype_t *recv_dtypes = reinterpret_cast<const dtype_t *>(&recv_value);
+
 #pragma unroll
                         for (int k = 0; k < kDtypePerInt4; ++k)
-                            values[k] += static_cast<float>(recv_value_dtypes[k]);
+                            values[k] += static_cast<float>(recv_dtypes[k]);
                     }
 
                     // Cast back to `dtype_t`
