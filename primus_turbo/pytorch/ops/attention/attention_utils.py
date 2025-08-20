@@ -38,7 +38,9 @@ def block_scaling_node(tensor, use_fp8, BLOCK_M=FIXED_BLOCK_M, float8_dtype=get_
         B, H, L, D = tensor.shape
         tensor = tensor.reshape(B, H, L // BLOCK_M, BLOCK_M, D).reshape(B, H, L // BLOCK_M, BLOCK_M * D)
         MAX_E4M3 = torch.finfo(float8_dtype).max
-        scale = MAX_E4M3 / tensor.abs().max(dim=-1)[0]
+        tensor_max = tensor.abs().max(dim=-1)[0]
+        tensor_max = torch.where(tensor_max == 0, MAX_E4M3, tensor_max)
+        scale = MAX_E4M3 / tensor_max
         tensor = tensor * scale.reshape(scale.shape + (1,))
         tensor = tensor.clamp(-MAX_E4M3, MAX_E4M3)
         tensor = tensor.to(float8_dtype)
@@ -57,7 +59,7 @@ def quant_v_get_p_scale(v, use_fp8: bool):
     if use_fp8:
         range_v = torch.max(torch.abs(v))
 
-        float8_fw = torch.float8_e4m3fnuz
+        float8_fw = get_f8_fwd_dtype()
         dtype_max = torch.finfo(float8_fw).max
 
         v_scale = dtype_max / range_v
@@ -66,7 +68,6 @@ def quant_v_get_p_scale(v, use_fp8: bool):
 
     else:
         v_scale = torch.tensor([1.0], device=v.device)
-        p_scale = 1.0
         p_scale = 1.0
 
     return v, v_scale, p_scale
