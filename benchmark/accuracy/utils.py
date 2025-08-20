@@ -16,7 +16,7 @@ def is_ROCM():
 
 def load_tensor(dir_path, file_name):
     file_path = dir_path / file_name
-    return torch.load(file_path, map_location='cpu')
+    return torch.load(file_path, map_location="cpu")
 
 
 def dump_tensor(tensor, dir_path, file_name):
@@ -45,6 +45,14 @@ def save_to_excel(data, file_path):
         df = pd.DataFrame(data)
         df.to_excel(file_path, index=False)
         print(f"✅ Saved: {file_path}")
+
+
+def save_to_sheets(excel_path, results):
+    with pd.ExcelWriter(excel_path) as writer:
+        for sheet_name in results.keys():
+            df = pd.DataFrame(results[sheet_name])
+            df.to_excel(writer, sheet_name=sheet_name, index=False)
+        print(f"✅ Saved: {excel_path}")
 
 
 def merge_excels(files, output_path):

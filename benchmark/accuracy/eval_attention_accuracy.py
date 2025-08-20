@@ -5,32 +5,21 @@
 ###############################################################################
 
 import argparse
+import gc
 import json
 import math
+from collections import defaultdict
 from dataclasses import dataclass
-from einops import rearrange, repeat
 from pathlib import Path
 
 import torch
+from einops import rearrange, repeat
 from flash_attn import flash_attn_func
-
-
-from metrics import (
-    cosine_similarity,
-    max_abs_error,
-    relative_error,
-    compute_snr,
-)
-from utils import (
-    DEVICE,
-    dump_tensor,
-    get_device_name,
-    get_device_type,
-    get_tensor_name,
-    load_tensor,
-    merge_excels,
-    save_to_excel,
-)
+from metrics import (compute_snr, cosine_similarity, max_abs_error,
+                     relative_error)
+from tqdm import tqdm
+from utils import (DEVICE, dump_tensor, get_device_name, get_device_type,
+                   get_tensor_name, load_tensor, save_to_sheets)
 
 FUNC_NAME = "attention"
 
@@ -117,24 +106,14 @@ def construct_local_mask(
     device=None,
     key_leftpad=None,
 ):
-    row_idx = rearrange(
-        torch.arange(seqlen_q, device=device, dtype=torch.long), "s -> s 1"
-    )
+    row_idx = rearrange(torch.arange(seqlen_q, device=device, dtype=torch.long), "s -> s 1")
     col_idx = torch.arange(seqlen_k, device=device, dtype=torch.long)
     if key_leftpad is not None:
         key_leftpad = rearrange(key_leftpad, "b -> b 1 1 1")
         col_idx = repeat(col_idx, "s -> b 1 1 s", b=key_leftpad.shape[0])
         col_idx = torch.where(col_idx >= key_leftpad, col_idx - key_leftpad, 2**32)
-    sk = (
-        seqlen_k
-        if key_padding_mask is None
-        else rearrange(key_padding_mask.sum(-1), "b -> b 1 1 1")
-    )
-    sq = (
-        seqlen_q
-        if query_padding_mask is None
-        else rearrange(query_padding_mask.sum(-1), "b -> b 1 1 1")
-    )
+    sk = seqlen_k if key_padding_mask is None else rearrange(key_padding_mask.sum(-1), "b -> b 1 1 1")
+    sq = seqlen_q if query_padding_mask is None else rearrange(query_padding_mask.sum(-1), "b -> b 1 1 1")
     if window_size[0] < 0:
         return col_idx > row_idx + sk - sq + window_size[1]
     else:
@@ -201,9 +180,7 @@ def attention_ref(
         scores = scores.tanh()
         scores = scores * softcap
     if key_padding_mask is not None:
-        scores.masked_fill_(
-            rearrange(~key_padding_mask, "b s -> b 1 1 s"), float("-inf")
-        )
+        scores.masked_fill_(rearrange(~key_padding_mask, "b s -> b 1 1 s"), float("-inf"))
     if window_size[0] >= 0 or window_size[1] >= 0:
         local_mask = construct_local_mask(
             seqlen_q,
@@ -220,15 +197,11 @@ def attention_ref(
     attention = torch.softmax(scores, dim=-1).to(v.dtype)
     # Some rows might be completely masked out so we fill them with zero instead of NaN
     if window_size[0] >= 0 or window_size[1] >= 0:
-        attention = attention.masked_fill(
-            torch.all(local_mask, dim=-1, keepdim=True), 0.0
-        )
+        attention = attention.masked_fill(torch.all(local_mask, dim=-1, keepdim=True), 0.0)
     # We want to mask here so that the attention matrix doesn't have any NaNs
     # Otherwise we'll get NaN in dV
     if query_padding_mask is not None:
-        attention = attention.masked_fill(
-            rearrange(~query_padding_mask, "b s -> b 1 s 1"), 0.0
-        )
+        attention = attention.masked_fill(rearrange(~query_padding_mask, "b s -> b 1 s 1"), 0.0)
     dropout_scaling = 1.0 / (1 - dropout_p)
 
     if dropout_mask is not None:
@@ -243,9 +216,7 @@ def attention_ref(
     return output.to(dtype=dtype_og), attention.to(dtype=dtype_og)
 
 
-def attention_vanilla_forward_pytorch_ref_impl(
-    q, k, v, sm_scale, causal, layout="bshd"
-):
+def attention_vanilla_forward_pytorch_ref_impl(q, k, v, sm_scale, causal, layout="bshd"):
     """Compute reference output and softmax_lse using PyTorch's built-in function"""
     org_dtype = q.dtype
     if layout == "bshd":
@@ -372,7 +343,7 @@ def attention(model_config, dtype, backend="FA", baseline="fa_test"):
         dv_ref,
     ) = torch.autograd.grad(out_ref, (query_ref, key_ref, value_ref), grad_out_ref)
 
-    return (
+    result = (
         query_cpu,
         key_cpu,
         value_cpu,
@@ -387,11 +358,19 @@ def attention(model_config, dtype, backend="FA", baseline="fa_test"):
         dv.cpu(),
     )
 
+    del query, key, value, grad_out
+    del query_ref, key_ref, value_ref, grad_out_ref
+    del out, dq, dk, dv
+    del out_ref, dq_ref, dk_ref, dv_ref
 
-def benchmark(
-    seed, report_dir_path, load_config_path=None, dump_dir_path=None, backend="FA"
-):
-    num_iters = 5
+    torch.cuda.empty_cache()
+    gc.collect()
+
+    return result
+
+
+def benchmark(seed, report_dir_path, load_config_path=None, dump_dir_path=None, backend="FA"):
+    num_iters = 100
     torch.manual_seed(seed)
     device_type = get_device_type()
     device_name = get_device_name()
@@ -408,50 +387,50 @@ def benchmark(
         dump_dir = Path(dump_dir_path) / Path(FUNC_NAME)
         dump_dir.mkdir(parents=True, exist_ok=True)
 
-    results_with_unfused = []
-    results_with_load = []
+    all_results = defaultdict(list)
+    baseline_results = defaultdict(list)
 
-    def item(metric):
-        return f"{metric:.3e}" if isinstance(metric, float) else str(metric)
+    def format_metric(val):
+        if isinstance(val, float):
+            if abs(val) < 0.1:
+                return f"{val:.3e}"
+            if abs(val) >= 0.1 and abs(val) <= 1.5:
+                return f"{val:.4f}"
+            return f"{val:.2f}"
+        return str(val)
 
-    def make_tensor_result_dict(prefix, relative_metrics, max_abs_metrics, cos_sim_metrics, sns_metrics):
+    def compute_metric_stats(metrics_dict):
         return {
-            f"RelError({prefix}-max)": item(relative_metrics[prefix][0]),
-            f"RelError({prefix}-min)": item(relative_metrics[prefix][1]),
-            f"RelError({prefix}-mean)": item(relative_metrics[prefix][2]),
-            f"MaxAbsErr({prefix}-max)": item(max_abs_metrics[prefix][0]),
-            f"MaxAbsErr({prefix}-min)": item(max_abs_metrics[prefix][1]),
-            f"MaxAbsErr({prefix}-mean)": item(max_abs_metrics[prefix][2]),
-            f"CosSim({prefix}-max)": f"{cos_sim_metrics[prefix][0]:.6f}",
-            f"CosSim({prefix}-min)": f"{cos_sim_metrics[prefix][1]:.6f}",
-            f"CosSim({prefix}-mean)": f"{cos_sim_metrics[prefix][2]:.6f}",
-            f"SNR({prefix}-max)": f"{sns_metrics[prefix][0]:.2f}",
-            f"SNR({prefix}-min)": f"{sns_metrics[prefix][1]:.2f}",
-            f"SNR({prefix}-mean)": f"{sns_metrics[prefix][2]:.2f}",
-        }
-    
-    def make_tensor_result_item(prefix, ref, value):
-        return {
-            f"RelError({prefix})": item(relative_error(ref, value)),
-            f"MaxAbsErr({prefix})": item(max_abs_error(ref, value)),
-            f"CosSim({prefix})": f"{cosine_similarity(ref, value):.6f}",
-            f"SNR({prefix})": f"{compute_snr(ref, value):.2f}",
+            name: (max(values), min(values), sum(values) / len(values))
+            for name, values in metrics_dict.items()
         }
 
-    def make_error_item(err_items, func, out_ref, out, dq_ref, dq, dk_ref, dk, dv_ref, dv):
-        err_items["output"].append(func(out_ref, out))
-        err_items["dq"].append(func(dq_ref, dq))
-        err_items["dk"].append(func(dk_ref, dk))
-        err_items["dv"].append(func(dv_ref, dv))
+    def collect_error(metrics, func, ref_dict, out_dict):
+        for key in ref_dict.keys():
+            metrics[key].append(func(ref_dict[key], out_dict[key]))
+
+    def make_metric_table(metric_name, stats_dict):
+        result = {}
+        for name, vals in stats_dict.items():
+            result[f"{metric_name}({name}-max)"] = format_metric(vals[0])
+            result[f"{metric_name}({name}-min)"] = format_metric(vals[1])
+            result[f"{metric_name}({name}-mean)"] = format_metric(vals[2])
+        return result
+
+    def append_null_item(results):
+        for _, metric_stats in results.items():
+            metric_stats.append({k: "" for k in metric_stats[-1].keys()})
 
     for config in g_model_cfg:
         for dtype in [torch.float16, torch.bfloat16]:
-            relative_errors = {"output": [], "dq": [], "dk": [], "dv": []}
-            max_abs_errors = {"output": [], "dq": [], "dk": [], "dv": []}
-            cosine_similaritys = {"output": [], "dq": [], "dk": [], "dv": []}
-            snrs = {"output": [], "dq": [], "dk": [], "dv": []}
-            dump_tensors = {"query": [], "key": [], "value": [], "grad_out":[], "output":[], "dq":[], "dk":[], "dv":[]}
-            for _ in range(num_iters):
+            # Initialize metric collectors
+            relative_errors = defaultdict(list)
+            max_abs_errors = defaultdict(list)
+            cosine_sims = defaultdict(list)
+            snrs = defaultdict(list)
+            dump_tensors = defaultdict(list)
+
+            for _ in tqdm(range(num_iters), desc=f"Running {config.model_name}-{dtype}"):
                 (
                     query_cpu,
                     key_cpu,
@@ -466,29 +445,37 @@ def benchmark(
                     dk,
                     dv,
                 ) = attention(config, dtype, backend)
-                make_error_item(relative_errors, relative_error, out_ref, out, dq_ref, dq, dk_ref, dk, dv_ref, dv)
-                make_error_item(max_abs_errors, max_abs_error, out_ref, out, dq_ref, dq, dk_ref, dk, dv_ref, dv)
-                make_error_item(cosine_similaritys, cosine_similarity, out_ref, out, dq_ref, dq, dk_ref, dk, dv_ref, dv)
-                make_error_item(snrs, compute_snr, out_ref, out, dq_ref, dq, dk_ref, dk, dv_ref, dv)
-                pairs = {
-                    "query": query_cpu,
-                    "key": key_cpu,
-                    "value": value_cpu,
-                    "grad_out": grad_out_cpu,
-                    "output": out_ref,
-                    "dq": dq_ref,
-                    "dk": dk_ref,
-                    "dv": dv_ref
-                }
+                ref_dict = {"output": out_ref, "dq": dq_ref, "dk": dk_ref, "dv": dv_ref}
+                out_dict = {"output": out, "dq": dq, "dk": dk, "dv": dv}
 
-                for key, value in pairs.items():
-                    dump_tensors[key].append(value)
-            
-            dump_tensor_items = {key: torch.stack(tensors).mean(dim=0) for key, tensors in dump_tensors.items()}
-            relative_metrics = {name: (max(values), min(values), sum(values) / len(values)) for name, values in relative_errors.items()}
-            max_abs_metrics = {name: (max(values), min(values), sum(values) / len(values)) for name, values in max_abs_errors.items()}
-            cos_sim_metrics = {name: (max(values), min(values), sum(values) / len(values)) for name, values in cosine_similaritys.items()}
-            sns_metrics = {name: (max(values), min(values), sum(values) / len(values)) for name, values in snrs.items()}
+                collect_error(relative_errors, relative_error, ref_dict, out_dict)
+                collect_error(max_abs_errors, max_abs_error, ref_dict, out_dict)
+                collect_error(cosine_sims, cosine_similarity, ref_dict, out_dict)
+                collect_error(snrs, compute_snr, ref_dict, out_dict)
+
+                for name, tensor in zip(
+                    ["output", "dq", "dk", "dv", "query", "key", "value", "grad_out"],
+                    [
+                        out_ref,
+                        dq_ref,
+                        dk_ref,
+                        dv_ref,
+                        query_cpu,
+                        key_cpu,
+                        value_cpu,
+                        grad_out_cpu,
+                    ],
+                ):
+                    dump_tensors[name].append(tensor)
+
+            # Average tensors for dump
+            avg_dump_tensors = {k: torch.stack(v).mean(dim=0) for k, v in dump_tensors.items()}
+
+            # Compute statistics
+            rel_stats = compute_metric_stats(relative_errors)
+            abs_stats = compute_metric_stats(max_abs_errors)
+            cos_stats = compute_metric_stats(cosine_sims)
+            snr_stats = compute_metric_stats(snrs)
 
             base_info = {
                 "func": f"{FUNC_NAME.upper()}({device_name})",
@@ -497,26 +484,22 @@ def benchmark(
                 "config": str(config),
             }
 
-            tensor_accuracy = {}
-            for name in ["output", "dq", "dk", "dv"]:
-                tensor_accuracy.update(make_tensor_result_dict(name, relative_metrics, max_abs_metrics, cos_sim_metrics, sns_metrics))
-                tensor_accuracy = dict(
-                    sorted(tensor_accuracy.items(), key=lambda item: item[0])
-                )
-          
-            result = {**base_info, **tensor_accuracy}
-            results_with_unfused.append(result)
+            # Collect result dicts per metric
+            result_snr = {**base_info, **make_metric_table("SNR", snr_stats)}
+            result_cos = {**base_info, **make_metric_table("CosSim", cos_stats)}
+            result_rel = {**base_info, **make_metric_table("RelError", rel_stats)}
+            result_abs = {**base_info, **make_metric_table("MaxAbsErr", abs_stats)}
+            all_results["SNR"].append(result_snr)
+            all_results["CosSim"].append(result_cos)
+            all_results["RelError"].append(result_rel)
+            all_results["MaxAbsErr"].append(result_abs)
 
             if dump_dir_path is not None:
-                dump_file = get_tensor_name(
-                    device_type, FUNC_NAME, dtype, config=config
-                )
-                dump_tensor(dump_tensor_items, dump_dir, dump_file)
+                dump_file = get_tensor_name(device_type, FUNC_NAME, dtype, config=config)
+                dump_tensor(avg_dump_tensors, dump_dir, dump_file)
 
             if load_config_path is not None:
-                load_file = get_tensor_name(
-                    load_config.get("device_type"), FUNC_NAME, dtype, config=config
-                )
+                load_file = get_tensor_name(load_config.get("device_type"), FUNC_NAME, dtype, config=config)
                 tensors_load = load_tensor(load_dir, load_file)
 
                 load_info = {
@@ -525,29 +508,50 @@ def benchmark(
                     "dtype": str(dtype).split(".")[-1],
                     "config": str(config),
                 }
-                tensor_accuracy = {}
-                for (name, ref, val) in [(name, tensors_load[name], dump_tensor_items[name]) for name in tensors_load.keys()]:
-                    tensor_accuracy.update(make_tensor_result_item(name, ref, val))
-                tensor_accuracy = dict(
-                    sorted(tensor_accuracy.items(), key=lambda item: item[0])
+                tensor_stats = defaultdict(defaultdict)
+                for name in tensors_load.keys():
+                    ref = tensors_load[name]
+                    val = avg_dump_tensors[name]
+                    tensor_stats["SNR"][name] = format_metric(compute_snr(ref, val))
+                    tensor_stats["CosSim"][name] = format_metric(cosine_similarity(ref, val))
+                    tensor_stats["RelError"][name] = format_metric(relative_error(ref, val))
+                    tensor_stats["MaxAbsErr"][name] = format_metric(max_abs_error(ref, val))
+                baseline_results["SNR"].append({**load_info, **tensor_stats["SNR"]})
+                baseline_results["CosSim"].append(
+                    {
+                        **load_info,
+                        **tensor_stats["CosSim"],
+                    }
                 )
-                load_result = {**load_info, **tensor_accuracy}
-                results_with_load.append(load_result)
+                baseline_results["RelError"].append(
+                    {
+                        **load_info,
+                        **tensor_stats["RelError"],
+                    }
+                )
+                baseline_results["MaxAbsErr"].append(
+                    {
+                        **load_info,
+                        **tensor_stats["MaxAbsErr"],
+                    }
+                )
+            torch.cuda.empty_cache()
+            gc.collect()
 
-        results_with_unfused.append({k: "" for k in results_with_unfused[-1].keys()})
-        if len(results_with_load) > 0:
-            results_with_load.append({k: "" for k in results_with_load[-1].keys()})
+        append_null_item(all_results)
+        if load_config_path is not None:
+            append_null_item(baseline_results)
 
-    report_with_unfused = (
-        report_dir / f"benchmark_{device_type}_{backend}_vs_unfused_{FUNC_NAME}.xlsx"
-    )
-    save_to_excel(results_with_unfused, report_with_unfused)
-    if len(results_with_load) > 0:
-        report_with_load = (
+    # Save results into separate Excel sheets
+    local_report = report_dir / f"benchmark_{device_type}_{backend}_vs_unfused_{FUNC_NAME}.xlsx"
+
+    save_to_sheets(local_report, all_results)
+    if load_config_path is not None:
+        baseline_report = (
             report_dir
             / f"benchmark_{device_type}_vs_{load_config.get('device_type')}_baseline_{FUNC_NAME}.xlsx"
         )
-        save_to_excel(results_with_load, report_with_load)
+        save_to_sheets(baseline_report, baseline_results)
 
 
 if __name__ == "__main__":
@@ -556,7 +560,7 @@ if __name__ == "__main__":
     [NV PLATFORM]python eval_attention_accuracy.py --report-dir-path output --dump-dir-path dump
     [NV PLATFORM]tar -cvzf data.tar.gz output dump
     [AMD PLATFORM]tar -xvzf data.tar.gz
-    [AMD PLATFORM]python eval_attention_accuracy.py --report-dir-path output --backend "AITER" --load-config-path load_config.json
+    [AMD PLATFORM]python eval_attention_accuracy.py --report-dir-path output --backend "AITER"
     [AMD PLATFORM]python eval_attention_accuracy.py --report-dir-path output --load-config-path load_config.json
     load_config.json:
     {
