@@ -53,9 +53,6 @@ class AttentionCKFunction(torch.autograd.Function):
             softmax_scale = q.shape[-1] ** (-0.5)
         head_size_q_og = q.size(3)
         head_size_v_og = v.size(3)
-        # todo fix if head_size_v_og!=head_size_q_og, no padding
-        if head_size_q_og != head_size_v_og:
-            v = torch.nn.functional.pad(v, [0, head_size_q_og - head_size_v_og])
         if head_size_q_og % 8 != 0:
             q = torch.nn.functional.pad(q, [0, 8 - head_size_q_og % 8])
             k = torch.nn.functional.pad(k, [0, 8 - head_size_q_og % 8])
@@ -100,23 +97,29 @@ class AttentionCKFunction(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, dout, *args):
-        q, k, v, out, softmax_lse, rng_state = ctx.saved_tensors
-        dq, dk, dv = torch.zeros_like(q), torch.empty_like(k), torch.empty_like(v)
+        q, k, v, out_padded, softmax_lse, rng_state = ctx.saved_tensors
+
         bias = ctx.bias
         dbias = torch.empty_like(bias) if bias is not None else None
         head_size_q_og = ctx.head_size_q_og
         head_size_v_og = dout.size(3)
         dout_padded = dout
+
         if head_size_v_og % 8 != 0:
             dout_padded = torch.nn.functional.pad(dout, [0, 8 - head_size_v_og % 8])
         if head_size_q_og != head_size_v_og:
+            v = torch.nn.functional.pad(v, [0, head_size_q_og - head_size_v_og])
+            out_padded = torch.nn.functional.pad(out_padded, [0, head_size_q_og - head_size_v_og])
             dout_padded = torch.nn.functional.pad(dout, [0, head_size_q_og - head_size_v_og])
+
+        dq, dk, dv = torch.zeros_like(q), torch.empty_like(k), torch.empty_like(v)
+
         attention_aiter_csrc_backward_impl(
             dout_padded,
             q,
             k,
             v,
-            out,
+            out_padded,
             softmax_lse,
             dq,
             dk,
