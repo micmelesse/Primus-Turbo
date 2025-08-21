@@ -249,7 +249,7 @@ def attention_vanilla_forward_pytorch_ref_impl(q, k, v, sm_scale, causal, layout
     return o_ref.to(org_dtype)
 
 
-def attention(model_config, dtype, backend="FA", baseline="fa_test"):
+def prepare_data(model_config, dtype, device, with_outliers=False, uniform_dist=False):
     q_layout = (
         model_config.batch_size,
         model_config.seqlen_q,
@@ -275,10 +275,117 @@ def attention(model_config, dtype, backend="FA", baseline="fa_test"):
         model_config.head_dim_v,
     )
 
-    query_cpu = torch.randn(q_layout, dtype=dtype, requires_grad=True)
-    key_cpu = torch.randn(k_layout, dtype=dtype, requires_grad=True)
-    value_cpu = torch.randn(v_layout, dtype=dtype, requires_grad=True)
-    grad_out_cpu = torch.randn(out_layout, dtype=dtype)
+    query = torch.randn(q_layout, dtype=dtype, device=device, requires_grad=True)
+    key = torch.randn(k_layout, dtype=dtype, device=device, requires_grad=True)
+    value = torch.randn(v_layout, dtype=dtype, device=device, requires_grad=True)
+    grad_out = torch.randn(out_layout, device=device, dtype=dtype)
+
+    if with_outliers is False:
+        return query, key, value, grad_out
+
+    if uniform_dist is False:
+        outlier_idx = torch.randint(0, min(model_config.head_dim_qk, model_config.head_dim_v), (1,)).to(
+            device=device
+        )
+
+        sequence_p = (
+            torch.ones((1, model_config.seqlen_q, 1, 1), device=device) * 0.001
+        )  # * batch_size * n_head * head_dim
+        p_mask = torch.bernoulli(sequence_p)
+        outlier_dist = 100 * torch.randn(size=(model_config.batch_size, model_config.seqlen_q, 1, 1)).to(
+            dtype=dtype, device=device
+        )
+        query[:, :, :, outlier_idx] += outlier_dist * p_mask
+
+        if model_config.seqlen_q != model_config.seqlen_kv:
+            sequence_p = torch.ones((1, model_config.seqlen_kv, 1, 1), device=device) * 0.001
+            p_mask = torch.bernoulli(sequence_p)
+        outlier_dist = 100 * torch.randn(size=(model_config.batch_size, model_config.seqlen_kv, 1, 1)).to(
+            dtype=dtype, device=device
+        )
+        key[:, :, :, outlier_idx] += outlier_dist * p_mask
+        outlier_dist = 100 * torch.randn(size=(model_config.batch_size, model_config.seqlen_kv, 1, 1)).to(
+            dtype=dtype, device=device
+        )
+        value[:, :, :, outlier_idx] += outlier_dist * p_mask
+    else:
+        r = 1 / (model_config.batch_size * model_config.num_head_q * model_config.head_dim_qk)
+
+        p_mask = torch.bernoulli(
+            torch.ones(
+                model_config.batch_size,
+                model_config.seqlen_q,
+                model_config.num_head_q,
+                model_config.head_dim_qk,
+                dtype=dtype,
+                device=device,
+            )
+            * 0.001
+            * r
+        )
+        outlier_dist = 100 * torch.randn(
+            size=(
+                model_config.batch_size,
+                model_config.seqlen_q,
+                model_config.num_head_q,
+                model_config.head_dim_qk,
+            )
+        ).to(dtype=dtype, device=device)
+        query += outlier_dist * p_mask
+
+        r = 1 / (model_config.batch_size * model_config.num_head_kv * model_config.head_dim_qk)
+        p_mask = torch.bernoulli(
+            torch.ones(
+                model_config.batch_size,
+                model_config.seqlen_kv,
+                model_config.num_head_kv,
+                model_config.head_dim_qk,
+                dtype=dtype,
+                device=device,
+            )
+            * 0.001
+            * r
+        )
+        outlier_dist = 100 * torch.randn(
+            size=(
+                model_config.batch_size,
+                model_config.seqlen_kv,
+                model_config.num_head_kv,
+                model_config.head_dim_qk,
+            )
+        ).to(dtype=dtype, device=device)
+        key += outlier_dist * p_mask
+
+        r = 1 / (model_config.batch_size * model_config.num_head_kv * model_config.head_dim_v)
+        p_mask = torch.bernoulli(
+            torch.ones(
+                model_config.batch_size,
+                model_config.seqlen_kv,
+                model_config.num_head_kv,
+                model_config.head_dim_v,
+                dtype=dtype,
+                device=device,
+            )
+            * 0.001
+            * r
+        )
+        outlier_dist = 100 * torch.randn(
+            size=(
+                model_config.batch_size,
+                model_config.seqlen_kv,
+                model_config.num_head_kv,
+                model_config.head_dim_v,
+            )
+        ).to(dtype=dtype, device=device)
+        value += outlier_dist * p_mask
+
+    return query, key, value, grad_out
+
+
+def attention(model_config, dtype, backend="FA", baseline="fa_test", with_outliers=False, uniform_dist=False):
+    query_cpu, key_cpu, value_cpu, grad_out_cpu = prepare_data(
+        model_config, dtype, "cpu", with_outliers, uniform_dist
+    )
 
     query = query_cpu.detach().to(DEVICE).requires_grad_()
     key = key_cpu.detach().to(DEVICE).requires_grad_()
@@ -375,7 +482,15 @@ def attention(model_config, dtype, backend="FA", baseline="fa_test"):
     return result
 
 
-def benchmark(seed, report_dir_path, load_config_path=None, dump_dir_path=None, backend="FA"):
+def benchmark(
+    seed,
+    report_dir_path,
+    load_config_path=None,
+    dump_dir_path=None,
+    backend="FA",
+    with_outliers=False,
+    uniform_dist=False,
+):
     num_iters = 100
     torch.manual_seed(seed)
     device_type = get_device_type()
@@ -450,7 +565,7 @@ def benchmark(seed, report_dir_path, load_config_path=None, dump_dir_path=None, 
                     dq,
                     dk,
                     dv,
-                ) = attention(config, dtype, backend)
+                ) = attention(config, dtype, backend, with_outliers, uniform_dist)
                 ref_dict = {"output": out_ref, "dq": dq_ref, "dk": dk_ref, "dv": dv_ref}
                 out_dict = {"output": out, "dq": dq, "dk": dk, "dv": dv}
 
@@ -580,6 +695,8 @@ if __name__ == "__main__":
     parser.add_argument("--dump-dir-path", default=None, type=str)
     parser.add_argument("--report-dir-path", type=str)
     parser.add_argument("--seed", default=42, type=int)
+    parser.add_argument("--with-outliers", action="store_true", help="Enable outliers")
+    parser.add_argument("--uniform-dist", action="store_true", help="use uniform_dist to create outliers")
     parser.add_argument("--backend", default="FA", type=str, choices=["FA", "AITER"])
 
     args = parser.parse_args()
@@ -589,4 +706,6 @@ if __name__ == "__main__":
         args.load_config_path,
         args.dump_dir_path,
         args.backend,
+        args.with_outliers,
+        args.uniform_dist,
     )
