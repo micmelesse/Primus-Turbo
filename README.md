@@ -8,7 +8,7 @@ Primus-Turbo is designed to unlock the full potential of AMD GPUs for large-mode
 ...
 
 
-## 📦 Install & Deployment
+## 📦 Quick Start
 
 ### 1. Docker (Recommended)
 Use the pre-built AMD ROCm image:
@@ -38,13 +38,27 @@ pip3 install -e . -v
 ```
 pip3 install -r requirements.txt
 python3 -m build --wheel --no-isolation
-pip3 install --extra-index-url https://test.pypi.org/simple ./primus_turbo-XXX.whl
+pip3 install --extra-index-url https://test.pypi.org/simple ./dist/primus_turbo-XXX.whl
 ```
 
-## 💡 Quick Example
+### 4. Minimal Example
+```python
+import torch
+import primus_turbo.pytorch as turbo
+
+dtype = torch.bfloat16
+device = "cuda:0"
+
+a = torch.randn((128, 256), dtype=dtype, device=device)
+b = torch.randn((256, 512), dtype=dtype, device=device)
+c = turbo.ops.gemm(a, b)
+
+print(c)
+print(c.shape)
 ```
-...
-```
+
+## 💡 Example
+See [Examples](./docs/examples.md) for usage examples.
 
 
 ## 📊 Performance
