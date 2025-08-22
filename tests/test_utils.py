@@ -70,3 +70,23 @@ def compute_snr(x: torch.Tensor, y: torch.Tensor):
     signal_power = torch.norm(x).pow(2)
     noise_power = torch.norm(x - y).pow(2)
     return 10 * torch.log10(signal_power / (noise_power + 1e-12)).detach().item()
+
+
+def compute_mse(x: torch.Tensor, y: torch.Tensor):
+    x, y = x.float(), y.float()
+    return torch.mean((x - y) ** 2).detach().item()
+
+
+def compute_mae(x: torch.Tensor, y: torch.Tensor):
+    x, y = x.float(), y.float()
+    return torch.mean(torch.abs(x - y)).detach().item()
+
+
+def compute_relative_error(x: torch.Tensor, y: torch.Tensor):
+    x, y = x.float(), y.float()
+    return (torch.norm(x - y) / torch.norm(x)).detach().item()
+
+
+def compute_cosine_similarity(x: torch.Tensor, y: torch.Tensor):
+    x, y = x.flatten().float(), y.flatten().float()
+    return torch.nn.functional.cosine_similarity(x, y, dim=0).detach().item()

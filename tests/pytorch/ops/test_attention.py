@@ -6,6 +6,7 @@
 
 import pytest
 import torch
+from tabulate import tabulate
 
 import primus_turbo.pytorch as pt
 from primus_turbo.pytorch.kernels.attention.attention_triton_impl import (
@@ -21,7 +22,13 @@ from tests.pytorch.ref.attention_ref import (
     AttnConfig,
     attention_vanilla_forward_pytorch_ref_impl,
 )
-from tests.test_utils import compute_snr
+from tests.test_utils import (
+    compute_cosine_similarity,
+    compute_mae,
+    compute_mse,
+    compute_relative_error,
+    compute_snr,
+)
 
 test_cases = [
     AttnConfig(seqlen_q=1024, seqlen_kv=1024, num_head_q=32, num_head_kv=32, head_dim_qk=128, head_dim_v=128),
@@ -43,11 +50,33 @@ test_cases = [
 ]
 
 
+def prepare_data(
+    batch_size,
+    seqlen,
+    n_head,
+    head_dim,
+    dtype,
+    device,
+    outlier_idx=None,
+    with_outliers=True,
+):
+    x = torch.randn((batch_size, seqlen, n_head, head_dim), dtype=dtype, device=device)
+    if with_outliers:
+        if outlier_idx is None:
+            outlier_idx = torch.randperm(head_dim, device=device)[: head_dim // 8]
+        sequence_p = torch.ones((1, seqlen, 1, 1), device=device) * 0.001
+        p_mask = torch.bernoulli(sequence_p)
+        outlier_dist = 100 * torch.randn(size=(batch_size, seqlen, 1, 1)).to(dtype=dtype, device=device)
+        x[:, :, :, outlier_idx] += outlier_dist * p_mask
+    return x, outlier_idx
+
+
 @pytest.mark.parametrize("batch", [4])
 @pytest.mark.parametrize("config", test_cases)
 @pytest.mark.parametrize("causal", [True, False])
 @pytest.mark.parametrize("backend_type", ["triton", "ck"])
-def test_attention_bf16(batch, config, causal, backend_type):
+@pytest.mark.parametrize("with_outliers", [True, False])
+def test_attention_bf16(batch, config, causal, backend_type, with_outliers):
     device = "cuda"
     dtype = torch.bfloat16
     seqlen_q, seqlen_kv, num_head_q, num_head_kv, head_dim_qk, head_dim_v = (
@@ -62,12 +91,31 @@ def test_attention_bf16(batch, config, causal, backend_type):
     k_layout = (batch, seqlen_kv, num_head_kv, head_dim_qk)
     v_layout = (batch, seqlen_kv, num_head_kv, head_dim_v)
 
-    query = torch.randn(q_layout, device=device, dtype=dtype, requires_grad=True)
-    key = torch.randn(k_layout, device=device, dtype=dtype, requires_grad=True)
-    value = torch.randn(v_layout, device=device, dtype=dtype, requires_grad=True)
-    query_ref = query.clone().detach().requires_grad_()
-    key_ref = key.clone().detach().requires_grad_()
-    value_ref = value.clone().detach().requires_grad_()
+    torch.manual_seed(1234)
+
+    query, outlier_idx = prepare_data(
+        *q_layout, device=device, dtype=dtype, outlier_idx=None, with_outliers=with_outliers
+    )
+    query.requires_grad_(True)
+    key, _ = prepare_data(
+        *k_layout,
+        device=device,
+        dtype=dtype,
+        outlier_idx=outlier_idx,
+        with_outliers=with_outliers,
+    )
+    key.requires_grad_(True)
+    value, _ = prepare_data(
+        *v_layout,
+        device=device,
+        dtype=dtype,
+        outlier_idx=None,
+        with_outliers=with_outliers,
+    )
+    value.requires_grad_(True)
+    query_ref = query.detach().clone().requires_grad_()
+    key_ref = key.detach().clone().requires_grad_()
+    value_ref = value.detach().clone().requires_grad_()
 
     sm_scale = query.shape[-1] ** (-0.5)
     o_ref = attention_vanilla_forward_pytorch_ref_impl(query_ref, key_ref, value_ref, sm_scale, causal)
@@ -96,13 +144,53 @@ def test_attention_bf16(batch, config, causal, backend_type):
     query_grad_snr = compute_snr(query_ref.grad, query.grad)
     key_grad_snr = compute_snr(key_ref.grad, key.grad)
     value_grad_snr = compute_snr(value_ref.grad, value.grad)
-    print(out_snr, query_grad_snr, key_grad_snr, value_grad_snr)
+
+    out_cosine_sim = compute_cosine_similarity(o_ref, o)
+    query_grad_cosine_sim = compute_cosine_similarity(query_ref.grad, query.grad)
+    key_grad_cosine_sim = compute_cosine_similarity(key_ref.grad, key.grad)
+    value_grad_cosine_sim = compute_cosine_similarity(value_ref.grad, value.grad)
+
+    out_mse = compute_mse(o_ref, o)
+    query_grad_mse = compute_mse(query_ref.grad, query.grad)
+    key_grad_mse = compute_mse(key_ref.grad, key.grad)
+    value_grad_mse = compute_mse(value_ref.grad, value.grad)
+
+    out_mae = compute_mae(o_ref, o)
+    query_grad_mae = compute_mae(query_ref.grad, query.grad)
+    key_grad_mae = compute_mae(key_ref.grad, key.grad)
+    value_grad_mae = compute_mae(value_ref.grad, value.grad)
+
+    out_relative_err = compute_relative_error(o_ref, o)
+    query_grad_relative_err = compute_relative_error(query_ref.grad, query.grad)
+    key_grad_relative_err = compute_relative_error(key_ref.grad, key.grad)
+    value_grad_relative_err = compute_relative_error(value_ref.grad, value.grad)
+
+    results = [
+        ["O", out_snr, out_cosine_sim, out_mse, out_mae, out_relative_err],
+        [
+            "dQ",
+            query_grad_snr,
+            query_grad_cosine_sim,
+            query_grad_mse,
+            query_grad_mae,
+            query_grad_relative_err,
+        ],
+        ["dK", key_grad_snr, key_grad_cosine_sim, key_grad_mse, key_grad_mae, key_grad_relative_err],
+        [
+            "dV",
+            value_grad_snr,
+            value_grad_cosine_sim,
+            value_grad_mse,
+            value_grad_mae,
+            value_grad_relative_err,
+        ],
+    ]
+    headers = ["Tensor", "SNR", "Cosine Sim", "MSE", "MAE", "Relative Err"]
+
+    print("\n", tabulate(results, headers=headers))
+
     assert out_snr > 20, "out_snr too low"
-    if config == test_cases[9]:
-        # lower the SNR threshold for this specific case
-        assert query_grad_snr > 12, "query_grad_snr too low"
-    else:
-        assert query_grad_snr > 15, "query_grad_snr too low"
+    assert query_grad_snr > 15, "query_grad_snr too low"
     assert key_grad_snr > 15, "key_grad_snr too low"
     assert value_grad_snr > 15, "value_grad_snr too low"
 
@@ -111,7 +199,8 @@ def test_attention_bf16(batch, config, causal, backend_type):
 @pytest.mark.parametrize("config", test_cases)
 @pytest.mark.parametrize("causal", [True, False])
 @pytest.mark.parametrize("backend_type", ["triton"])
-def test_attention_fp8(batch, config, causal, backend_type):
+@pytest.mark.parametrize("with_outliers", [True, False])
+def test_attention_fp8(batch, config, causal, backend_type, with_outliers):
     device = "cuda"
     dtype = torch.bfloat16
     seqlen_q, seqlen_kv, num_head_q, num_head_kv, head_dim_qk, head_dim_v = (
@@ -126,12 +215,23 @@ def test_attention_fp8(batch, config, causal, backend_type):
     k_layout = (batch, seqlen_kv, num_head_kv, head_dim_qk)
     v_layout = (batch, seqlen_kv, num_head_kv, head_dim_v)
 
-    query = torch.randn(q_layout, device=device, dtype=dtype, requires_grad=True)
-    key = torch.randn(k_layout, device=device, dtype=dtype, requires_grad=True)
-    value = torch.randn(v_layout, device=device, dtype=dtype, requires_grad=True)
-    query_ref = query.clone().detach().requires_grad_()
-    key_ref = key.clone().detach().requires_grad_()
-    value_ref = value.clone().detach().requires_grad_()
+    torch.manual_seed(1234)
+
+    query, outlier_idx = prepare_data(
+        *q_layout, device=device, dtype=dtype, outlier_idx=None, with_outliers=with_outliers
+    )
+    query.requires_grad_(True)
+    key, _ = prepare_data(
+        *k_layout, device=device, dtype=dtype, outlier_idx=outlier_idx, with_outliers=with_outliers
+    )
+    key.requires_grad_(True)
+    value, _ = prepare_data(
+        *v_layout, device=device, dtype=dtype, outlier_idx=None, with_outliers=with_outliers
+    )
+    value.requires_grad_(True)
+    query_ref = query.detach().clone().requires_grad_()
+    key_ref = key.detach().clone().requires_grad_()
+    value_ref = value.detach().clone().requires_grad_()
 
     sm_scale = query.shape[-1] ** (-0.5)
     o_ref = attention_vanilla_forward_pytorch_ref_impl(query_ref, key_ref, value_ref, sm_scale, causal)
@@ -160,13 +260,53 @@ def test_attention_fp8(batch, config, causal, backend_type):
     query_grad_snr = compute_snr(query_ref.grad, query.grad)
     key_grad_snr = compute_snr(key_ref.grad, key.grad)
     value_grad_snr = compute_snr(value_ref.grad, value.grad)
-    print(out_snr, query_grad_snr, key_grad_snr, value_grad_snr)
+
+    out_cosine_sim = compute_cosine_similarity(o_ref, o)
+    query_grad_cosine_sim = compute_cosine_similarity(query_ref.grad, query.grad)
+    key_grad_cosine_sim = compute_cosine_similarity(key_ref.grad, key.grad)
+    value_grad_cosine_sim = compute_cosine_similarity(value_ref.grad, value.grad)
+
+    out_mse = compute_mse(o_ref, o)
+    query_grad_mse = compute_mse(query_ref.grad, query.grad)
+    key_grad_mse = compute_mse(key_ref.grad, key.grad)
+    value_grad_mse = compute_mse(value_ref.grad, value.grad)
+
+    out_mae = compute_mae(o_ref, o)
+    query_grad_mae = compute_mae(query_ref.grad, query.grad)
+    key_grad_mae = compute_mae(key_ref.grad, key.grad)
+    value_grad_mae = compute_mae(value_ref.grad, value.grad)
+
+    out_relative_err = compute_relative_error(o_ref, o)
+    query_grad_relative_err = compute_relative_error(query_ref.grad, query.grad)
+    key_grad_relative_err = compute_relative_error(key_ref.grad, key.grad)
+    value_grad_relative_err = compute_relative_error(value_ref.grad, value.grad)
+
+    results = [
+        ["O", out_snr, out_cosine_sim, out_mse, out_mae, out_relative_err],
+        [
+            "dQ",
+            query_grad_snr,
+            query_grad_cosine_sim,
+            query_grad_mse,
+            query_grad_mae,
+            query_grad_relative_err,
+        ],
+        ["dK", key_grad_snr, key_grad_cosine_sim, key_grad_mse, key_grad_mae, key_grad_relative_err],
+        [
+            "dV",
+            value_grad_snr,
+            value_grad_cosine_sim,
+            value_grad_mse,
+            value_grad_mae,
+            value_grad_relative_err,
+        ],
+    ]
+    headers = ["Tensor", "SNR", "Cosine Sim", "MSE", "MAE", "Relative Err"]
+
+    print("\n", tabulate(results, headers=headers))
+
     assert out_snr > 20, "out_snr too low"
-    if config == test_cases[9]:
-        # lower the SNR threshold for this specific case
-        assert query_grad_snr > 12, "query_grad_snr too low"
-    else:
-        assert query_grad_snr > 15, "query_grad_snr too low"
+    assert query_grad_snr > 15, "query_grad_snr too low"
     assert key_grad_snr > 15, "key_grad_snr too low"
     assert value_grad_snr > 15, "value_grad_snr too low"
 
