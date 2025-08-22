@@ -259,6 +259,14 @@ if __name__ == "__main__":
         package_data={"primus_turbo": ["lib/*.so"]},
         ext_modules=ext_modules,
         cmdclass={"build_ext": TurboBuildExt.with_options(use_ninja=True)},
-        entry_points=entry_points,
-        install_requires=install_requires,
+        entry_points={
+            "jax_plugins": [
+                "primus_turbo = primus_turbo.jax",
+            ],
+        },
+        install_requires=[
+            "aiter @ git+https://github.com/ROCm/aiter.git@4822e6755ae66ba727f0d1d33d348673972cbe9c",
+            "hip-python",
+            "jax[rocm]",
+        ],
     )
