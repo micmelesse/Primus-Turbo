@@ -371,7 +371,7 @@ __global__ void __launch_bounds__(kNumThreads, 1)
                 syncwarp();
             }
             if (send_warp_id_in_rank == 0 and lane_id == 0)
-                st_release_sys_global(channel_tail_idx.buffer(), cached_channel_tail_idx);
+                st_relaxed_sys_global(channel_tail_idx.buffer(), cached_channel_tail_idx);
         }
     } else {
         // Workers for receiving and copying into buffer
@@ -417,7 +417,7 @@ __global__ void __launch_bounds__(kNumThreads, 1)
             // NOTES: unlike the sender, the receiver must ensure that the tail indices hold by
             // different warps are the same
             while (recv_thread_id_in_rank == 0) {
-                cached_channel_tail_idx = ld_acquire_sys_global(channel_tail_idx.buffer());
+                cached_channel_tail_idx = ld_relaxed_sys_global(channel_tail_idx.buffer());
 
                 // Ready to copy
                 if (cached_channel_head_idx != cached_channel_tail_idx) {
@@ -672,6 +672,7 @@ __global__ void __launch_bounds__(kNumThreads, 1)
         // sizeof(int4) `src_idx_buffers`: kNumChannels * kNumRanks * num_recv_buffer_tokens *
         // sizeof(int) `topk_weights_buffers`: kNumChannels * kNumRanks * num_recv_buffer_tokens *
         // num_topk * sizeof(float)
+
         auto channel_head_idx = Buffer<int>(ptr, num_channels_total, channel_rank_offset);
         auto channel_tail_idx = Buffer<int>(ptr, num_channels_total, channel_rank_offset);
         auto channel_x_buffers =
