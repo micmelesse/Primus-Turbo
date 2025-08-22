@@ -247,6 +247,7 @@ if __name__ == "__main__":
         },
         install_requires=[
             "aiter @ git+https://github.com/ROCm/aiter.git@4822e6755ae66ba727f0d1d33d348673972cbe9c",
+            "mori @ git+https://github.com/ROCm/mori.git@0bb7faa5adf8d12311d7afec58d35fb5a1369896"
             "hip-python",
             "jax[rocm]",
         ],
