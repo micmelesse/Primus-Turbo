@@ -343,7 +343,7 @@ Buffer::get_dispatch_layout(const torch::Tensor &topk_idx, int num_experts,
 
 std::tuple<torch::Tensor, std::optional<torch::Tensor>, std::optional<torch::Tensor>,
            std::optional<torch::Tensor>, std::vector<int>, torch::Tensor, torch::Tensor,
-           torch::Tensor, torch::Tensor, torch::Tensor, std::optional<EventHandle>>
+           torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, std::optional<EventHandle>>
 Buffer::intranode_dispatch(
     const torch::Tensor &x, const std::optional<torch::Tensor> &x_scales,
     const std::optional<torch::Tensor> &topk_idx, const std::optional<torch::Tensor> &topk_weights,
@@ -458,6 +458,8 @@ Buffer::intranode_dispatch(
     auto             rank_prefix_matrix    = torch::Tensor();
     auto             channel_prefix_matrix = torch::Tensor();
     std::vector<int> num_recv_tokens_per_expert_list;
+    torch::Tensor    num_recv_tokens_per_expert = torch::empty(
+        {num_local_experts}, torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
 
     // Barrier or send sizes
     // To clean: channel start/end offset, head and tail
@@ -491,8 +493,9 @@ Buffer::intranode_dispatch(
                            num_nvl_bytes);
         primus_turbo::deep_ep::intranode::notify_dispatch(
             num_tokens_per_rank->data_ptr<int>(), moe_recv_counter_mapped, num_ranks,
-            num_tokens_per_expert->data_ptr<int>(), moe_recv_expert_counter_mapped, num_experts,
-            num_tokens, is_token_in_rank.data_ptr<bool>(), channel_prefix_matrix.data_ptr<int>(),
+            num_tokens_per_expert->data_ptr<int>(), moe_recv_expert_counter_mapped,
+            num_recv_tokens_per_expert.data_ptr<int>(), num_experts, num_tokens,
+            is_token_in_rank.data_ptr<bool>(), channel_prefix_matrix.data_ptr<int>(),
             rank_prefix_matrix.data_ptr<int>(), num_memset_int, expert_alignment, buffer_ptrs_gpu,
             barrier_signal_ptrs_gpu, rank, comm_stream, num_channels);
 
@@ -617,6 +620,7 @@ Buffer::intranode_dispatch(
             recv_topk_idx,
             recv_topk_weights,
             num_recv_tokens_per_expert_list,
+            num_recv_tokens_per_expert,
             rank_prefix_matrix,
             channel_prefix_matrix,
             recv_channel_prefix_matrix,

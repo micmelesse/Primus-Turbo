@@ -347,11 +347,13 @@ class Buffer:
         previous_event: Optional[EventOverlap] = None,
         async_finish: bool = False,
         allocate_on_comm_stream: bool = False,
+        num_recv_tokens_per_expert_as_cuda: bool = False,
     ) -> Tuple[
         Union[Tuple[torch.Tensor, torch.Tensor], torch.Tensor],
         Optional[torch.Tensor],
         Optional[torch.Tensor],
         List[int],
+        torch.Tensor,
         Tuple,
         EventOverlap,
     ]:
@@ -382,13 +384,13 @@ class Buffer:
             previous_event: the event to wait before actually executing the kernel.
             async_finish: the current stream will not wait for the communication kernels to be finished if set.
             allocate_on_comm_stream: control whether all the allocated tensors' ownership to be on the communication stream.
-
+            num_recv_tokens_per_expert_as_cuda: control return num_recv_tokens_per_expert as cuda tensor or python list.
         Returns:
             recv_x: received tokens, the same type and tuple as the input `x`, but the number of tokens equals to the
                 received token count.
             recv_topk_idx: received expert indices.
             recv_topk_weights: received expert weights.
-            num_recv_tokens_per_expert_list: Python list shaped `[num_local_experts]`, the received token count by
+            num_recv_tokens_per_expert: Python list or cuda tensor shaped `[num_local_experts]`, the received token count by
                 each local expert, aligned to the input `expert_alignment`. If `num_worst_tokens` is specified, the list
                 will be empty.
             handle: the returned communication handle.
@@ -429,7 +431,7 @@ class Buffer:
                 send_head,
             ) = handle
             num_recv_tokens = recv_src_idx.size(0)
-            recv_x, recv_x_scales, _, _, _, _, _, _, _, _, event = self.runtime.intranode_dispatch(
+            recv_x, recv_x_scales, _, _, _, _, _, _, _, _, _, event = self.runtime.intranode_dispatch(
                 x,
                 x_scales,
                 None,
@@ -467,6 +469,7 @@ class Buffer:
                 recv_topk_idx,
                 recv_topk_weights,
                 num_recv_tokens_per_expert_list,
+                num_recv_tokens_per_expert_cuda,
                 rank_prefix_matrix,
                 channel_prefix_matrix,
                 recv_channel_prefix_matrix,
@@ -503,7 +506,11 @@ class Buffer:
                 (recv_x, recv_x_scales) if x_scales is not None else recv_x,
                 recv_topk_idx,
                 recv_topk_weights,
-                num_recv_tokens_per_expert_list,
+                (
+                    num_recv_tokens_per_expert_list
+                    if not num_recv_tokens_per_expert_as_cuda
+                    else num_recv_tokens_per_expert_cuda
+                ),
                 handle,
                 EventOverlap(event),
             )

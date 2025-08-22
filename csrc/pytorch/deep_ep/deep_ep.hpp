@@ -21,7 +21,7 @@ namespace primus_turbo::pytorch::deep_ep {
 
 struct Buffer {
 
-  private:
+private:
     // Low-latency mode buffer
     int  low_latency_buffer_idx = 0;
     bool low_latency_mode       = false;
@@ -72,7 +72,7 @@ struct Buffer {
     volatile int *moe_recv_rdma_counter        = nullptr;
     int          *moe_recv_rdma_counter_mapped = nullptr;
 
-  public:
+public:
     Buffer(int rank, int num_ranks, int64_t num_nvl_bytes, int64_t num_rdma_bytes,
            bool low_latency_mode, bool explicitly_destroy);
 
@@ -113,7 +113,8 @@ struct Buffer {
 
     std::tuple<torch::Tensor, std::optional<torch::Tensor>, std::optional<torch::Tensor>,
                std::optional<torch::Tensor>, std::vector<int>, torch::Tensor, torch::Tensor,
-               torch::Tensor, torch::Tensor, torch::Tensor, std::optional<EventHandle>>
+               torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor,
+               std::optional<EventHandle>>
     intranode_dispatch(const torch::Tensor &x, const std::optional<torch::Tensor> &x_scales,
                        const std::optional<torch::Tensor> &topk_idx,
                        const std::optional<torch::Tensor> &topk_weights,
