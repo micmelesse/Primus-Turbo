@@ -85,6 +85,11 @@ class FusedDispatch(torch.autograd.Function):
             allocate_on_comm_stream=False,
         )
 
+        num_tokens, num_topk = token_indices.shape
+        world_size = group.size()
+        num_local_expert = num_experts // world_size
+        num_worst_tokens = min(num_topk, num_local_expert) * num_tokens * world_size
+
         # Do MoE dispatch
         # NOTES: the CPU will wait for GPU's signal to arrive,
         # so this is not compatible with CUDA graph
@@ -92,7 +97,7 @@ class FusedDispatch(torch.autograd.Function):
             recv_x,
             recv_token_indices,
             recv_token_probs,
-            num_recv_tokens_per_expert_list,
+            tokens_per_expert,
             handle,
             event,
         ) = buffer.dispatch(
@@ -106,17 +111,16 @@ class FusedDispatch(torch.autograd.Function):
             previous_event=None,
             async_finish=False,
             allocate_on_comm_stream=False,
+            num_recv_tokens_per_expert_as_cuda=use_cuda_num_token_per_expert,
+            num_worst_tokens=num_worst_tokens,
         )
 
         ctx.group = group
         ctx.handle = handle
         ctx.event = event
 
-        if use_cuda_num_token_per_expert:
-            device = "cpu"
-        else:
-            device = x.device
-        tokens_per_expert = torch.tensor(num_recv_tokens_per_expert_list, device=device)
+        if not use_cuda_num_token_per_expert:
+            tokens_per_expert = torch.tensor(num_recv_tokens_per_expert_list)
 
         return (recv_x, recv_token_indices, recv_token_probs, tokens_per_expert, handle)
 

@@ -347,7 +347,6 @@ class Buffer:
         previous_event: Optional[EventOverlap] = None,
         async_finish: bool = False,
         allocate_on_comm_stream: bool = False,
-        num_recv_tokens_per_expert_as_cuda: bool = False,
     ) -> Tuple[
         Union[Tuple[torch.Tensor, torch.Tensor], torch.Tensor],
         Optional[torch.Tensor],
@@ -506,11 +505,8 @@ class Buffer:
                 (recv_x, recv_x_scales) if x_scales is not None else recv_x,
                 recv_topk_idx,
                 recv_topk_weights,
-                (
-                    num_recv_tokens_per_expert_list
-                    if not num_recv_tokens_per_expert_as_cuda
-                    else num_recv_tokens_per_expert_cuda
-                ),
+                num_recv_tokens_per_expert_list,
+                num_recv_tokens_per_expert_cuda,
                 handle,
                 EventOverlap(event),
             )

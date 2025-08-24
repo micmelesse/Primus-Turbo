@@ -105,7 +105,9 @@ def make_deepep_topken_indices(
     num_recv_tokens, _ = token_indices.shape
     routing_map = torch.zeros((num_recv_tokens, num_experts), dtype=torch.long, device=token_indices.device)
 
-    routing_map[torch.arange(num_recv_tokens, device=routing_map.device).unsqueeze(1), token_indices] = 1
+    routing_map[torch.arange(num_recv_tokens, device=routing_map.device).unsqueeze(1), token_indices] = (
+        torch.ones(1, device=routing_map.device, dtype=routing_map.dtype)
+    )
 
     num_local_expert = num_experts // num_ranks
     recv_expert_begin = rank * num_local_expert
