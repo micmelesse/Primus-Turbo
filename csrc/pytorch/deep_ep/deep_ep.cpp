@@ -459,7 +459,7 @@ Buffer::intranode_dispatch(
     auto             channel_prefix_matrix = torch::Tensor();
     std::vector<int> num_recv_tokens_per_expert_list;
     torch::Tensor    num_recv_tokens_per_expert = torch::empty(
-        {num_local_experts}, torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
+        {num_local_experts}, torch::TensorOptions().dtype(torch::kLong).device(torch::kCUDA));
 
     // Barrier or send sizes
     // To clean: channel start/end offset, head and tail
@@ -494,7 +494,7 @@ Buffer::intranode_dispatch(
         primus_turbo::deep_ep::intranode::notify_dispatch(
             num_tokens_per_rank->data_ptr<int>(), moe_recv_counter_mapped, num_ranks,
             num_tokens_per_expert->data_ptr<int>(), moe_recv_expert_counter_mapped,
-            num_recv_tokens_per_expert.data_ptr<int>(), num_experts, num_tokens,
+            num_recv_tokens_per_expert.data_ptr<int64_t>(), num_experts, num_tokens,
             is_token_in_rank.data_ptr<bool>(), channel_prefix_matrix.data_ptr<int>(),
             rank_prefix_matrix.data_ptr<int>(), num_memset_int, expert_alignment, buffer_ptrs_gpu,
             barrier_signal_ptrs_gpu, rank, comm_stream, num_channels);

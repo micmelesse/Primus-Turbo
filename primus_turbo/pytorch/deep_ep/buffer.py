@@ -507,9 +507,9 @@ class Buffer:
                 recv_topk_idx,
                 recv_topk_weights,
                 (
-                    num_recv_tokens_per_expert_list
-                    if not num_recv_tokens_per_expert_as_cuda
-                    else num_recv_tokens_per_expert_cuda
+                    num_recv_tokens_per_expert_cuda
+                    if num_recv_tokens_per_expert_as_cuda
+                    else num_recv_tokens_per_expert_list
                 ),
                 handle,
                 EventOverlap(event),
