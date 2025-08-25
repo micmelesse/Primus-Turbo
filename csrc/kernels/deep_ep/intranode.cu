@@ -183,17 +183,29 @@ void cached_notify_dispatch(const int *rank_prefix_matrix, int num_memset_int, v
 
 template <int kNumRanks, int kNumThreads>
 __global__ void __launch_bounds__(kNumThreads, 1)
-    dispatch(int4 *recv_x, float *recv_x_scales, int *recv_src_idx, int64_t *recv_topk_idx,
-             float *recv_topk_weights, int *recv_channel_offset, int *send_head, const int4 *x,
-             const float *x_scales, const int64_t *topk_idx, const float *topk_weights,
-             const bool *is_token_in_rank, const int *channel_prefix_matrix, int num_tokens,
-             int num_worst_tokens, int hidden_int4, int num_topk, int num_experts, int num_scales,
-             int scale_token_stride, int scale_hidden_stride, void **buffer_ptrs, int rank,
-             int num_max_send_tokens, int num_recv_buffer_tokens) {
+    dispatch(uintptr_t *recv_x_ptr, uintptr_t *recv_x_scales_ptr, uintptr_t *recv_src_idx_ptr,
+             uintptr_t *recv_topk_idx_ptr, uintptr_t *recv_topk_weights_ptr,
+             int *recv_channel_offset, int *send_head, const int4 *x, const float *x_scales,
+             const int64_t *topk_idx, const float *topk_weights, const bool *is_token_in_rank,
+             const int *channel_prefix_matrix, int num_tokens, int num_worst_tokens,
+             int hidden_int4, int num_topk, int num_experts, int num_scales, int scale_token_stride,
+             int scale_hidden_stride, void **buffer_ptrs, int rank, int num_max_send_tokens,
+             int num_recv_buffer_tokens) {
+
     const auto num_sms = static_cast<int>(gridDim.x), sm_id = static_cast<int>(blockIdx.x);
     const auto thread_id = static_cast<int>(threadIdx.x), lane_id = get_lane_id();
     const bool is_sender = sm_id % 2 == 0;
     PRIMUS_TURBO_DEVICE_CHECK(num_sms % 2 == 0);
+
+    if (thread_id == 0 && sm_id == 0) {
+        printf("dispatch kernel view recv_x ptr: %p\n", reinterpret_cast<void *>(*recv_x_ptr));
+    }
+
+    int4    *recv_x            = reinterpret_cast<int4 *>(*recv_x_ptr);
+    float   *recv_x_scales     = reinterpret_cast<float *>(recv_x_scales_ptr);
+    int     *recv_src_idx      = reinterpret_cast<int *>(recv_src_idx_ptr);
+    int64_t *recv_topk_idx     = reinterpret_cast<int64_t *>(recv_topk_idx_ptr);
+    float   *recv_topk_weights = reinterpret_cast<float *>(recv_topk_weights_ptr);
 
     // Several warps are response for a single rank
     const auto num_threads_per_rank = kNumThreads / kNumRanks;
@@ -522,11 +534,12 @@ __global__ void __launch_bounds__(kNumThreads, 1)
     }
 }
 
-void dispatch(void *recv_x, float *recv_x_scales, int *recv_src_idx, int64_t *recv_topk_idx,
-              float *recv_topk_weights, int *recv_channel_offset, int *send_head, const void *x,
-              const float *x_scales, const int64_t *topk_idx, const float *topk_weights,
-              const bool *is_token_in_rank, const int *channel_prefix_matrix, int num_tokens,
-              int num_worst_tokens, int hidden_int4, int num_topk, int num_experts, int num_scales,
+void dispatch(uintptr_t *recv_x, uintptr_t *recv_x_scales, uintptr_t *recv_src_idx,
+              uintptr_t *recv_topk_idx, uintptr_t *recv_topk_weights, int *recv_channel_offset,
+              int *send_head, const void *x, const float *x_scales, const int64_t *topk_idx,
+              const float *topk_weights, const bool *is_token_in_rank,
+              const int *channel_prefix_matrix, int num_tokens, int num_worst_tokens,
+              int hidden_int4, int num_topk, int num_experts, int num_scales,
               int scale_token_stride, int scale_hidden_stride, void **buffer_ptrs, int rank,
               int num_ranks, hipStream_t stream, int num_sms, int num_max_send_tokens,
               int num_recv_buffer_tokens) {
@@ -539,8 +552,8 @@ void dispatch(void *recv_x, float *recv_x_scales, int *recv_src_idx, int64_t *re
 #define DISPATCH_LAUNCH_CASE(ranks)                                                                \
     {                                                                                              \
         LAUNCH_KERNEL_NON_COOPERATIVE(                                                             \
-            &cfg, dispatch<ranks, kNumThreads>, reinterpret_cast<int4 *>(recv_x), recv_x_scales,   \
-            recv_src_idx, recv_topk_idx, recv_topk_weights, recv_channel_offset, send_head,        \
+            &cfg, dispatch<ranks, kNumThreads>, recv_x, recv_x_scales, recv_src_idx,               \
+            recv_topk_idx, recv_topk_weights, recv_channel_offset, send_head,                      \
             reinterpret_cast<const int4 *>(x), x_scales, topk_idx, topk_weights, is_token_in_rank, \
             channel_prefix_matrix, num_tokens, num_worst_tokens, hidden_int4, num_topk,            \
             num_experts, num_scales, scale_token_stride, scale_hidden_stride, buffer_ptrs, rank,   \

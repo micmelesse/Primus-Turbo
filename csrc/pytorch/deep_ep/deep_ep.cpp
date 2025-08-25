@@ -15,7 +15,9 @@
 
 #include "../kernels/deep_ep/api.h"
 #include "../kernels/deep_ep/configs.h"
+#include "callback.hpp"
 #include "deep_ep.hpp"
+#include <cstdio>
 
 namespace primus_turbo::pytorch::deep_ep {
 
@@ -341,6 +343,64 @@ Buffer::get_dispatch_layout(const torch::Tensor &topk_idx, int num_experts,
             event};
 }
 
+static void notify_dispatch_callback(void *ptr) {
+    // auto buffer = reinterpret_cast<Buffer *>(ptr);
+    printf("xxxxxxxxxxxxxxxxxxxxxx %p\n", ptr);
+    auto meta  = reinterpret_cast<CallBackMeta *>(ptr);
+    auto new_t = torch::empty({6}, meta->recv_x.options());
+    meta->recv_x.set_(new_t.storage(), 0, new_t.sizes(), new_t.strides());
+    // int  num_recv_tokens   = static_cast<int>(*meta->moe_recv_counter);
+    // auto num_local_experts = meta->num_local_experts;
+    // bool ready             = (num_recv_tokens >= 0);
+    //     printf("num_recv_tokens: %d\n", num_recv_tokens);
+    //     for (int i = 0; i < num_local_experts and ready; ++i)
+    //         ready &= meta->moe_recv_expert_counter[i] >= 0;
+
+    //     // Read per-expert count
+    //     PRIMUS_TURBO_CHECK(ready);
+
+    //     auto hidden = meta->hidden;
+
+    //     auto num_topk   = meta->num_topk;
+    //     auto num_scales = meta->num_scales;
+
+    //     printf("Begin to Malloc: %d\n", num_recv_tokens);
+
+    // #define CALLBACK_TENSOR_SET_STORAGE_ASSIGN_POINTER(tensor)
+    //     meta->tensor.set_(tensor.storage(), 0, tensor.sizes(), tensor.strides());
+    //     *meta->moe_##tensor##_ptr = reinterpret_cast<uintptr_t>(tensor.data_ptr())
+
+    // #define CALLBACK_OPTIONAL_TENSOR_SET_STORAGE_ASSIGN_POINTER(tensor)
+    //     meta->tensor->set_(tensor.storage(), 0, tensor.sizes(), tensor.strides());
+    //     *meta->moe_##tensor##_ptr = reinterpret_cast<uintptr_t>(tensor.data_ptr())
+
+    //     auto recv_x       = torch::empty({num_recv_tokens, hidden}, meta->recv_x.options());
+    //     auto recv_src_idx = torch::empty(
+    //         {num_recv_tokens}, torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
+
+    //     CALLBACK_TENSOR_SET_STORAGE_ASSIGN_POINTER(recv_x);
+    //     CALLBACK_TENSOR_SET_STORAGE_ASSIGN_POINTER(recv_src_idx);
+
+    //     if (meta->recv_topk_idx.has_value()) {
+    //         auto recv_topk_idx =
+    //             torch::empty({num_recv_tokens, num_topk}, meta->recv_topk_idx->options());
+    //         CALLBACK_OPTIONAL_TENSOR_SET_STORAGE_ASSIGN_POINTER(recv_topk_idx);
+    //     }
+    //     if (meta->recv_topk_weights.has_value()) {
+    //         auto recv_topk_weights =
+    //             torch::empty({num_recv_tokens, num_topk}, meta->recv_topk_weights->options());
+    //         CALLBACK_OPTIONAL_TENSOR_SET_STORAGE_ASSIGN_POINTER(recv_topk_weights);
+    //     }
+    //     if (meta->recv_x_scales.has_value()) {
+    //         auto recv_x_scales =
+    //             meta->x_scales_dim == 1
+    //                 ? torch::empty({num_recv_tokens}, meta->recv_x_scales->options())
+    //                 : torch::empty({num_recv_tokens, num_scales},
+    //                 meta->recv_x_scales->options());
+    //         CALLBACK_OPTIONAL_TENSOR_SET_STORAGE_ASSIGN_POINTER(recv_x_scales);
+    //     }
+}
+
 std::tuple<torch::Tensor, std::optional<torch::Tensor>, std::optional<torch::Tensor>,
            std::optional<torch::Tensor>, std::vector<int>, torch::Tensor, torch::Tensor,
            torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, std::optional<EventHandle>>
@@ -506,61 +566,36 @@ Buffer::intranode_dispatch(
             // Must be forward with top-k stuffs
             PRIMUS_TURBO_CHECK(topk_idx.has_value());
             PRIMUS_TURBO_CHECK(topk_weights.has_value());
-        } else {
-            // Synchronize total received tokens and tokens per expert
-            auto start_time = std::chrono::high_resolution_clock::now();
-            while (true) {
-                // Read total count
-                num_recv_tokens = static_cast<int>(*moe_recv_counter);
-
-                // Read per-expert count
-                bool ready = (num_recv_tokens >= 0);
-                for (int i = 0; i < num_local_experts and ready; ++i)
-                    ready &= moe_recv_expert_counter[i] >= 0;
-
-                if (ready)
-                    break;
-
-                // Timeout check
-                if (std::chrono::duration_cast<std::chrono::seconds>(
-                        std::chrono::high_resolution_clock::now() - start_time)
-                        .count() > NUM_CPU_TIMEOUT_SECS)
-                    throw std::runtime_error("DeepEP error: CPU recv timeout");
-            }
-            num_recv_tokens_per_expert_list = std::vector<int>(
-                moe_recv_expert_counter, moe_recv_expert_counter + num_local_experts);
         }
     }
 
     // Allocate new tensors
-    auto recv_x       = torch::empty({num_recv_tokens, hidden}, x.options());
-    auto recv_src_idx = torch::empty(
-        {num_recv_tokens}, torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
+    auto recv_x = torch::empty({1}, x.options());
+    auto recv_src_idx =
+        torch::empty({1}, torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
     auto recv_topk_idx     = std::optional<torch::Tensor>(),
          recv_topk_weights = std::optional<torch::Tensor>(),
          recv_x_scales     = std::optional<torch::Tensor>();
     auto recv_channel_prefix_matrix =
-        torch::empty({num_ranks, num_channels},
-                     torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
-    auto send_head = torch::empty({num_tokens, num_ranks},
-                                  torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
+        torch::empty({1}, torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
+    auto send_head =
+        torch::empty({1}, torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
 
-    // Assign pointers
-    int64_t *recv_topk_idx_ptr     = nullptr;
-    float   *recv_topk_weights_ptr = nullptr;
-    float   *recv_x_scales_ptr     = nullptr;
     if (topk_idx.has_value()) {
-        recv_topk_idx         = torch::empty({num_recv_tokens, num_topk}, topk_idx->options());
-        recv_topk_weights     = torch::empty({num_recv_tokens, num_topk}, topk_weights->options());
-        recv_topk_idx_ptr     = recv_topk_idx->data_ptr<int64_t>();
-        recv_topk_weights_ptr = recv_topk_weights->data_ptr<float>();
+        recv_topk_idx     = torch::empty({1}, topk_idx->options());
+        recv_topk_weights = torch::empty({1}, topk_weights->options());
     }
     if (x_scales.has_value()) {
-        recv_x_scales     = x_scales->dim() == 1
-                                ? torch::empty({num_recv_tokens}, x_scales->options())
-                                : torch::empty({num_recv_tokens, num_scales}, x_scales->options());
-        recv_x_scales_ptr = static_cast<float *>(recv_x_scales->data_ptr());
+        recv_x_scales = torch::empty({1}, x_scales->options());
     }
+
+    // auto callback_meta = callback_pool.get(hidden, num_local_experts, num_topk, num_scales,
+    //                                        static_cast<int>(x_scales->dim()), recv_x,
+    //                                        recv_src_idx, recv_topk_idx, recv_topk_weights,
+    //                                        recv_x_scales);
+    auto callback_meta    = g_callback_map.get();
+    callback_meta->recv_x = recv_x;
+    PRIMUS_TURBO_CHECK_HIP(hipLaunchHostFunc(comm_stream, notify_dispatch_callback, callback_meta));
 
     // Dispatch
     PRIMUS_TURBO_CHECK(num_ranks * num_ranks * sizeof(int) +            // Size prefix matrix
@@ -578,15 +613,16 @@ Buffer::intranode_dispatch(
                            num_channels * num_ranks * config.num_max_nvl_chunked_recv_tokens *
                                sizeof(float) * num_scales // FP8 scale buffer
                        <= num_nvl_bytes);
-    primus_turbo::deep_ep::intranode::dispatch(
-        recv_x.data_ptr(), recv_x_scales_ptr, recv_src_idx.data_ptr<int>(), recv_topk_idx_ptr,
-        recv_topk_weights_ptr, recv_channel_prefix_matrix.data_ptr<int>(),
-        send_head.data_ptr<int>(), x.data_ptr(), x_scales_ptr, topk_idx_ptr, topk_weights_ptr,
-        is_token_in_rank.data_ptr<bool>(), channel_prefix_matrix.data_ptr<int>(), num_tokens,
-        num_worst_tokens, static_cast<int>(hidden * recv_x.element_size() / sizeof(int4)), num_topk,
-        num_experts, num_scales, scale_token_stride, scale_hidden_stride, buffer_ptrs_gpu, rank,
-        num_ranks, comm_stream, config.num_sms, config.num_max_nvl_chunked_send_tokens,
-        config.num_max_nvl_chunked_recv_tokens);
+    // primus_turbo::deep_ep::intranode::dispatch(
+    //     moe_recv_x_ptr_mapped, moe_recv_x_scales_ptr_mapped, moe_recv_src_idx_ptr_mapped,
+    //     moe_recv_topk_idx_ptr_mapped, moe_recv_topk_weights_ptr_mapped,
+    //     recv_channel_prefix_matrix.data_ptr<int>(), send_head.data_ptr<int>(), x.data_ptr(),
+    //     x_scales_ptr, topk_idx_ptr, topk_weights_ptr, is_token_in_rank.data_ptr<bool>(),
+    //     channel_prefix_matrix.data_ptr<int>(), num_tokens, num_worst_tokens,
+    //     static_cast<int>(hidden * recv_x.element_size() / sizeof(int4)), num_topk, num_experts,
+    //     num_scales, scale_token_stride, scale_hidden_stride, buffer_ptrs_gpu, rank, num_ranks,
+    //     comm_stream, config.num_sms, config.num_max_nvl_chunked_send_tokens,
+    //     config.num_max_nvl_chunked_recv_tokens);
 
     // Wait streams
     std::optional<EventHandle> event;
