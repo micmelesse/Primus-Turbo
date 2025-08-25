@@ -44,7 +44,7 @@ void ck_grouped_gemm(void *args_ptr, const ADataType *a_ptr, const BDataType *b_
                      CDataType *c_ptr, const int64_t *group_lens_ptr, const int64_t *group_offs_ptr,
                      const bool transA, const bool transB, const ck_tile::index_t group_num,
                      const ck_tile::index_t m, const ck_tile::index_t n, const ck_tile::index_t k,
-                     hipStream_t stream) {
+                     hipStream_t stream, const uint32_t num_cu) {
     const ck_tile::index_t k_batch = 1;
     const bool             splitk  = k_batch > 1;
 
@@ -77,7 +77,7 @@ void ck_grouped_gemm(void *args_ptr, const ADataType *a_ptr, const BDataType *b_
     } else {
         PRIMUS_TURBO_CHECK(false, "CKGroupedGemm only support NN and NT");
     }
-    runner->run(stream_cfg, group_num, args_ptr);
+    runner->run(stream_cfg, group_num, args_ptr, num_cu);
 }
 
 template <typename ADataType, typename BDataType, typename CDataType>
@@ -135,7 +135,7 @@ void ck_grouped_gemm_variable_k(void *args_ptr, const ADataType *a_ptr, const BD
                                 const int64_t *group_offs_ptr, const bool transA, const bool transB,
                                 const ck_tile::index_t group_num, const ck_tile::index_t m,
                                 const ck_tile::index_t n, const ck_tile::index_t k,
-                                hipStream_t stream) {
+                                hipStream_t stream, const uint32_t num_cu) {
     const ck_tile::index_t k_batch = 1;
     const bool             splitk  = k_batch > 1;
 
@@ -165,7 +165,7 @@ void ck_grouped_gemm_variable_k(void *args_ptr, const ADataType *a_ptr, const BD
     } else {
         PRIMUS_TURBO_CHECK(false, "CKGroupedGemm-VariableK only support TN");
     }
-    runner->run(stream_cfg, group_num, args_ptr);
+    runner->run(stream_cfg, group_num, args_ptr, num_cu);
 
     // Postprocess
     {
@@ -181,21 +181,21 @@ template void ck_grouped_gemm<ck_tile::half_t, ck_tile::half_t, ck_tile::half_t>
     ck_tile::half_t *c_ptr, const int64_t *group_lens_ptr, const int64_t *group_offs_ptr,
     const bool transA, const bool transB, const ck_tile::index_t group_num,
     const ck_tile::index_t m, const ck_tile::index_t n, const ck_tile::index_t k,
-    hipStream_t stream);
+    hipStream_t stream, const uint32_t num_cu);
 
 template void ck_grouped_gemm<ck_tile::bfloat16_t, ck_tile::bfloat16_t, ck_tile::bfloat16_t>(
     void *args_ptr, const ck_tile::bfloat16_t *a_ptr, const ck_tile::bfloat16_t *b_ptr,
     ck_tile::bfloat16_t *c_ptr, const int64_t *group_lens_ptr, const int64_t *group_offs_ptr,
     const bool transA, const bool transB, const ck_tile::index_t group_num,
     const ck_tile::index_t m, const ck_tile::index_t n, const ck_tile::index_t k,
-    hipStream_t stream);
+    hipStream_t stream, const uint32_t num_cu);
 
 template void ck_grouped_gemm_variable_k<ck_tile::half_t, ck_tile::half_t, ck_tile::half_t>(
     void *args_ptr, const ck_tile::half_t *a_ptr, const ck_tile::half_t *b_ptr,
     ck_tile::half_t *c_ptr, const int64_t *group_lens_ptr, const int64_t *group_offs_ptr,
     const bool transA, const bool transB, const ck_tile::index_t group_num,
     const ck_tile::index_t m, const ck_tile::index_t n, const ck_tile::index_t k,
-    hipStream_t stream);
+    hipStream_t stream, const uint32_t num_cu);
 
 template void
 ck_grouped_gemm_variable_k<ck_tile::bfloat16_t, ck_tile::bfloat16_t, ck_tile::bfloat16_t>(
@@ -203,6 +203,6 @@ ck_grouped_gemm_variable_k<ck_tile::bfloat16_t, ck_tile::bfloat16_t, ck_tile::bf
     ck_tile::bfloat16_t *c_ptr, const int64_t *group_lens_ptr, const int64_t *group_offs_ptr,
     const bool transA, const bool transB, const ck_tile::index_t group_num,
     const ck_tile::index_t m, const ck_tile::index_t n, const ck_tile::index_t k,
-    hipStream_t stream);
+    hipStream_t stream, const uint32_t num_cu);
 
 } // namespace primus_turbo

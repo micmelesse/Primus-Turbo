@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "primus_turbo/macros.h"
 #include <cstdint>
 #include <hip/hip_runtime.h>
 
@@ -33,6 +34,13 @@ inline bool is_gfx950() {
 
 inline bool is_gfx942() {
     return get_current_arch() == GPUArch::GFX942;
+}
+
+inline int32_t get_multi_processor_count(const int32_t device_id) {
+    int32_t num_cu = 0;
+    PRIMUS_TURBO_CHECK_HIP(
+        hipDeviceGetAttribute(&num_cu, hipDeviceAttributeMultiprocessorCount, device_id));
+    return num_cu;
 }
 
 } // namespace primus_turbo

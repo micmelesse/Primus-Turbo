@@ -27,9 +27,9 @@ TORCH_LIBRARY(primus_turbo_cpp_extension, m) {
     m.def("rmsnorm_fwd(Tensor input, Tensor gamma, float eps) -> Tensor");
     m.def("rmsnorm_bwd(Tensor input, Tensor gamma, Tensor grad_out, float eps) -> Tensor[]");
     m.def("grouped_gemm(Tensor a, Tensor b, Tensor group_lens, Tensor group_offs, bool transA, "
-          "bool transB) -> Tensor");
+          "bool transB, int? num_cu=None) -> Tensor");
     m.def("grouped_gemm_variable_k(Tensor a, Tensor b, Tensor group_lens, Tensor group_offs, "
-          "bool transA, bool transB) -> Tensor");
+          "bool transA, bool transB, int? num_cu=None) -> Tensor");
 }
 
 TORCH_LIBRARY_IMPL(primus_turbo_cpp_extension, CUDA, m) {
