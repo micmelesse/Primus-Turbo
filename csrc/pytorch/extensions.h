@@ -67,16 +67,19 @@ std::vector<at::Tensor> rmsnorm_bwd_meta(const at::Tensor &input, const at::Tens
 
 // Grouped Gemm
 at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
-                        at::Tensor &group_offs, const bool transA, const bool transB);
+                        at::Tensor &group_offs, const bool transA, const bool transB,
+                        c10::optional<int64_t> num_cu);
 
 at::Tensor grouped_gemm_meta(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
-                             at::Tensor &group_offs, const bool transA, const bool transB);
+                             at::Tensor &group_offs, const bool transA, const bool transB,
+                             c10::optional<int64_t> num_cu);
 
 at::Tensor grouped_gemm_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
-                                   at::Tensor &group_offs, const bool transA, const bool transB);
+                                   at::Tensor &group_offs, const bool transA, const bool transB,
+                                   c10::optional<int64_t> num_cu);
 
 at::Tensor grouped_gemm_variable_k_meta(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
                                         at::Tensor &group_offs, const bool transA,
-                                        const bool transB);
+                                        const bool transB, c10::optional<int64_t> num_cu);
 
 } // namespace primus_turbo::pytorch

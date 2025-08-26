@@ -22,11 +22,15 @@ from tests.test_utils import get_tolerances
 @pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float16])
 @pytest.mark.parametrize("balance", [True, False])
 @pytest.mark.parametrize("trans_b", [True, False])
-def test_grouped_gemm_func(B, M, N_K, dtype, balance, trans_b):
+@pytest.mark.parametrize("reduce_num_cu", [16, 32])
+def test_grouped_gemm_func(B, M, N_K, dtype, balance, trans_b, reduce_num_cu):
     device = "cuda"
+    props = torch.cuda.get_device_properties(device)
+    num_cu = props.multi_processor_count - reduce_num_cu
+
     N, K = N_K
     group_lens = generate_grouped_gemm_group_lens(B, M, balance=balance).to(device)
-    print(B, M, N, K, dtype, balance, trans_b)
+    print(B, M, N, K, dtype, balance, trans_b, num_cu)
 
     b_shape = (B, N, K) if trans_b else (B, K, N)
 
@@ -36,7 +40,7 @@ def test_grouped_gemm_func(B, M, N_K, dtype, balance, trans_b):
     b_ref = b.detach().clone().requires_grad_(True)
 
     # FWD
-    out = grouped_gemm(a, b, group_lens, trans_b=trans_b)
+    out = grouped_gemm(a, b, group_lens, trans_b=trans_b, num_cu=num_cu)
     out_ref = grouped_gemm_ref(a_ref, b_ref, group_lens.clone(), trans_b)
     torch.testing.assert_close(out_ref, out, **get_tolerances(dtype))
 
