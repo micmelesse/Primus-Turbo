@@ -25,13 +25,13 @@ cd Primus-Turbo
 #### User Install
 ```
 pip3 install -r requirements.txt
-pip3 install .
+pip3 install --no-build-isolation .
 ```
 
 #### Developer Install (editable mode)
 ```
 pip3 install -r requirements.txt
-pip3 install -e . -v
+pip3 install --no-build-isolation -e . -v
 ```
 
 ### 3. Build & Deploy Wheel

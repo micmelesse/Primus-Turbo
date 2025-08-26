@@ -13,6 +13,10 @@ from primus_turbo.utils.hip_extension import HIPExtension
 PROJECT_ROOT = Path(os.path.dirname(__file__)).resolve()
 DEFAULT_HIPCC = "/opt/rocm/bin/hipcc"
 
+# -------- env switches --------
+BUILD_TORCH = os.environ.get("PRIMUS_TURBO_BUILD_TORCH", "1") == "1"
+BUILD_JAX = os.environ.get("PRIMUS_TURBO_BUILD_JAX", "0") == "1"
+
 
 class TurboBuildExt(BuildExtension):
     KERNEL_EXT_NAME = "libprimus_turbo_kernels"
@@ -167,6 +171,9 @@ def build_kernels_extension():
 
 
 def build_torch_extension():
+    if not BUILD_TORCH:
+        return None
+
     # Link and Compile flags
     extra_flags = get_common_flags()
     extra_flags["extra_link_args"] = [
@@ -193,6 +200,9 @@ def build_torch_extension():
 
 
 def build_jax_extension():
+    if not BUILD_JAX:
+        return None
+
     import pybind11
     from jax import ffi
 
@@ -229,25 +239,27 @@ if __name__ == "__main__":
 
     # Extensions
     kernels_ext = build_kernels_extension()
-    # TODO: Control build one or all.
     torch_ext = build_torch_extension()
     jax_ext = build_jax_extension()
+    ext_modules = [kernels_ext] + [e for e in (torch_ext, jax_ext) if e is not None]
+
+    # Entry points and Install Requires
+    entry_points = {}
+    install_requires = [
+        "aiter @ git+https://github.com/ROCm/aiter.git@4822e6755ae66ba727f0d1d33d348673972cbe9c",
+        "hip-python",
+    ]
+    if BUILD_JAX:
+        entry_points["jax_plugins"] = ["primus_turbo = primus_turbo.jax"]
+        install_requires.append("jax[rocm]")
 
     setup(
         name="primus_turbo",
         version=get_version(),
         packages=find_packages(exclude=["tests", "tests.*"]),
         package_data={"primus_turbo": ["lib/*.so"]},
-        ext_modules=[kernels_ext, torch_ext, jax_ext],
+        ext_modules=ext_modules,
         cmdclass={"build_ext": TurboBuildExt.with_options(use_ninja=True)},
-        entry_points={
-            "jax_plugins": [
-                "primus_turbo = primus_turbo.jax",
-            ],
-        },
-        install_requires=[
-            "aiter @ git+https://github.com/ROCm/aiter.git@4822e6755ae66ba727f0d1d33d348673972cbe9c",
-            "hip-python",
-            "jax[rocm]",
-        ],
+        entry_points=entry_points,
+        install_requires=install_requires,
     )
