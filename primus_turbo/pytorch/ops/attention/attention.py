@@ -25,7 +25,7 @@ from primus_turbo.pytorch.ops.attention.attention_utils import (
     quant_v_get_p_scale,
 )
 
-__all__ = ["attention", "attention_fp8_blockwise"]
+__all__ = ["flash_attn_func", "attention_fp8_blockwise"]
 
 
 class AttentionCKFunction(torch.autograd.Function):
@@ -245,7 +245,7 @@ class AttentionTritonFunction(torch.autograd.Function):
         return dq, dk, dv, None, None, None, None, None, None, None, None, None, None
 
 
-def attention(
+def flash_attn_func(
     q,
     k,
     v,

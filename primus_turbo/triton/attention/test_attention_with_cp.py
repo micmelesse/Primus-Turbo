@@ -114,7 +114,7 @@ class AttentionWithCPTestCase(MultiProcessTestCase):
             [o_ref, query_ref.grad, key_ref.grad, value_ref.grad], cp_group
         )
 
-        # attention with CP
+        # flash_attn_func with CP
         cp_stream = torch.cuda.Stream()
         cp_param_bundle = {"cp_group": cp_group, "cp_stream": cp_stream, "cp_comm_type": cp_comm_type}
 

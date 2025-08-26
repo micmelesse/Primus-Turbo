@@ -79,7 +79,7 @@ def test_attention_bf16(batch, config, causal, backend_type):
     o_ref = attention_vanilla_forward_pytorch_ref_impl(query_ref, key_ref, value_ref, sm_scale, causal)
     loss_ref = o_ref.mean()
     loss_ref.backward()
-    o = pt.ops.attention(
+    o = pt.ops.flash_attn_func(
         query,
         key,
         value,
