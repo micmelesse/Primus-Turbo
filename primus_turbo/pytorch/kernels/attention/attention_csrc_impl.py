@@ -12,6 +12,10 @@ from aiter.ops.mha import _flash_attn_backward, _flash_attn_forward
 _torch_custom_op_wrapper = torch.library.custom_op
 
 
+def maybe_contiguous(x):
+    return x if x.is_contiguous() else x.contiguous()
+
+
 @_torch_custom_op_wrapper(
     "primus_turbo::attention_aiter_csrc_forward_impl", mutates_args=(), device_types="cuda"
 )
@@ -66,23 +70,18 @@ def _attention_aiter_csrc_forward_impl_fake(
     return_lse: bool,
     return_softmax: bool,
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    q, k, v = [x.contiguous() for x in (q, k, v)]
-    batch_size, seqlen_q, num_heads, head_size = q.shape
-    seqlen_k = k.shape[1]
-    out = torch.empty_like(q)
-    softmax_lse = torch.empty(
-        (batch_size, num_heads, seqlen_q), dtype=torch.float32, device=q.device, layout=q.layout
-    )
-    p = torch.empty((0,), dtype=q.dtype, device=q.device, layout=q.layout)
+    batch_size, seqlen_q, num_heads_q, _ = q.shape
+    _, seqlen_kv, _, head_size_v = v.shape
+    out = torch.empty((batch_size, seqlen_q, num_heads_q, head_size_v), dtype=q.dtype, device=q.device)
+    softmax_lse = torch.empty((batch_size, num_heads_q, seqlen_q), dtype=torch.float32, device=q.device)
+    p = torch.empty((0,), dtype=q.dtype, device=q.device)
     if return_softmax:
         p = torch.empty(
-            (batch_size, num_heads, round_multiple(seqlen_q, 128), round_multiple(seqlen_k, 128)),
+            (batch_size, num_heads_q, round_multiple(seqlen_q, 128), round_multiple(seqlen_kv, 128)),
             dtype=q.dtype,
             device=q.device,
-            layout=q.layout,
         )
     rng_state = torch.empty((2,), dtype=torch.int64, device=q.device)
-
     return out, softmax_lse, p, rng_state
 
 
@@ -161,7 +160,7 @@ def _attention_aiter_csrc_backward_impl_fake(
     is_v3_atomic_fp32: Optional[bool] = True,
     how_v3_bf16_cvt: Optional[int] = 1,
 ) -> torch.Tensor:
-    dout, q, k, v, out = [x.contiguous() for x in (dout, q, k, v, out)]
+    dout, q, k, v, out = [maybe_contiguous(x) for x in (dout, q, k, v, out)]
     if dq is None:
         dq = torch.empty_like(q)
     if dk is None:

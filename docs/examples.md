@@ -59,13 +59,14 @@ import os
 import torch
 import primus_turbo.pytorch as turbo
 
-device = "cuda"
 dtype = torch.bfloat16
 
-rank = int(os.environ['RANK'])
-world_size = int(os.environ['WORLD_SIZE'])
+rank = int(os.environ["RANK"])
+world_size = int(os.environ["WORLD_SIZE"])
+local_rank = int(os.environ.get("LOCAL_RANK", 0))
 
-torch.cuda.set_device(torch.device("cuda", rank))
+torch.cuda.set_device(local_rank)
+device = torch.device("cuda", local_rank)
 torch.distributed.init_process_group(
     backend='nccl',
     world_size=world_size,
