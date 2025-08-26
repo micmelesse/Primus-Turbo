@@ -1,3 +1,9 @@
+###############################################################################
+# Copyright (c) 2025, Advanced Micro Devices, Inc. All rights reserved.
+#
+# See LICENSE for license information.
+###############################################################################
+
 import torch
 
 
@@ -112,8 +118,11 @@ def group_topk_routing_with_aux_score_ref(
 
     scores = compute_routing_scores_for_aux_loss(logits, score_function, topk)
 
+    probs = torch.zeros_like(logits).scatter(1, top_indices, probs)
+    routing_map = torch.zeros_like(logits).int().scatter(1, top_indices, 1).bool()
+
     return (
         scores,
         probs,
-        top_indices,
+        routing_map,
     )

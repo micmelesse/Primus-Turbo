@@ -1,7 +1,14 @@
+###############################################################################
+# Copyright (c) 2025, Advanced Micro Devices, Inc. All rights reserved.
+#
+# See LICENSE for license information.
+###############################################################################
+
 from typing import Optional
 
 import torch
 
+from primus_turbo.pytorch.core.utils import get_device_compute_capability
 from primus_turbo.pytorch.kernels.attention.attention_csrc_impl import (
     attention_aiter_csrc_backward_impl,
     attention_aiter_csrc_forward_impl,
@@ -10,8 +17,10 @@ from primus_turbo.pytorch.kernels.attention.attention_triton_impl import (
     attention_triton_backward_impl,
     attention_triton_forward_impl,
 )
-from primus_turbo.pytorch.ops.attention_with_cp import dispatch_attention_cp_functions
-from primus_turbo.pytorch.ops.utils.attention_utils import (
+from primus_turbo.pytorch.ops.attention.attention_cp_dispatcher import (
+    dispatch_attention_cp_functions,
+)
+from primus_turbo.pytorch.ops.attention.attention_utils import (
     block_scaling_node,
     quant_v_get_p_scale,
 )
@@ -128,7 +137,7 @@ class AttentionCKFunction(torch.autograd.Function):
         dq = dq[..., :head_size_q_og]  # We could have padded the head dimension
         dk = dk[..., :head_size_q_og]
         dv = dv[..., :head_size_v_og]
-        return dq, dk, dv, None, None, None, None, dbias, None, None, None, None, None
+        return dq, dk, dv, None, None, None, None, dbias, None, None, None, None, None, None, None
 
 
 class AttentionTritonFunction(torch.autograd.Function):
@@ -153,8 +162,8 @@ class AttentionTritonFunction(torch.autograd.Function):
         if softmax_scale is None:
             softmax_scale = q.shape[-1] ** (-0.5)
 
-        q, q_scale = block_scaling_node(q, use_fp8)
-        k, k_scale = block_scaling_node(k, use_fp8)
+        q, q_descale = block_scaling_node(q, use_fp8)
+        k, k_descale = block_scaling_node(k, use_fp8)
         v, v_scale, p_scale = quant_v_get_p_scale(v, use_fp8)
 
         output, softmax_lse, exp_scores = attention_triton_forward_impl(
@@ -162,8 +171,8 @@ class AttentionTritonFunction(torch.autograd.Function):
             k,
             v,
             p_scale,
-            q_scale,
-            k_scale,
+            q_descale,
+            k_descale,
             v_scale,
             dropout_p,
             softmax_scale,
@@ -178,7 +187,9 @@ class AttentionTritonFunction(torch.autograd.Function):
 
         if is_grad:
             # q, k, v should be fp8 when set use_fp8 to True
-            ctx.save_for_backward(q, k, v, output, softmax_lse, alibi_slopes, bias, q_scale, k_scale, v_scale)
+            ctx.save_for_backward(
+                q, k, v, output, softmax_lse, alibi_slopes, bias, q_descale, k_descale, v_scale
+            )
 
             ctx.sm_scale = softmax_scale
             ctx.p_scale = p_scale
@@ -198,7 +209,7 @@ class AttentionTritonFunction(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, do, *args):
-        (q, k, v, o, softmax_lse, alibi_slopes, bias, q_scale, k_scale, v_scale) = ctx.saved_tensors
+        (q, k, v, o, softmax_lse, alibi_slopes, bias, q_descale, k_descale, v_scale) = ctx.saved_tensors
         assert bias is None, "Currently bias is not supported by fa backward function."
         assert do.dtype is torch.bfloat16, f"do should be bfloat16 but get {do.dtype}"
 
@@ -208,8 +219,8 @@ class AttentionTritonFunction(torch.autograd.Function):
             k,
             v,
             o,
-            q_scale,
-            k_scale,
+            q_descale,
+            k_descale,
             v_scale,
             ctx.p_scale,
             softmax_lse,
@@ -274,6 +285,11 @@ def attention(
         )
 
     if backend_type == "ck":
+        # Avoid aiter print warning when how_v3_bf16_cvt!=0 in gfx950.
+        how_v3_bf16_cvt = 1
+        if get_device_compute_capability() >= (9, 5):
+            how_v3_bf16_cvt = 0
+
         return AttentionCKFunction.apply(
             q,
             k,
@@ -288,6 +304,8 @@ def attention(
             return_lse,
             return_attn_probs,
             torch.is_grad_enabled(),
+            True,
+            how_v3_bf16_cvt,
         )
     elif backend_type == "triton":
         return AttentionTritonFunction.apply(

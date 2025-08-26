@@ -1,3 +1,7 @@
+// Copyright (c) 2025, Advanced Micro Devices, Inc. All rights reserved.
+//
+// See LICENSE for license information.
+
 #pragma once
 
 #include <ATen/ATen.h>
@@ -60,5 +64,19 @@ std::vector<at::Tensor> rmsnorm_bwd(const at::Tensor &input, const at::Tensor &g
                                     const at::Tensor &grad_output, const double eps);
 std::vector<at::Tensor> rmsnorm_bwd_meta(const at::Tensor &input, const at::Tensor &gamma,
                                          const at::Tensor &grad_output, const double eps);
+
+// Grouped Gemm
+at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
+                        at::Tensor &group_offs, const bool transA, const bool transB);
+
+at::Tensor grouped_gemm_meta(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
+                             at::Tensor &group_offs, const bool transA, const bool transB);
+
+at::Tensor grouped_gemm_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
+                                   at::Tensor &group_offs, const bool transA, const bool transB);
+
+at::Tensor grouped_gemm_variable_k_meta(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
+                                        at::Tensor &group_offs, const bool transA,
+                                        const bool transB);
 
 } // namespace primus_turbo::pytorch

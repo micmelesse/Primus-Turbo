@@ -1,3 +1,9 @@
+###############################################################################
+# Copyright (c) 2025, Advanced Micro Devices, Inc. All rights reserved.
+#
+# See LICENSE for license information.
+###############################################################################
+
 import torch
 import torch.distributed as dist
 from torch.testing._internal.common_distributed import (
@@ -10,7 +16,7 @@ from torch.testing._internal.common_utils import (
 )
 
 import primus_turbo.pytorch as pt
-from primus_turbo.pytorch.ops.utils.attention_utils import All2AllAttentionSharder
+from primus_turbo.pytorch.ops.attention.attention_utils import All2AllAttentionSharder
 from tests.pytorch.ref.attention_ref import (
     AttnConfig,
     attention_vanilla_forward_pytorch_ref_impl,

@@ -1,3 +1,9 @@
+###############################################################################
+# Copyright (c) 2025, Advanced Micro Devices, Inc. All rights reserved.
+#
+# See LICENSE for license information.
+###############################################################################
+
 import operator
 from functools import reduce
 from typing import List, Optional, Tuple
@@ -165,7 +171,12 @@ def fused_matmul_reduce_scatter(
     reduce_op: str,
     scatter_dim: int,
     group_name: str,
+    gemm_streams: List[torch.cuda.Stream],
+    comm_streams: List[torch.cuda.Stream],
     *,
+    comm_method: str = "pipeline",
+    num_splits: int = 2,
+    enable_sdma: bool = False,
     output: Optional[torch.Tensor] = None,
     rs_out: Optional[torch.Tensor] = None,
     out_dtype: Optional[torch.dtype] = None,
@@ -175,7 +186,6 @@ def fused_matmul_reduce_scatter(
     communication:
         C_total = torch.matmul(A, B)
         C = reduce_scatter_tensor(C, "avg", scatter_dim, group)
-
 
     Optimal stride order for A - if A.movedim(scatter_dim, 0) is
     contiguous, no extra copy is required for input layout transformation.
@@ -201,35 +211,45 @@ def fused_matmul_reduce_scatter(
         >>> A = torch.randn(2, 3)
         >>> B = torch.randn(3, 3)
         >>> tp_group = torch.distributed.new_group(...)
-        >>> rs_output = primus_turbo.pytorch.ops.fused_matmul_reduce_scatter(A, B, 'NN', 'sum', 0, tp_group.group_name)
+        >>> comm_method = "pipeline"
+        >>> gemm_streams = []
+        >>> comm_streams = []
+        >>> if comm_method == "pipeline":
+        >>>     gemm_streams = [torch.cuda.current_stream()]
+        >>>     comm_streams = [torch.cuda.Stream() for i in range(tp_group.size())]
+        >>> rs_output = primus_turbo.pytorch.ops.fused_matmul_reduce_scatter(A, B, 'NN', 'sum', 0, tp_group.group_name, gemm_streams, comm_streams)
     """
     # check input
     if A.dim() < 2:
-        raise ValueError("A_shard must be a matrix")
+        raise ValueError("A must be a matrix")
     if scatter_dim < 0 or scatter_dim >= A.dim():
-        raise ValueError("Invalid gather_dim")
+        raise ValueError("Invalid scatter_dim")
     if B.dim() != 2:
         raise ValueError("B must be a matrix")
     if reduce_op not in ["sum", "avg"]:
         raise ValueError("reduce_op must be sum or avg")
     if layout[0] == "T":
-        raise ValueError("layout must be NN or NT")
+        raise ValueError(f"layout must be NN or NT, but {layout}")
     if out_dtype is None:
         out_dtype = A.dtype
 
-    B = B if layout[1] == "T" else B.T.contiguous()
     group = c10d._resolve_process_group(group_name)
+    if comm_method == "pipeline":
+        B = B.T if layout[1] == "T" else B
+        N = B.shape[1]
+    else:
+        B = B.T if layout[1] == "N" else B
+        N = B.shape[0]
 
     x = A.movedim(scatter_dim, 0)
     leading_dims = list(x.shape[:-1])
     leading_dims[0] //= group.size()
     x = x.flatten(0, -2)
     M, K = x.shape
-    N = B.shape[0]
 
-    if (M // group.size() < 256) or (M % 256) or (N % 256) or (K % 256):
+    if comm_method == "tile" and ((M // group.size() < 256) or (M % 256) or (N % 256) or (K % 256)):
         raise ValueError(
-            f"M, N, and K must be divisible by 256, and M divided by group size must not be less than 256."
+            f"M, N, and K must be divisible by 256, and M divided by group size must not be less than 256 when comm_method use tile."
         )
 
     if rs_out is not None:
@@ -239,6 +259,8 @@ def fused_matmul_reduce_scatter(
             raise ValueError(
                 f"Invalid shape: rs_out ({rs_out.shape}) is not unexpected as ({leading_dims}, {N})!"
             )
+    else:
+        rs_out = torch.empty((M // group.size(), N), dtype=out_dtype, device=A.device)
 
     if output is not None:
         if output.dtype != A.dtype:
@@ -246,18 +268,34 @@ def fused_matmul_reduce_scatter(
 
         if output.numel() != rs_out.numel() * group.size():
             raise ValueError(f"output size must equal group size * rs_out size.")
-        output = output.view(-1, B.shape[0])
+        output = output.view(-1, N)
 
-    with torch.profiler.record_function("blockwise_fused_matmul_scatter_out"):
-        rs_output = gemm_rs_impl._tiled_fused_matmul_scatter_out_impl(
-            input=x,
-            weight=B,
-            group_name=group_name,
-            reduce_op=reduce_op,
-            output=output,
-            rs_output=rs_out,
-            out_dtype=out_dtype,
-            stream=torch.cuda.current_stream(),
-        )
+    with torch.profiler.record_function(f"{comm_method}_fused_matmul_scatter_out"):
+        if comm_method == "tile":
+            rs_output = gemm_rs_impl._tiled_fused_matmul_scatter_out_impl(
+                input=x,
+                weight=B,
+                group_name=group_name,
+                reduce_op=reduce_op,
+                output=output,
+                rs_output=rs_out,
+                out_dtype=out_dtype,
+                stream=torch.cuda.current_stream(),
+            )
+        else:
+            rs_output = gemm_rs_impl._pipeline_matmul_scatter_out_impl(
+                torch.ops.aten.mm.out,
+                input=x,
+                weight=B,
+                group_name=group_name,
+                reduce_op=reduce_op,
+                num_splits=num_splits,
+                enable_sdma=enable_sdma,
+                gemm_stream_pool=gemm_streams,
+                comm_stream_pool=comm_streams,
+                output=output,
+                rs_output=rs_out,
+                out_dtype=out_dtype,
+            )
 
     return rs_output.view(*leading_dims, -1).movedim(0, scatter_dim)

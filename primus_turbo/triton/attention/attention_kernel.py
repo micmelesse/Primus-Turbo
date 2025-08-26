@@ -903,7 +903,6 @@ def get_padded_head_dim(head_size: int):
 @triton.jit
 def compute_fp8_scaling_factors(x, fp8_max: tl.constexpr):
     x_amax = tl.max(tl.abs(x))
-    # x_amax = tl.where(x_amax <= 1e-7, 1e-7, x_amax)
     x_amax = tl.where(x_amax == 0, fp8_max, x_amax)
     scale_x = fp8_max / x_amax
     return scale_x
@@ -999,7 +998,7 @@ def _bwd_preprocess_use_o(
 
     if USE_FP8:
         do_scale = compute_fp8_scaling_factors(do, F8_BWD_MAX)
-        do_fp8 = tl.clamp(do * do_scale, -F8_BWD_MAX, F8_BWD_MAX).to(F8_BWD_DTYPE)
+        do_fp8 = (do * do_scale).to(F8_BWD_DTYPE)
 
         do_fp8_offset = DO_FP8 + off_z * stride_doz + off_h * stride_doh + q_start * stride_dom
         do_fp8_ptrs = do_fp8_offset + off_m[:, None] * stride_dom + off_d_v[None, :] * stride_dok
@@ -1040,7 +1039,7 @@ def _bwd_kernel_dkdv(
     K,
     V,
     sm_scale: tl.constexpr,
-    q_scale_ptr,
+    q_descale_ptr,
     k_descale_ptr,
     v_scale_ptr,
     p_scale: tl.constexpr,
@@ -1151,7 +1150,7 @@ def _bwd_kernel_dkdv(
         # while q, k, do in per-block scaling
         v_scale = tl.load(v_scale_ptr)  # + tl.arange(0, num_block_n)
         q_descale_offset = (
-            q_scale_ptr + off_z * stride_qscalez + off_h_q * stride_qscaleh + q_start * stride_qscalem
+            q_descale_ptr + off_z * stride_qscalez + off_h_q * stride_qscaleh + q_start * stride_qscalem
         )
         do_descale_offset = (
             do_descale_ptr + off_z * stride_doscalez + off_h_q * stride_doscaleh + q_start * stride_doscalem
@@ -1362,7 +1361,7 @@ def _attn_bwd_dkdv(
 
         if USE_FP8:
             ds_scale = compute_fp8_scaling_factors(ds, F8_FWD_MAX)
-            ds = tl.clamp(ds * ds_scale, -F8_FWD_MAX, F8_FWD_MAX)
+            ds = ds * ds_scale
 
         ds = ds.to(q.dtype)
 
@@ -1396,7 +1395,7 @@ def _bwd_kernel_dq(
     K,
     V,
     sm_scale: tl.constexpr,
-    q_scale_ptr,
+    q_descale_ptr,
     k_descale_ptr,
     v_scale_ptr,
     p_scale: tl.constexpr,
@@ -1547,7 +1546,7 @@ def _bwd_kernel_dq(
 
     if USE_FP8:
         q_descale_offset = (
-            q_scale_ptr + off_z * stride_qscalez + off_h_q * stride_qscaleh + start_m * stride_qscalem
+            q_descale_ptr + off_z * stride_qscalez + off_h_q * stride_qscaleh + start_m * stride_qscalem
         )
         blk_q_descale = tl.load(q_descale_offset)
 
@@ -1701,13 +1700,13 @@ def _attn_bwd_dq(
 
         if USE_FP8:
             ds_scale = compute_fp8_scaling_factors(ds, F8_FWD_MAX)
-            ds = tl.clamp(ds * ds_scale, -F8_FWD_MAX, F8_FWD_MAX)
+            ds = ds * ds_scale
 
         ds = ds.to(q.dtype)
         _dq = tl.dot(ds, k, out_dtype=tl.float32, allow_tf32=False)
 
         if USE_FP8:
-            dq_descale = blk_k_descale / ds_scale  # ds_scale # 1. / k_scale
+            dq_descale = blk_k_descale / ds_scale
             _dq = _dq * dq_descale
 
         dq += _dq

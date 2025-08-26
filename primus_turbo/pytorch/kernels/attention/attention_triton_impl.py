@@ -1,3 +1,9 @@
+###############################################################################
+# Copyright (c) 2025, Advanced Micro Devices, Inc. All rights reserved.
+#
+# See LICENSE for license information.
+###############################################################################
+
 import math
 
 import torch
@@ -257,8 +263,8 @@ def _attention_triton_forward_impl_fake(
     k: torch.Tensor,
     v: torch.Tensor,
     p_scale: float,
-    q_scale: torch.Tensor,
-    k_scale: torch.Tensor,
+    q_descale: torch.Tensor,
+    k_descale: torch.Tensor,
     v_scale: torch.Tensor,
     dropout_p: float,
     softmax_scale: float,
@@ -303,8 +309,8 @@ def attention_triton_backward_impl(
     k: torch.Tensor,
     v: torch.Tensor,
     o: torch.Tensor,
-    q_scale: torch.Tensor,
-    k_scale: torch.Tensor,
+    q_descale: torch.Tensor,
+    k_descale: torch.Tensor,
     v_scale: torch.Tensor,
     p_scale: float,
     softmax_lse: torch.Tensor,
@@ -417,8 +423,8 @@ def attention_triton_backward_impl(
     assert v.is_contiguous()
     assert o.is_contiguous()
     assert softmax_lse.is_contiguous()
-    assert q_scale.is_contiguous()
-    assert k_scale.is_contiguous()
+    assert q_descale.is_contiguous()
+    assert k_descale.is_contiguous()
 
     # init delta
     delta = torch.zeros_like(softmax_lse)
@@ -431,10 +437,10 @@ def attention_triton_backward_impl(
     if use_fp8:
         do_fp8 = torch.empty_like(do, dtype=get_f8_bwd_dtype())
         _shape = (batch, nheads_q, triton.cdiv(max_seqlen_q, FIXED_BLOCK_M))
-        do_scale = torch.empty(_shape, dtype=torch.float32, device=q.device)
-        stride_descalez, stride_descaleh, stride_descalem = do_scale.stride()
-        stride_qscalez, stride_qscaleh, stride_qscalem = q_scale.stride()
-        stride_kscalez, stride_kscaleh, stride_kscalem = k_scale.stride()
+        do_descale = torch.empty(_shape, dtype=torch.float32, device=q.device)
+        stride_descalez, stride_descaleh, stride_descalem = do_descale.stride()
+        stride_qscalez, stride_qscaleh, stride_qscalem = q_descale.stride()
+        stride_kscalez, stride_kscaleh, stride_kscalem = k_descale.stride()
 
         padded_doscale_block_num = 1 << (stride_descaleh - 1).bit_length()
         padded_qscale_block_num = 1 << (stride_qscaleh - 1).bit_length()
@@ -442,7 +448,7 @@ def attention_triton_backward_impl(
 
     else:
         do_fp8 = None
-        do_scale = None
+        do_descale = None
         stride_descalez, stride_descaleh, stride_descalem = None, None, None
         stride_qscalez, stride_qscaleh, stride_qscalem = None, None, None
         stride_kscalez, stride_kscaleh, stride_kscalem = None, None, None
@@ -453,7 +459,7 @@ def attention_triton_backward_impl(
         o,
         do,
         do_fp8,
-        do_scale,
+        do_descale,
         delta,
         use_fp8,
         stride_oz,
@@ -521,11 +527,11 @@ def attention_triton_backward_impl(
         k,
         v,
         softmax_scale,
-        q_scale,
-        k_scale,
+        q_descale,
+        k_descale,
         v_scale,
         p_scale,
-        do_scale,
+        do_descale,
         do_fp8 if use_fp8 else do,
         dq,
         softmax_lse,
@@ -603,11 +609,11 @@ def attention_triton_backward_impl(
         k,
         v,
         softmax_scale,
-        q_scale,
-        k_scale,
+        q_descale,
+        k_descale,
         v_scale,
         p_scale,
-        do_scale,
+        do_descale,
         do_fp8 if use_fp8 else do,
         dk,
         dv,
@@ -704,8 +710,8 @@ def _attention_triton_backward_impl_fake(
     k: torch.Tensor,
     v: torch.Tensor,
     out: torch.Tensor,
-    q_scale: torch.Tensor,
-    k_scale: torch.Tensor,
+    q_descale: torch.Tensor,
+    k_descale: torch.Tensor,
     v_scale: torch.Tensor,
     p_scale: float,
     softmax_lse: torch.Tensor,
