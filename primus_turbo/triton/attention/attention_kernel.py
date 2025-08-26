@@ -998,7 +998,7 @@ def _bwd_preprocess_use_o(
 
     if USE_FP8:
         do_scale = compute_fp8_scaling_factors(do, F8_BWD_MAX)
-        do_fp8 = (do * do_scale).to(F8_BWD_DTYPE)
+        do_fp8 = tl.clamp((do * do_scale), -F8_BWD_MAX, F8_BWD_MAX).to(F8_BWD_DTYPE)
 
         do_fp8_offset = DO_FP8 + off_z * stride_doz + off_h * stride_doh + q_start * stride_dom
         do_fp8_ptrs = do_fp8_offset + off_m[:, None] * stride_dom + off_d_v[None, :] * stride_dok
@@ -1361,7 +1361,7 @@ def _attn_bwd_dkdv(
 
         if USE_FP8:
             ds_scale = compute_fp8_scaling_factors(ds, F8_FWD_MAX)
-            ds = ds * ds_scale
+            ds = tl.clamp(ds * ds_scale, -F8_FWD_MAX, F8_FWD_MAX)
 
         ds = ds.to(q.dtype)
 
@@ -1700,7 +1700,7 @@ def _attn_bwd_dq(
 
         if USE_FP8:
             ds_scale = compute_fp8_scaling_factors(ds, F8_FWD_MAX)
-            ds = ds * ds_scale
+            ds = tl.clamp(ds * ds_scale, -F8_FWD_MAX, F8_FWD_MAX)
 
         ds = ds.to(q.dtype)
         _dq = tl.dot(ds, k, out_dtype=tl.float32, allow_tf32=False)
