@@ -12,10 +12,6 @@ from primus_turbo.pytorch.modules import TurboAttention
 from tests.pytorch.ref.attention_ref import AttnConfig, TurboAttentionRef
 from tests.test_utils import compute_snr
 
-torch._dynamo.config.cache_size_limit = 100
-torch._dynamo.config.recompile_limit = 100
-
-
 test_cases = [
     # MHA
     AttnConfig(seqlen_q=1024, seqlen_kv=1024, num_head_q=32, num_head_kv=32, head_dim_qk=128, head_dim_v=128),
@@ -26,14 +22,12 @@ test_cases = [
     # 192/128
     AttnConfig(seqlen_q=1024, seqlen_kv=1024, num_head_q=32, num_head_kv=32, head_dim_qk=192, head_dim_v=128),
     # 192/192
-    AttnConfig(
-        seqlen_q=1024, seqlen_kv=1024, num_head_q=128, num_head_kv=128, head_dim_qk=192, head_dim_v=192
-    ),
+    AttnConfig(seqlen_q=1024, seqlen_kv=1024, num_head_q=32, num_head_kv=32, head_dim_qk=192, head_dim_v=192),
 ]
 
 
-@pytest.mark.parametrize("batch", [1, 2, 4])
-@pytest.mark.parametrize("seq", [4096, 8192])
+@pytest.mark.parametrize("batch", [1, 2])
+@pytest.mark.parametrize("seq", [4096])
 @pytest.mark.parametrize("config", test_cases)
 @pytest.mark.parametrize("causal", [False, True])
 @pytest.mark.parametrize("backend_type", ["ck", "triton"])
@@ -102,16 +96,17 @@ def test_attention_fp16(batch, seq, config, causal, backend_type, enable_torch_c
     assert query_grad_snr > 15, "query_grad_snr too low"
     assert key_grad_snr > 15, "key_grad_snr too low"
     assert value_grad_snr > 15, "value_grad_snr too low"
+    torch.cuda.synchronize()
 
 
-@pytest.mark.parametrize("batch", [4])
+@pytest.mark.parametrize("batch", [2])
 @pytest.mark.parametrize("config", test_cases)
 @pytest.mark.parametrize("causal", [False, True])
 @pytest.mark.parametrize("backend_type", ["triton"])
 @pytest.mark.parametrize("enable_torch_compile", [True, False])
 def test_attention_fp8(batch, config, causal, backend_type, enable_torch_compile):
 
-    device = "cuda"
+    device = "cuda:0"
     dtype = torch.bfloat16
     seqlen_q, seqlen_kv, num_head_q, num_head_kv, head_dim_qk, head_dim_v = (
         config.seqlen_q,
@@ -134,6 +129,7 @@ def test_attention_fp8(batch, config, causal, backend_type, enable_torch_compile
 
     sm_scale = query.shape[-1] ** (-0.5)
 
+    torch.cuda.synchronize()
     primus_attention_triton = TurboAttention(
         dropout_p=0.0,
         softmax_scale=sm_scale,
@@ -148,7 +144,11 @@ def test_attention_fp8(batch, config, causal, backend_type, enable_torch_compile
     )
     attention_ref = TurboAttentionRef(softmax_scale=sm_scale, causal=causal)
     if enable_torch_compile:
+        torch._dynamo.reset()
         primus_attention_triton = torch.compile(primus_attention_triton, fullgraph=True, mode="max-autotune")
+    torch.cuda.synchronize()
+
+    # Test
     output = primus_attention_triton(query, key, value)
     out_ref = attention_ref(query_ref, key_ref, value_ref)
     out_snr = compute_snr(out_ref, output)

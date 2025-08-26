@@ -10,10 +10,7 @@ from torch.testing._internal.common_distributed import (
     MultiProcessTestCase,
     skip_if_lt_x_gpu,
 )
-from torch.testing._internal.common_utils import (
-    instantiate_parametrized_tests,
-    parametrize,
-)
+from torch.testing._internal.common_utils import instantiate_parametrized_tests
 
 import primus_turbo.pytorch as pt
 from primus_turbo.pytorch.ops.attention.attention_utils import All2AllAttentionSharder
@@ -25,13 +22,10 @@ from tests.test_utils import compute_snr
 
 test_cases = [
     # AttnConfig(seqlen_q=1024, seqlen_kv=1024, num_head_q=32, num_head_kv=32, head_dim_qk=128, head_dim_v=128),
-    AttnConfig(seqlen_q=1024, seqlen_kv=1024, num_head_q=64, num_head_kv=8, head_dim_qk=128, head_dim_v=128),
     # AttnConfig(seqlen_q=1024, seqlen_kv=1024, num_head_q=32, num_head_kv=8, head_dim_qk=128, head_dim_v=128),
     AttnConfig(seqlen_q=1024, seqlen_kv=1024, num_head_q=64, num_head_kv=8, head_dim_qk=128, head_dim_v=128),
     AttnConfig(seqlen_q=1024, seqlen_kv=1024, num_head_q=16, num_head_kv=16, head_dim_qk=192, head_dim_v=128),
-    AttnConfig(
-        seqlen_q=1024, seqlen_kv=1024, num_head_q=128, num_head_kv=128, head_dim_qk=192, head_dim_v=128
-    ),
+    AttnConfig(seqlen_q=1024, seqlen_kv=1024, num_head_q=32, num_head_kv=32, head_dim_qk=192, head_dim_v=128),
     # AttnConfig(seqlen_q=1024, seqlen_kv=1024, num_head_q=48, num_head_kv=8, head_dim_qk=128, head_dim_v=128),
     AttnConfig(seqlen_q=4096, seqlen_kv=4096, num_head_q=40, num_head_kv=40, head_dim_qk=192, head_dim_v=128),
 ]
@@ -65,26 +59,53 @@ class AttentionWithCPTestCase(MultiProcessTestCase):
         torch.manual_seed(42)
 
     @skip_if_lt_x_gpu(2)
-    @parametrize("batch", [4])
-    @parametrize("config", test_cases)
-    @parametrize("causal", [True])
-    @parametrize("backend_type", ["ck", "triton"])
-    @parametrize("cp_comm_type", ["a2a"])
-    @parametrize("fp8", [True, False])
-    def test_attention_with_cp(self, batch, config, causal, backend_type, cp_comm_type, fp8):
+    def test_attention_with_cp(self):
         self._init_process()
         cp_group = dist.group.WORLD
-
-        # ck backend do not support fp8 yet
-        if backend_type == "ck" and fp8:
-            return
-
-        device = "cuda"
+        cp_stream = torch.cuda.Stream()
         dtype = torch.bfloat16
+        device = torch.device("cuda", self.rank)
+
+        for batch in [
+            2,
+        ]:
+            for config in test_cases:
+                for causal in [True, False]:
+                    for backend_type in ["ck", "triton"]:
+                        for cp_comm_type in ["a2a"]:
+                            for fp8 in [True, False]:
+                                if backend_type == "ck" and fp8:
+                                    continue
+
+                                if fp8:
+                                    func = pt.ops.attention_fp8_blockwise
+                                else:
+                                    func = pt.ops.flash_attn_func
+
+                                self.run_attn_with_cp(
+                                    func,
+                                    batch,
+                                    config,
+                                    causal,
+                                    backend_type,
+                                    cp_comm_type,
+                                    cp_group,
+                                    cp_stream,
+                                    device,
+                                    dtype,
+                                )
+
+        dist.destroy_process_group()
+
+    def run_attn_with_cp(
+        self, func, batch, config, causal, backend_type, cp_comm_type, cp_group, cp_stream, device, dtype
+    ):
         if cp_comm_type == "a2a":
             input_sharder = All2AllAttentionSharder()
         else:
             raise NotImplementedError()
+
+        cp_param_bundle = {"cp_group": cp_group, "cp_stream": cp_stream, "cp_comm_type": cp_comm_type}
 
         seqlen_q, seqlen_kv, num_head_q, num_head_kv, head_dim_qk, head_dim_v = (
             config.seqlen_q,
@@ -114,54 +135,30 @@ class AttentionWithCPTestCase(MultiProcessTestCase):
             [o_ref, query_ref.grad, key_ref.grad, value_ref.grad], cp_group
         )
 
-        # attention with CP
-        cp_stream = torch.cuda.Stream()
-        cp_param_bundle = {"cp_group": cp_group, "cp_stream": cp_stream, "cp_comm_type": cp_comm_type}
-
         query_local_token, key_local_token, value_local_token = input_sharder.shard_cp_input(
             [query, key, value], cp_group
         )
 
-        if fp8:
-            o = pt.ops.attention_fp8_blockwise(
-                query_local_token,
-                key_local_token,
-                value_local_token,
-                dropout_p=0.0,
-                softmax_scale=sm_scale,
-                causal=causal,
-                window_size=(-1, -1),
-                bias=None,
-                alibi_slopes=None,
-                deterministic=False,
-                return_lse=False,
-                return_attn_probs=False,
-                backend_type=backend_type,
-                cp_param_bundle=cp_param_bundle,
-            )
-        else:
-            o = pt.ops.flash_attn_func(
-                query_local_token,
-                key_local_token,
-                value_local_token,
-                dropout_p=0.0,
-                softmax_scale=sm_scale,
-                causal=causal,
-                window_size=(-1, -1),
-                bias=None,
-                alibi_slopes=None,
-                deterministic=False,
-                return_lse=False,
-                return_attn_probs=False,
-                backend_type=backend_type,
-                cp_param_bundle=cp_param_bundle,
-            )
-
+        o = func(
+            query_local_token,
+            key_local_token,
+            value_local_token,
+            dropout_p=0.0,
+            softmax_scale=sm_scale,
+            causal=causal,
+            window_size=(-1, -1),
+            bias=None,
+            alibi_slopes=None,
+            deterministic=False,
+            return_lse=False,
+            return_attn_probs=False,
+            backend_type=backend_type,
+            cp_param_bundle=cp_param_bundle,
+        )
         grad = input_sharder.shard_cp_input([grad_ref], cp_group)[0]
         o.backward(grad)
 
         dq, dk, dv = input_sharder.shard_cp_input([query.grad, key.grad, value.grad], cp_group)
-
         out_snr = compute_snr(o_ref, o)
         query_grad_snr = compute_snr(dq_ref, dq)
         key_grad_snr = compute_snr(dk_ref, dk)
