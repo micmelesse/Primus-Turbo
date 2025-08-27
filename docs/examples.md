@@ -28,6 +28,8 @@ print(c.shape)
 ```
 
 ### 1.2 Attention
+
++ Simple Attention
 ```python
 import torch
 import primus_turbo.pytorch as turbo
@@ -45,11 +47,55 @@ k = torch.randn((B, S, H, D), dtype=dtype, device=device)
 v = torch.randn((B, S, H, D), dtype=dtype, device=device)
 softmax_scale = q.shape[-1] ** (-0.5)
 
-o = turbo.ops.attention(q, k, v, softmax_scale=softmax_scale, causal=True)
+o = turbo.ops.flash_attn_func(q, k, v, softmax_scale=softmax_scale, causal=True)
 
 print(o)
 print(o.shape)
 ```
+
++ Attention with CP
+```python
+import os
+import torch
+import primus_turbo.pytorch as turbo
+
+dtype = torch.bfloat16
+
+rank = int(os.environ["RANK"])
+world_size = int(os.environ["WORLD_SIZE"])
+local_rank = int(os.environ.get("LOCAL_RANK", 0))
+
+torch.cuda.set_device(local_rank)
+device = torch.device("cuda", local_rank)
+torch.distributed.init_process_group(
+    backend='nccl',
+    world_size=world_size,
+    rank=rank,
+)
+
+cp_group = torch.distributed.group.WORLD
+cp_param_bundle = {
+    "cp_group": cp_group,
+    "cp_comm_type": "a2a"
+}
+
+B = 4
+S = 4096
+H = 256
+D = 128
+
+q = torch.randn((B, S, H, D), dtype=dtype, device=device)
+k = torch.randn((B, S, H, D), dtype=dtype, device=device)
+v = torch.randn((B, S, H, D), dtype=dtype, device=device)
+softmax_scale = q.shape[-1] ** (-0.5)
+
+o = turbo.ops.flash_attn_func(q, k, v, softmax_scale=softmax_scale, causal=True, cp_param_bundle=cp_param_bundle)
+
+torch.distributed.destroy_process_group()
+# run with torchrun --nproc_per_node=8 --nnodes=1 --node_rank=0 --master_addr=127.0.0.1 --master_port=12355 this_code.py
+
+```
+
 
 ### 1.3 Grouped Gemm
 ```python

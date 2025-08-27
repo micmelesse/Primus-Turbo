@@ -8,7 +8,7 @@ from typing import Optional
 
 import torch
 
-from primus_turbo.pytorch.ops.attention import attention, attention_fp8_blockwise
+from primus_turbo.pytorch.ops.attention import attention_fp8_blockwise, flash_attn_func
 
 __all__ = ["TurboAttention"]
 
@@ -42,11 +42,11 @@ class TurboAttention(torch.nn.Module):
         self.backend_type = backend_type
 
         if backend_type == "ck" and use_fp8 == False:
-            self.attention_fn = attention
+            self.attention_fn = flash_attn_func
         elif backend_type == "triton":
             self.attention_fn = attention_fp8_blockwise
         else:
-            raise ValueError(f"Unknown attention type: {backend_type}")
+            raise ValueError(f"Unknown flash_attn_func type: {backend_type}")
 
     def forward(
         self,

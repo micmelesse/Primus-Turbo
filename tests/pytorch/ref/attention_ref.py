@@ -5,6 +5,13 @@
 ###############################################################################
 
 import torch
+from torch.nn.attention import SDPBackend, sdpa_kernel
+
+ATTN_BACKENDS = [
+    SDPBackend.FLASH_ATTENTION,
+    SDPBackend.EFFICIENT_ATTENTION,
+    SDPBackend.MATH,
+]
 
 
 class AttnConfig:
@@ -31,9 +38,10 @@ def attention_vanilla_forward_pytorch_ref_impl(q, k, v, sm_scale, causal, layout
     else:
         raise ValueError(f"Unknown layout {layout}")
 
-    o_ref = torch.nn.functional.scaled_dot_product_attention(
-        q, k, v, is_causal=causal, scale=sm_scale, enable_gqa=n_rep > 1
-    )
+    with sdpa_kernel(ATTN_BACKENDS):
+        o_ref = torch.nn.functional.scaled_dot_product_attention(
+            q, k, v, is_causal=causal, scale=sm_scale, enable_gqa=n_rep > 1
+        )
     if layout == "bshd":
         o_ref = o_ref.transpose(1, 2)
     return o_ref

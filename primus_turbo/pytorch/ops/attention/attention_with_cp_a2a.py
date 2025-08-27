@@ -401,16 +401,11 @@ class AttentionCKFunctionCPA2A(torch.autograd.Function):
         torch.distributed.all_to_all_single(qkv_out, qkv, group=cp_group, async_op=False)
         q_local_heads, k_local_heads, v_local_heads = attn_helper.splits_qkv_after_a2a(qkv_out)
 
-        head_size_q_og = q_local_heads.size(3)
-        head_size_v_og = v_local_heads.size(3)
-        # todo fix if head_size_v_og!=head_size_q_og, no padding
-        if head_size_q_og != head_size_v_og:
-            v_local_heads = torch.nn.functional.pad(v_local_heads, [0, head_size_q_og - head_size_v_og])
-        if head_size_q_og % 8 != 0:
-            q_local_heads = torch.nn.functional.pad(q_local_heads, [0, 8 - head_size_q_og % 8])
-            k_local_heads = torch.nn.functional.pad(k_local_heads, [0, 8 - head_size_q_og % 8])
-        if head_size_v_og % 8 != 0:
-            v_local_heads = torch.nn.functional.pad(v_local_heads, [0, 8 - head_size_v_og % 8])
+        if d_qk % 8 != 0:
+            q_local_heads = torch.nn.functional.pad(q_local_heads, [0, 8 - d_qk % 8])
+            k_local_heads = torch.nn.functional.pad(k_local_heads, [0, 8 - d_qk % 8])
+        if d_v % 8 != 0:
+            v_local_heads = torch.nn.functional.pad(v_local_heads, [0, 8 - d_v % 8])
 
         out_padded, softmax_lse, S_dmask, rng_state = attention_aiter_csrc_forward_impl(
             q_local_heads,
@@ -438,14 +433,14 @@ class AttentionCKFunctionCPA2A(torch.autograd.Function):
             ctx.bias = bias
             ctx.alibi_slopes = alibi_slopes
             ctx.deterministic = deterministic
-            ctx.head_size_q_og = head_size_q_og
+            ctx.d_qk = d_qk
             ctx.is_v3_atomic_fp32 = is_v3_atomic_fp32
             ctx.how_v3_bf16_cvt = how_v3_bf16_cvt
             ctx.attn_helper = attn_helper
             ctx.cp_group = cp_group
             ctx.seq_dim = seq_dim
 
-        output_local_heads = out_padded[..., :head_size_v_og]
+        output_local_heads = out_padded[..., :d_v]
         output_local_heads = attn_helper.reshape_o_before_a2a(output_local_heads)
         output_local_tokens = torch.empty_like(output_local_heads)
         torch.distributed.all_to_all_single(
@@ -480,20 +475,23 @@ class AttentionCKFunctionCPA2A(torch.autograd.Function):
 
         dout_local_heads = attn_helper.reshape_do_after_a2a(dout_local_heads)
 
+        dbias = None
+
+        d_qk = ctx.d_qk
+        d_v = dout_local_heads.size(3)
+        dout_padded = dout_local_heads
+        if d_v % 8 != 0:
+            dout_padded = torch.nn.functional.pad(dout_local_heads, [0, 8 - d_v % 8])
+        if d_qk != d_v:
+            v_local_heads = torch.nn.functional.pad(v_local_heads, [0, d_qk - d_v])
+            output_padded = torch.nn.functional.pad(output_padded, [0, d_qk - d_v])
+            dout_padded = torch.nn.functional.pad(dout_local_heads, [0, d_qk - d_v])
+
         dq, dk, dv = (
             torch.zeros_like(q_local_heads),
             torch.empty_like(k_local_heads),
             torch.empty_like(v_local_heads),
         )
-        dbias = None
-
-        head_size_q_og = ctx.head_size_q_og
-        head_size_v_og = dout_local_heads.size(3)
-        dout_padded = dout_local_heads
-        if head_size_v_og % 8 != 0:
-            dout_padded = torch.nn.functional.pad(dout_local_heads, [0, 8 - head_size_v_og % 8])
-        if head_size_q_og != head_size_v_og:
-            dout_padded = torch.nn.functional.pad(dout_local_heads, [0, head_size_q_og - head_size_v_og])
 
         attention_aiter_csrc_backward_impl(
             dout_padded,
@@ -518,9 +516,9 @@ class AttentionCKFunctionCPA2A(torch.autograd.Function):
             ctx.is_v3_atomic_fp32,
             ctx.how_v3_bf16_cvt,
         )
-        dq = dq[..., :head_size_q_og]  # We could have padded the head dimension
-        dk = dk[..., :head_size_q_og]
-        dv = dv[..., :head_size_v_og]
+        dq = dq[..., :d_qk]  # We could have padded the head dimension
+        dk = dk[..., :d_qk]
+        dv = dv[..., :d_v]
 
         dqkv = attn_helper.combine_dqkv_before_a2a(dq, dk, dv)
         dqkv_out = torch.empty_like(dqkv)
