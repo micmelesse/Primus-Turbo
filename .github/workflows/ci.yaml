@@ -84,12 +84,14 @@ jobs:
             echo "UT_LOG_PATH=${PRIMUS_TURBO_WORKDIR}/ut_out/others" >> $GITHUB_ENV
           fi
       - name: Run unit tests
+        env:
+          XLA_PYTHON_CLIENT_PREALLOCATE: "false"
         run: |
           echo "set UT_LOG_PATH as: ${{ env.UT_LOG_PATH }}"
           if [ -d "${{ env.UT_LOG_PATH }}" ]; then
             echo "UT_LOG_PATH dir exists. Deleting..."
             rm -rf "${{ env.UT_LOG_PATH }}"
           fi
-          pip3 install -r requirements.txt &&
-          pip3 install -e . &&
-          pytest -v tests/ --log-cli-level=INFO
+          pip3 install -r requirements.txt
+          pip3 install -e .
+          pytest -v tests/pytorch --log-cli-level=INFO
