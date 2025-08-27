@@ -3,6 +3,7 @@
 #
 # See LICENSE for license information.
 ###############################################################################
+import itertools
 
 import torch
 import torch.distributed as dist
@@ -66,34 +67,38 @@ class AttentionWithCPTestCase(MultiProcessTestCase):
         dtype = torch.bfloat16
         device = torch.device("cuda", self.rank)
 
-        for batch in [
-            2,
-        ]:
-            for config in test_cases:
-                for causal in [True, False]:
-                    for backend_type in ["ck", "triton"]:
-                        for cp_comm_type in ["a2a"]:
-                            for fp8 in [True, False]:
-                                if backend_type == "ck" and fp8:
-                                    continue
+        test_params = {
+            "batch": [2],
+            "config": test_cases,
+            "causal": [True, False],
+            "backend_type": ["ck", "triton"],
+            "cp_comm_type": ["a2a"],
+            "fp8": [True, False],
+        }
 
-                                if fp8:
-                                    func = pt.ops.attention_fp8_blockwise
-                                else:
-                                    func = pt.ops.flash_attn_func
+        for batch, config, causal, backend_type, cp_comm_type, fp8 in itertools.product(
+            *[test_params[k] for k in test_params]
+        ):
+            if backend_type == "ck" and fp8:
+                continue
 
-                                self.run_attn_with_cp(
-                                    func,
-                                    batch,
-                                    config,
-                                    causal,
-                                    backend_type,
-                                    cp_comm_type,
-                                    cp_group,
-                                    cp_stream,
-                                    device,
-                                    dtype,
-                                )
+            if fp8:
+                func = pt.ops.attention_fp8_blockwise
+            else:
+                func = pt.ops.flash_attn_func
+
+            self.run_attn_with_cp(
+                func,
+                batch,
+                config,
+                causal,
+                backend_type,
+                cp_comm_type,
+                cp_group,
+                cp_stream,
+                device,
+                dtype,
+            )
 
         dist.destroy_process_group()
 
