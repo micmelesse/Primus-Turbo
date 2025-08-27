@@ -89,7 +89,7 @@ at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
 
 at::Tensor grouped_gemm_fp8(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
                             at::Tensor &group_offs, const bool transA, const bool transB,
-                            at::ScalarType out_dtype) {
+                            at::ScalarType out_dtype, c10::optional<int64_t> num_cu) {
 
     // Check
     PRIMUS_TURBO_CHECK(is_8bit_floating_point_dtype(a.scalar_type()));
@@ -125,7 +125,7 @@ at::Tensor grouped_gemm_fp8(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens
                 reinterpret_cast<CType *>(c.data_ptr()),
                 reinterpret_cast<const int64_t *>(group_lens.data_ptr()),
                 reinterpret_cast<const int64_t *>(group_offs.data_ptr()), transA, transB, bs, m, n,
-                k, stream);
+                k, stream, get_grouped_gemm_num_cu(num_cu));
         } else if (out_dtype == at::kHalf) {
             using CType = ck_tile::half_t;
             ck_grouped_gemm<AType, BType, CType>(
@@ -134,7 +134,7 @@ at::Tensor grouped_gemm_fp8(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens
                 reinterpret_cast<CType *>(c.data_ptr()),
                 reinterpret_cast<const int64_t *>(group_lens.data_ptr()),
                 reinterpret_cast<const int64_t *>(group_offs.data_ptr()), transA, transB, bs, m, n,
-                k, stream);
+                k, stream, get_grouped_gemm_num_cu(num_cu));
         } else {
             PRIMUS_TURBO_CHECK(false, "Unsupported out_dtype for fp8 e4m3");
         }
@@ -150,7 +150,7 @@ at::Tensor grouped_gemm_fp8(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens
                 reinterpret_cast<CType *>(c.data_ptr()),
                 reinterpret_cast<const int64_t *>(group_lens.data_ptr()),
                 reinterpret_cast<const int64_t *>(group_offs.data_ptr()), transA, transB, bs, m, n,
-                k, stream);
+                k, stream, get_grouped_gemm_num_cu(num_cu));
         } else if (out_dtype == at::kHalf) {
             using CType = ck_tile::half_t;
             ck_grouped_gemm<AType, BType, CType>(
@@ -159,7 +159,7 @@ at::Tensor grouped_gemm_fp8(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens
                 reinterpret_cast<CType *>(c.data_ptr()),
                 reinterpret_cast<const int64_t *>(group_lens.data_ptr()),
                 reinterpret_cast<const int64_t *>(group_offs.data_ptr()), transA, transB, bs, m, n,
-                k, stream);
+                k, stream, get_grouped_gemm_num_cu(num_cu));
         } else {
             PRIMUS_TURBO_CHECK(false, "Unsupported out_dtype for fp8 e5m2");
         }
@@ -224,7 +224,7 @@ at::Tensor grouped_gemm_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &gro
 
 at::Tensor grouped_gemm_fp8_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
                                        at::Tensor &group_offs, const bool transA, const bool transB,
-                                       at::ScalarType out_dtype) {
+                                       at::ScalarType out_dtype, c10::optional<int64_t> num_cu) {
     // Check
     PRIMUS_TURBO_CHECK(is_8bit_floating_point_dtype(a.scalar_type()));
     PRIMUS_TURBO_CHECK(is_8bit_floating_point_dtype(b.scalar_type()));
@@ -259,7 +259,7 @@ at::Tensor grouped_gemm_fp8_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor 
                 reinterpret_cast<CType *>(c.data_ptr()),
                 reinterpret_cast<const int64_t *>(group_lens.data_ptr()),
                 reinterpret_cast<const int64_t *>(group_offs.data_ptr()), transA, transB, bs, m, n,
-                k, stream);
+                k, stream, get_grouped_gemm_num_cu(num_cu));
         }
     } else if (a.dtype() == at::kFloat8_e5m2fnuz || a.dtype() == at::kFloat8_e5m2) {
         using AType = ck_tile::bf8_t;
@@ -272,7 +272,7 @@ at::Tensor grouped_gemm_fp8_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor 
                 reinterpret_cast<CType *>(c.data_ptr()),
                 reinterpret_cast<const int64_t *>(group_lens.data_ptr()),
                 reinterpret_cast<const int64_t *>(group_offs.data_ptr()), transA, transB, bs, m, n,
-                k, stream);
+                k, stream, get_grouped_gemm_num_cu(num_cu));
         }
     } else {
         PRIMUS_TURBO_CHECK(false, "GroupedGemmFp8 only support fp8");

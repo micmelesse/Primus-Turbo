@@ -173,6 +173,7 @@ def grouped_gemm_csrc_fp8_row_impl(
     trans_a: bool,
     trans_b: bool,
     out_dtype: torch.dtype,
+    num_cu: int | None,
 ) -> torch.Tensor:
     assert a.dim() == 2, f"a must be 2D, got {a.shape}"
     assert b.dim() == 3, f"b must be 3D, got {b.shape}"
@@ -181,7 +182,7 @@ def grouped_gemm_csrc_fp8_row_impl(
     assert trans_a == False
 
     out = torch.ops.primus_turbo_cpp_extension.grouped_gemm_fp8(
-        a, b, group_lens, group_offs, trans_a, trans_b, out_dtype
+        a, b, group_lens, group_offs, trans_a, trans_b, out_dtype, num_cu
     )
     out = torch.ops.primus_turbo_cpp_extension.grouped_gemm_fp8_dequant(
         out, group_lens, group_offs, a_scales, b_scales
@@ -199,6 +200,7 @@ def grouped_gemm_variable_k_fp8_row_csrc_impl(
     trans_a: bool,
     trans_b: bool,
     out_dtype: torch.dtype,
+    num_cu: int | None,
 ) -> torch.Tensor:
     assert a.dim() == 2, f"a must be 2D, got {a.shape}"
     assert b.dim() == 2, f"b must be 2D, got {b.shape}"
@@ -206,7 +208,7 @@ def grouped_gemm_variable_k_fp8_row_csrc_impl(
     assert b.dtype in [turbo.float8_e4m3, turbo.float8_e5m2], f"b must be float8, got {b.dtype}"
     assert trans_a == True and trans_b == False, "Only trans_a=True and trans_b=False are supported."
     out = torch.ops.primus_turbo_cpp_extension.grouped_gemm_fp8_variable_k(
-        a, b, group_lens, group_offs, trans_a, trans_b, out_dtype
+        a, b, group_lens, group_offs, trans_a, trans_b, out_dtype, num_cu
     )
     out = torch.ops.primus_turbo_cpp_extension.grouped_gemm_fp8_dequant_variable_k(
         out,
@@ -227,6 +229,7 @@ def grouped_gemm_csrc_fp8_tensor_impl(
     trans_a: bool,
     trans_b: bool,
     out_dtype: torch.dtype,
+    num_cu: int | None,
 ) -> torch.Tensor:
     assert a.dim() == 2, f"a must be 2D, got {a.shape}"
     assert b.dim() == 3, f"b must be 3D, got {b.shape}"
@@ -235,7 +238,7 @@ def grouped_gemm_csrc_fp8_tensor_impl(
     assert trans_a == False
 
     out = torch.ops.primus_turbo_cpp_extension.grouped_gemm_fp8(
-        a, b, group_lens, group_offs, trans_a, trans_b, out_dtype
+        a, b, group_lens, group_offs, trans_a, trans_b, out_dtype, num_cu
     )
     scales = a_scales * b_scales
     out = out * scales
@@ -252,6 +255,7 @@ def grouped_gemm_variable_k_fp8_tensor_csrc_impl(
     trans_a: bool,
     trans_b: bool,
     out_dtype: torch.dtype,
+    num_cu: int | None,
 ) -> torch.Tensor:
     assert a.dim() == 2, f"a must be 2D, got {a.shape}"
     assert b.dim() == 2, f"b must be 2D, got {b.shape}"
@@ -259,7 +263,7 @@ def grouped_gemm_variable_k_fp8_tensor_csrc_impl(
     assert b.dtype in [turbo.float8_e4m3, turbo.float8_e5m2], f"b must be float8, got {b.dtype}"
     assert trans_a == True and trans_b == False, "Only trans_a=True and trans_b=False are supported."
     out = torch.ops.primus_turbo_cpp_extension.grouped_gemm_fp8_variable_k(
-        a, b, group_lens, group_offs, trans_a, trans_b, out_dtype
+        a, b, group_lens, group_offs, trans_a, trans_b, out_dtype, num_cu
     )
     scales = a_scales * b_scales
     out = out * scales

@@ -225,8 +225,9 @@ class GroupedGemmFP8RowFunc(torch.autograd.Function):
         b: torch.Tensor,
         group_lens: torch.Tensor,  # [B,] int64
         group_offs: torch.Tensor,  # [B+1,] int64
+        trans_b: bool,
         config: Float8QuantConfig,
-        trans_b: bool = True,
+        num_cu: int | None,
     ):
 
         assert config.granularity == ScalingGranularity.ROWWISE
@@ -251,6 +252,7 @@ class GroupedGemmFP8RowFunc(torch.autograd.Function):
             trans_a=False,
             trans_b=trans_b,
             out_dtype=a.dtype,
+            num_cu=num_cu,
         )
 
         # we need a/b do col quant for backward.
@@ -266,7 +268,8 @@ class GroupedGemmFP8RowFunc(torch.autograd.Function):
         ctx.trans_a = False
         ctx.trans_b = trans_b
         ctx.config = config
-        ctx.dtype = a.dtype
+        ctx.out_dtype = a.dtype
+        ctx.num_cu = num_cu
         return out
 
     @staticmethod
@@ -291,7 +294,8 @@ class GroupedGemmFP8RowFunc(torch.autograd.Function):
             group_offs,
             trans_a=False,
             trans_b=not ctx.trans_b,
-            out_dtype=ctx.dtype,
+            out_dtype=ctx.out_dtype,
+            num_cu=ctx.num_cu,
         )
 
         grad_out_scale, grad_out_scale_inv = calc_scale_and_scale_inv_rowwise(
@@ -313,10 +317,11 @@ class GroupedGemmFP8RowFunc(torch.autograd.Function):
             group_offs,
             trans_a=True,
             trans_b=False,
-            out_dtype=ctx.dtype,
+            out_dtype=ctx.out_dtype,
+            num_cu=ctx.num_cu,
         )
 
-        return grad_a, grad_b, None, None, None, None
+        return grad_a, grad_b, None, None, None, None, None
 
 
 def grouped_gemm_fp8_rowwise(
@@ -326,6 +331,7 @@ def grouped_gemm_fp8_rowwise(
     group_offs: torch.Tensor | None = None,
     trans_b: bool = True,
     config: Union[Float8QuantConfig, None] = None,
+    num_cu: int | None = None,
 ) -> torch.Tensor:
     """ """
     if group_offs is None:
@@ -333,7 +339,7 @@ def grouped_gemm_fp8_rowwise(
     if config is None:
         config = Float8QuantConfig(granularity=ScalingGranularity.ROWWISE)
 
-    return GroupedGemmFP8RowFunc.apply(a, b, group_lens, group_offs, config, trans_b)
+    return GroupedGemmFP8RowFunc.apply(a, b, group_lens, group_offs, trans_b, config, num_cu)
 
 
 @torch.compile
@@ -353,8 +359,9 @@ class GroupedGemmFP8TensorFunc(torch.autograd.Function):
         b: torch.Tensor,
         group_lens: torch.Tensor,  # [B,] int64
         group_offs: torch.Tensor,  # [B+1,] int64
+        trans_b: bool,
         config: Float8QuantConfig,
-        trans_b: bool = True,
+        num_cu: int | None,
     ):
 
         assert config.granularity == ScalingGranularity.TENSORWISE
@@ -379,13 +386,15 @@ class GroupedGemmFP8TensorFunc(torch.autograd.Function):
             trans_a=False,
             trans_b=trans_b,
             out_dtype=a.dtype,
+            num_cu=num_cu,
         )
 
         ctx.save_for_backward(a_fp8, b_fp8, a_scale_inv, b_scale_inv, group_lens, group_offs)
         ctx.trans_a = False
         ctx.trans_b = trans_b
         ctx.config = config
-        ctx.dtype = a.dtype
+        ctx.out_dtype = a.dtype
+        ctx.num_cu = num_cu
         return out
 
     @staticmethod
@@ -410,7 +419,8 @@ class GroupedGemmFP8TensorFunc(torch.autograd.Function):
             group_offs,
             trans_a=False,
             trans_b=not ctx.trans_b,
-            out_dtype=ctx.dtype,
+            out_dtype=ctx.out_dtype,
+            num_cu=ctx.num_cu,
         )
 
         lhs, rhs = (grad_out_fp8, a_fp8_col) if ctx.trans_b else (a_fp8_col, grad_out_fp8)
@@ -427,10 +437,11 @@ class GroupedGemmFP8TensorFunc(torch.autograd.Function):
             group_offs,
             trans_a=True,
             trans_b=False,
-            out_dtype=ctx.dtype,
+            out_dtype=ctx.out_dtype,
+            num_cu=ctx.num_cu,
         )
 
-        return grad_a, grad_b, None, None, None, None
+        return grad_a, grad_b, None, None, None, None, None
 
 
 def grouped_gemm_fp8_tensorwise(
@@ -440,6 +451,7 @@ def grouped_gemm_fp8_tensorwise(
     group_offs: torch.Tensor | None = None,
     trans_b: bool = True,
     config: Union[Float8QuantConfig, None] = None,
+    num_cu: int | None = None,
 ) -> torch.Tensor:
     """ """
     if group_offs is None:
@@ -447,4 +459,4 @@ def grouped_gemm_fp8_tensorwise(
     if config is None:
         config = Float8QuantConfig(granularity=ScalingGranularity.TENSORWISE)
 
-    return GroupedGemmFP8TensorFunc.apply(a, b, group_lens, group_offs, config, trans_b)
+    return GroupedGemmFP8TensorFunc.apply(a, b, group_lens, group_offs, trans_b, config, num_cu)
