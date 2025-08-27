@@ -38,7 +38,9 @@ def block_scaling_node(tensor, use_fp8, BLOCK_M=FIXED_BLOCK_M, float8_dtype=get_
         B, H, L, D = tensor.shape
         tensor = tensor.reshape(B, H, L // BLOCK_M, BLOCK_M, D).reshape(B, H, L // BLOCK_M, BLOCK_M * D)
         MAX_E4M3 = torch.finfo(float8_dtype).max
-        scale = MAX_E4M3 / tensor.abs().max(dim=-1)[0]
+        tensor_max = tensor.abs().max(dim=-1)[0]
+        tensor_max = torch.where(tensor_max == 0, MAX_E4M3, tensor_max)
+        scale = MAX_E4M3 / tensor_max
         tensor = tensor * scale.reshape(scale.shape + (1,))
         tensor = tensor.clamp(-MAX_E4M3, MAX_E4M3)
         tensor = tensor.to(float8_dtype)
@@ -57,7 +59,7 @@ def quant_v_get_p_scale(v, use_fp8: bool):
     if use_fp8:
         range_v = torch.max(torch.abs(v))
 
-        float8_fw = torch.float8_e4m3fnuz
+        float8_fw = get_f8_fwd_dtype()
         dtype_max = torch.finfo(float8_fw).max
 
         v_scale = dtype_max / range_v
@@ -66,7 +68,6 @@ def quant_v_get_p_scale(v, use_fp8: bool):
 
     else:
         v_scale = torch.tensor([1.0], device=v.device)
-        p_scale = 1.0
         p_scale = 1.0
 
     return v, v_scale, p_scale
@@ -97,60 +98,3 @@ class All2AllAttentionSharder(AttentionSharder):
             output_list.append(t.chunk(cp_size, seq_dim)[cp_rank].contiguous())
 
         return output_list
-
-
-class All2AllAttentionCommunicator:
-    """All2AllAttentionCommunicator Impl"""
-
-    cp_comm_streams = []
-
-    def __init__(self, cp_group):
-        self.cp_group = cp_group
-        self.done_flags = None
-        if len(All2AllAttentionCommunicator.cp_comm_streams) == 0:
-            All2AllAttentionCommunicator.cp_comm_streams.append(torch.cuda.Stream())
-            All2AllAttentionCommunicator.cp_comm_streams.append(torch.cuda.Stream())
-
-    def data_exchange_over_cp_groups(
-        self, send_buffers: List[torch.Tensor], before_all2all_funcs=None, after_all2all_funcs=None
-    ):
-        recv_buffers = [torch.empty_like(x) for x in send_buffers]
-
-        cp_streams = All2AllAttentionCommunicator.cp_comm_streams
-        for stream in cp_streams:
-            stream.wait_stream(torch.cuda.current_stream())
-
-        before_all2all_done_events = [torch.cuda.Event() for _ in range(len(send_buffers))]
-        all2all_done_flags = [None for _ in range(len(send_buffers))]
-
-        # 3-stages pipeline
-        pipeline_rounds = len(send_buffers) + 2
-        for i in range(pipeline_rounds):
-            if i < pipeline_rounds - 2:
-                with torch.cuda.stream(cp_streams[0]):
-                    if before_all2all_funcs is not None:
-                        send_buffers[i], recv_buffers[i] = before_all2all_funcs[i](
-                            send_buffers[i], recv_buffers[i]
-                        )
-                    send_buffers[i] = send_buffers[i].contiguous().flatten()
-                    before_all2all_done_events[i].record()
-
-            if i > 0 and i < pipeline_rounds - 1:
-                before_all2all_done_events[i - 1].wait()
-                send_tensor = send_buffers[i - 1]
-                recv_tensor = recv_buffers[i - 1]
-
-                all2all_done_flags[i - 1] = torch.distributed.all_to_all_single(
-                    recv_tensor, send_tensor, group=self.cp_group, async_op=True
-                )
-
-            if i > 1:
-                with torch.cuda.stream(cp_streams[1]):
-                    all2all_done_flags[i - 2].wait()
-                    all2all_done_tensor = recv_buffers[i - 2]
-                    if after_all2all_funcs is not None:
-                        recv_buffers[i - 2] = after_all2all_funcs[i - 2](all2all_done_tensor)
-
-        for stream in cp_streams:
-            torch.cuda.current_stream().wait_stream(stream)
-        return recv_buffers

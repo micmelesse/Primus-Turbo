@@ -67,8 +67,8 @@ class BlockwiseFP8GroupedGemmFunc(torch.autograd.Function):
             scale_group_size_m=1,
             scale_group_size_n=block_size,
             scale_group_size_k=block_size,
-            transA=False,
-            transB=True,
+            trans_a=False,
+            trans_b=True,
         )
 
         ctx.save_for_backward(x, w_fp8, w_scales, seg_lens, seg_indptr)
@@ -103,8 +103,8 @@ class BlockwiseFP8GroupedGemmFunc(torch.autograd.Function):
             scale_group_size_m=1,
             scale_group_size_n=block_size,
             scale_group_size_k=block_size,
-            transA=False,
-            transB=False,
+            trans_a=False,
+            trans_b=False,
         )
 
         # TODO: Opt
@@ -150,8 +150,8 @@ class BlockwiseFP8GroupedGemmFunc(torch.autograd.Function):
             scale_group_size_m=1,
             scale_group_size_n=1,
             scale_group_size_k=block_size,
-            transA=True,
-            transB=False,
+            trans_a=True,
+            trans_b=False,
         )
 
         return (

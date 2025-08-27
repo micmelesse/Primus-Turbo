@@ -64,7 +64,7 @@ def bench_turbo_attention(batch, config, causal: bool, backend_type: str, use_fp
 
     o_ref = attention_vanilla_forward_pytorch_ref_impl(query_ref, key_ref, value_ref, sm_scale, causal)
     if use_fp8 == False:
-        fn_forward = lambda: pt.ops.attention(
+        fn_forward = lambda: pt.ops.flash_attn_func(
             query,
             key,
             value,

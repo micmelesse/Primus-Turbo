@@ -28,7 +28,7 @@ public:
     // virtual void init_args() = 0;
     virtual void run(const ck_tile::stream_config &stream_cfg,
                      const ck_tile::index_t group_num,
-                     void *args_ptr) = 0;
+                     void *args_ptr, const uint32_t num_cu) = 0;
 };
 
 
@@ -121,7 +121,7 @@ public:
 public:
     void run(const ck_tile::stream_config &stream_cfg,
              const ck_tile::index_t group_num,
-             void *args_ptr) override;
+             void *args_ptr, const uint32_t num_cu) override;
 };
 
 

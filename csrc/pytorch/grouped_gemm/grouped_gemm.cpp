@@ -5,6 +5,7 @@
 #include "primus_turbo/grouped_gemm.h"
 #include "../extensions.h"
 #include "../type_traits.h"
+#include "primus_turbo/arch.h"
 
 namespace primus_turbo::pytorch {
 
@@ -27,8 +28,16 @@ at::Tensor grouped_gemm_compute_offs(at::Tensor &group_lens) {
     return group_offs;
 }
 
+uint32_t get_grouped_gemm_num_cu(c10::optional<int64_t> num_cu) {
+    auto    stream     = at::cuda::getCurrentCUDAStream();
+    int32_t cus        = get_multi_processor_count(stream.device_index());
+    int32_t num_cu_val = num_cu.has_value() ? num_cu.value() : -1;
+    return num_cu_val <= 0 ? uint32_t(cus) : uint32_t(std::min(num_cu_val, cus));
+}
+
 at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
-                        at::Tensor &group_offs, const bool transA, const bool transB) {
+                        at::Tensor &group_offs, const bool transA, const bool transB,
+                        c10::optional<int64_t> num_cu) {
     // TODO:
     auto out_dtype = a.scalar_type();
 
@@ -61,7 +70,7 @@ at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
             reinterpret_cast<const BType *>(b.data_ptr()), reinterpret_cast<CType *>(c.data_ptr()),
             reinterpret_cast<const int64_t *>(group_lens.data_ptr()),
             reinterpret_cast<const int64_t *>(group_offs.data_ptr()), transA, transB, bs, m, n, k,
-            stream);
+            stream, get_grouped_gemm_num_cu(num_cu));
     } else if (a.dtype() == at::kBFloat16) {
         using AType = typename TorchToCKTileType<at::kBFloat16>::type;
         using BType = AType;
@@ -71,7 +80,7 @@ at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
             reinterpret_cast<const BType *>(b.data_ptr()), reinterpret_cast<CType *>(c.data_ptr()),
             reinterpret_cast<const int64_t *>(group_lens.data_ptr()),
             reinterpret_cast<const int64_t *>(group_offs.data_ptr()), transA, transB, bs, m, n, k,
-            stream);
+            stream, get_grouped_gemm_num_cu(num_cu));
     } else {
         PRIMUS_TURBO_CHECK(false, "GroupedGemm only support float16 and bfloat16");
     }
@@ -161,7 +170,8 @@ at::Tensor grouped_gemm_fp8(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens
 }
 
 at::Tensor grouped_gemm_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
-                                   at::Tensor &group_offs, const bool transA, const bool transB) {
+                                   at::Tensor &group_offs, const bool transA, const bool transB,
+                                   c10::optional<int64_t> num_cu) {
     // TODO: output datatype
     auto out_dtype = a.scalar_type();
 
@@ -194,7 +204,7 @@ at::Tensor grouped_gemm_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &gro
             reinterpret_cast<const BType *>(b.data_ptr()), reinterpret_cast<CType *>(c.data_ptr()),
             reinterpret_cast<const int64_t *>(group_lens.data_ptr()),
             reinterpret_cast<const int64_t *>(group_offs.data_ptr()), transA, transB, bs, m, n, k,
-            stream);
+            stream, get_grouped_gemm_num_cu(num_cu));
     } else if (a.dtype() == at::kBFloat16) {
         using AType = typename TorchToCKTileType<at::kBFloat16>::type;
         using BType = AType;
@@ -204,7 +214,7 @@ at::Tensor grouped_gemm_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &gro
             reinterpret_cast<const BType *>(b.data_ptr()), reinterpret_cast<CType *>(c.data_ptr()),
             reinterpret_cast<const int64_t *>(group_lens.data_ptr()),
             reinterpret_cast<const int64_t *>(group_offs.data_ptr()), transA, transB, bs, m, n, k,
-            stream);
+            stream, get_grouped_gemm_num_cu(num_cu));
     } else {
         PRIMUS_TURBO_CHECK(false, "GroupedGemm only support float16 and bfloat16");
     }

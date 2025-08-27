@@ -10,12 +10,14 @@ template <typename ADataType, typename BDataType, typename CDataType, typename A
           typename BLayout, typename CLayout, typename TileConfig, typename AccDataType>
 void CKGroupedGemmRunner<ADataType, BDataType, CDataType, ALayout, BLayout, CLayout, TileConfig,
                          AccDataType>::run(const ck_tile::stream_config &stream_cfg,
-                                           const ck_tile::index_t group_num, void *args_ptr) {
+                                           const ck_tile::index_t group_num, void *args_ptr,
+                                           const uint32_t num_cu) {
 
     constexpr int kBlockPerCu = 1;
 
     constexpr dim3 blocks = Kernel::BlockSize();
-    const dim3     grids  = Kernel::MaxOccupancyGridSize(stream_cfg);
+    dim3           grids  = Kernel::MaxOccupancyGridSize(stream_cfg);
+    grids.x               = std::min(grids.x, num_cu);
     ck_tile::launch_kernel(
         stream_cfg, ck_tile::make_kernel<blocks.x, kBlockPerCu>(
                         Kernel{}, grids, blocks, 0,
