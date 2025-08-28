@@ -108,9 +108,10 @@ at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
     return c;
 }
 
-at::Tensor grouped_gemm_fp8(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
-                            at::Tensor &group_offs, const bool transA, const bool transB,
-                            at::ScalarType out_dtype, c10::optional<int64_t> num_cu) {
+at::Tensor grouped_gemm_fp8(at::Tensor &a, at::Tensor &b, at::Tensor &a_scales,
+                            at::Tensor &b_scales, at::Tensor &group_lens, at::Tensor &group_offs,
+                            const bool transA, const bool transB, at::ScalarType out_dtype,
+                            const std::string &granularity, c10::optional<int64_t> num_cu) {
 
     // Check
     PRIMUS_TURBO_CHECK(is_8bit_floating_point_dtype(a.scalar_type()));
@@ -175,7 +176,19 @@ at::Tensor grouped_gemm_fp8(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens
     } else {
         PRIMUS_TURBO_CHECK(false, "GroupedGemmFp8 only support fp8/bf8");
     }
-    return c;
+
+    // Dequant:
+    // TODO: When CK ready, remove below code
+    {
+        if (granularity == "TENSORWISE") {
+            return c * a_scales * b_scales;
+        } else if (granularity == "ROWWISE") {
+            return grouped_gemm_fp8_dequant(c, group_lens, group_offs, a_scales, b_scales);
+        } else {
+            PRIMUS_TURBO_CHECK(false, "Unsupported granularity");
+        }
+    }
+    // return c;
 }
 
 at::Tensor grouped_gemm_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
@@ -227,9 +240,11 @@ at::Tensor grouped_gemm_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &gro
     return c;
 }
 
-at::Tensor grouped_gemm_fp8_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
+at::Tensor grouped_gemm_fp8_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &a_scales,
+                                       at::Tensor &b_scales, at::Tensor &group_lens,
                                        at::Tensor &group_offs, const bool transA, const bool transB,
-                                       at::ScalarType out_dtype, c10::optional<int64_t> num_cu) {
+                                       at::ScalarType out_dtype, const std::string &granularity,
+                                       c10::optional<int64_t> num_cu) {
     // Check
     PRIMUS_TURBO_CHECK(is_8bit_floating_point_dtype(a.scalar_type()));
     PRIMUS_TURBO_CHECK(is_8bit_floating_point_dtype(b.scalar_type()));
@@ -283,7 +298,19 @@ at::Tensor grouped_gemm_fp8_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor 
         PRIMUS_TURBO_CHECK(false, "GroupedGemmFp8 only support fp8");
     }
 
-    return c;
+    // Dequant:
+    // TODO: When CK ready, remove below code
+    {
+        if (granularity == "TENSORWISE") {
+            return c * a_scales * b_scales;
+        } else if (granularity == "ROWWISE") {
+            return grouped_gemm_fp8_dequant_variable_k(c, a_scales, b_scales);
+        } else {
+            PRIMUS_TURBO_CHECK(false, "Unsupported granularity");
+        }
+    }
+
+    // return c;
 }
 
 } // namespace primus_turbo::pytorch
