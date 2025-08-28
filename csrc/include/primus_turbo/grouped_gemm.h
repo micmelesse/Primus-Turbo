@@ -14,20 +14,33 @@ namespace primus_turbo {
 
 std::int64_t get_ck_grouped_gemm_args_sizes(const int group_num);
 
-template <typename ADataType, typename BDataType, typename CDataType, typename AccDataType = float>
-void ck_grouped_gemm(void *args_ptr, const ADataType *a_ptr, const BDataType *b_ptr,
-                     CDataType *c_ptr, const int64_t *group_lens_ptr, const int64_t *group_offs_ptr,
-                     const bool transA, const bool transB, const ck_tile::index_t group_num,
-                     const ck_tile::index_t m, const ck_tile::index_t n, const ck_tile::index_t k,
-                     hipStream_t stream, const uint32_t num_cu);
+template <typename AType, typename BType, typename CType> struct CKGroupedGemmParams {
+    void *args_ptr = nullptr;
+
+    const AType *a_ptr = nullptr;
+    const BType *b_ptr = nullptr;
+    CType       *c_ptr = nullptr;
+
+    const int64_t *group_lens_ptr = nullptr;
+    const int64_t *group_offs_ptr = nullptr;
+
+    bool transA = false;
+    bool transB = false;
+
+    ck_tile::index_t group_num = 0;
+    ck_tile::index_t m         = 0;
+    ck_tile::index_t n         = 0;
+    ck_tile::index_t k         = 0;
+
+    hipStream_t stream = nullptr;
+    uint32_t    num_cu = 0;
+};
 
 template <typename ADataType, typename BDataType, typename CDataType, typename AccDataType = float>
-void ck_grouped_gemm_variable_k(void *args_ptr, const ADataType *a_ptr, const BDataType *b_ptr,
-                                CDataType *c_ptr, const int64_t *group_lens_ptr,
-                                const int64_t *group_offs_ptr, const bool transA, const bool transB,
-                                const ck_tile::index_t group_num, const ck_tile::index_t m,
-                                const ck_tile::index_t n, const ck_tile::index_t k,
-                                hipStream_t stream, const uint32_t num_cu);
+void ck_grouped_gemm(const CKGroupedGemmParams<ADataType, BDataType, CDataType> &params);
+
+template <typename ADataType, typename BDataType, typename CDataType, typename AccDataType = float>
+void ck_grouped_gemm_variable_k(const CKGroupedGemmParams<ADataType, BDataType, CDataType> &params);
 
 template <typename IndexType>
 void compute_group_offs(const IndexType *group_lens_ptr, IndexType *group_offs_ptr,
