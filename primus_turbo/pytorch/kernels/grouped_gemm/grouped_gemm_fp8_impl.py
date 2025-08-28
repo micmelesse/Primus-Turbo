@@ -41,20 +41,19 @@ def grouped_gemm_fp8_csrc_impl(
     ], f"b must be float8, got {b.dtype}"
     assert trans_a == False
 
-    out = torch.ops.primus_turbo_cpp_extension.grouped_gemm_fp8(
-        a, b, group_lens, group_offs, trans_a, trans_b, out_dtype, num_cu
+    return torch.ops.primus_turbo_cpp_extension.grouped_gemm_fp8(
+        a,
+        b,
+        a_scales,
+        b_scales,
+        group_lens,
+        group_offs,
+        trans_a,
+        trans_b,
+        out_dtype,
+        granularity.name,
+        num_cu,
     )
-
-    # Dequant
-    # TODO: When CK ready, remove below code
-    if granularity == ScalingGranularity.TENSORWISE:
-        return out * a_scales * b_scales
-    elif granularity == ScalingGranularity.ROWWISE:
-        return torch.ops.primus_turbo_cpp_extension.grouped_gemm_fp8_dequant(
-            out, group_lens, group_offs, a_scales, b_scales
-        )
-    else:
-        assert False
 
 
 def grouped_gemm_fp8_variable_k_csrc_impl(
@@ -82,22 +81,19 @@ def grouped_gemm_fp8_variable_k_csrc_impl(
     ], f"b must be float8, got {b.dtype}"
     assert trans_a == True and trans_b == False, "Only trans_a=True and trans_b=False are supported."
 
-    out = torch.ops.primus_turbo_cpp_extension.grouped_gemm_fp8_variable_k(
-        a, b, group_lens, group_offs, trans_a, trans_b, out_dtype, num_cu
+    return torch.ops.primus_turbo_cpp_extension.grouped_gemm_fp8_variable_k(
+        a,
+        b,
+        a_scales,
+        b_scales,
+        group_lens,
+        group_offs,
+        trans_a,
+        trans_b,
+        out_dtype,
+        granularity.name,
+        num_cu,
     )
-
-    # Dequant
-    # TODO: When CK ready, remove below code
-    if granularity == ScalingGranularity.TENSORWISE:
-        return out * a_scales * b_scales
-    elif granularity == ScalingGranularity.ROWWISE:
-        return torch.ops.primus_turbo_cpp_extension.grouped_gemm_fp8_dequant_variable_k(
-            out,
-            a_scales,
-            b_scales,
-        )
-    else:
-        assert False
 
 
 def grouped_gemm_fp8_blockwise_impl(
