@@ -33,7 +33,10 @@ from primus_turbo.pytorch.kernels.quantize import (
     quant_fp8_tensorwise_impl,
 )
 
-__all__ = ["grouped_gemm_fp8_blockwise", "grouped_gemm_fp8_rowwise", "grouped_gemm_fp8_tensorwise"]
+__all__ = [
+    "grouped_gemm_fp8",
+    "grouped_gemm_fp8_blockwise",
+]
 
 
 class BlockwiseFP8GroupedGemmFunc(torch.autograd.Function):
@@ -219,6 +222,15 @@ def calc_scale_and_scale_inv_rowwise(x: torch.Tensor, fp8_max: float, row_wise: 
 
 class GroupedGemmFP8RowFunc(torch.autograd.Function):
     @staticmethod
+    def get_fp8_dtype(format: Format, is_fwd_stage: bool):
+        if format == Format.E4M3:
+            return float8_e4m3
+        elif format == Format.E5M2:
+            return float8_e5m2
+        else:
+            raise ValueError(f"Unsupported FP8 format: {format}")
+
+    @staticmethod
     def forward(
         ctx,
         a: torch.Tensor,
@@ -233,8 +245,8 @@ class GroupedGemmFP8RowFunc(torch.autograd.Function):
         assert config.granularity == ScalingGranularity.ROWWISE
         assert a.ndim == 2, "Input tensor must be 3-dimensions."
         assert b.ndim == 3, "Weight tensor must be 3-dimensional."
-        a_dtype = float8_e4m3
-        b_dtype = float8_e4m3
+        a_dtype = GroupedGemmFP8RowFunc.get_fp8_dtype(config.format, True)
+        b_dtype = GroupedGemmFP8RowFunc.get_fp8_dtype(config.format, True)
 
         a_scale, a_scale_inv = calc_scale_and_scale_inv_rowwise(a, torch.finfo(a_dtype).max, row_wise=True)
         b_scale, b_scale_inv = calc_scale_and_scale_inv_rowwise(b, torch.finfo(b_dtype).max, row_wise=trans_b)
@@ -275,9 +287,7 @@ class GroupedGemmFP8RowFunc(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_out):
         a_fp8_col, b_fp8_col, a_scale_inv, b_scale_inv, group_lens, group_offs = ctx.saved_tensors
-        config = ctx.config
-
-        grad_out_dtype = float8_e4m3 if config.format == Format.E4M3 else float8_e5m2
+        grad_out_dtype = GroupedGemmFP8RowFunc.get_fp8_dtype(ctx.config.format, False)
 
         grad_out_scale, grad_out_scale_inv = calc_scale_and_scale_inv_rowwise(
             grad_out, torch.finfo(grad_out_dtype).max, row_wise=True
@@ -324,24 +334,6 @@ class GroupedGemmFP8RowFunc(torch.autograd.Function):
         return grad_a, grad_b, None, None, None, None, None
 
 
-def grouped_gemm_fp8_rowwise(
-    a: torch.Tensor,
-    b: torch.Tensor,
-    group_lens: torch.Tensor,
-    group_offs: torch.Tensor | None = None,
-    trans_b: bool = True,
-    config: Union[Float8QuantConfig, None] = None,
-    num_cu: int | None = None,
-) -> torch.Tensor:
-    """ """
-    if group_offs is None:
-        group_offs = grouped_gemm_compute_offs(group_lens)
-    if config is None:
-        config = Float8QuantConfig(granularity=ScalingGranularity.ROWWISE)
-
-    return GroupedGemmFP8RowFunc.apply(a, b, group_lens, group_offs, trans_b, config, num_cu)
-
-
 @torch.compile
 def calc_scale_and_scale_inv_tensorwise(x: torch.Tensor, fp8_max: float):
     amax = x.abs().amax()
@@ -352,6 +344,16 @@ def calc_scale_and_scale_inv_tensorwise(x: torch.Tensor, fp8_max: float):
 
 
 class GroupedGemmFP8TensorFunc(torch.autograd.Function):
+
+    @staticmethod
+    def get_fp8_dtype(format: Format, is_fwd_stage: bool):
+        if format == Format.E4M3:
+            return float8_e4m3
+        elif format == Format.E5M2:
+            return float8_e5m2
+        else:
+            raise ValueError(f"Unsupported FP8 format: {format}")
+
     @staticmethod
     def forward(
         ctx,
@@ -367,8 +369,8 @@ class GroupedGemmFP8TensorFunc(torch.autograd.Function):
         assert config.granularity == ScalingGranularity.TENSORWISE
         assert a.ndim == 2, "Input tensor must be 3-dimensions."
         assert b.ndim == 3, "Weight tensor must be 3-dimensional."
-        a_dtype = float8_e4m3
-        b_dtype = float8_e4m3
+        a_dtype = GroupedGemmFP8TensorFunc.get_fp8_dtype(config.format, True)
+        b_dtype = GroupedGemmFP8TensorFunc.get_fp8_dtype(config.format, True)
 
         a_scale, a_scale_inv = calc_scale_and_scale_inv_tensorwise(a, torch.finfo(a_dtype).max)
         b_scale, b_scale_inv = calc_scale_and_scale_inv_tensorwise(b, torch.finfo(b_dtype).max)
@@ -400,9 +402,8 @@ class GroupedGemmFP8TensorFunc(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_out):
         a_fp8_col, b_fp8_col, a_scale_inv, b_scale_inv, group_lens, group_offs = ctx.saved_tensors
-        config = ctx.config
 
-        grad_out_dtype = float8_e4m3 if config.format == Format.E4M3 else float8_e5m2
+        grad_out_dtype = GroupedGemmFP8TensorFunc.get_fp8_dtype(ctx.config.format, False)
 
         grad_out_scale, grad_out_scale_inv = calc_scale_and_scale_inv_tensorwise(
             grad_out, torch.finfo(grad_out_dtype).max
@@ -444,7 +445,7 @@ class GroupedGemmFP8TensorFunc(torch.autograd.Function):
         return grad_a, grad_b, None, None, None, None, None
 
 
-def grouped_gemm_fp8_tensorwise(
+def grouped_gemm_fp8(
     a: torch.Tensor,
     b: torch.Tensor,
     group_lens: torch.Tensor,
@@ -457,6 +458,13 @@ def grouped_gemm_fp8_tensorwise(
     if group_offs is None:
         group_offs = grouped_gemm_compute_offs(group_lens)
     if config is None:
-        config = Float8QuantConfig(granularity=ScalingGranularity.TENSORWISE)
+        config = Float8QuantConfig()
 
-    return GroupedGemmFP8TensorFunc.apply(a, b, group_lens, group_offs, trans_b, config, num_cu)
+    args = (a, b, group_lens, group_offs, trans_b, config, num_cu)
+
+    if config.granularity == ScalingGranularity.TENSORWISE:
+        return GroupedGemmFP8TensorFunc.apply(*args)
+    elif config.granularity == ScalingGranularity.ROWWISE:
+        return GroupedGemmFP8RowFunc.apply(*args)
+    else:
+        raise ValueError(f"Unsupported FP8 ScalingGranularity: {config.granularity}")
