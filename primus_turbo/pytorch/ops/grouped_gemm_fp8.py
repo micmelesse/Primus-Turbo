@@ -19,12 +19,10 @@ from primus_turbo.pytorch.kernels.gemm.gemm_fp8_impl import (
 )
 from primus_turbo.pytorch.kernels.grouped_gemm.grouped_gemm_fp8_impl import (
     grouped_gemm_compute_offs,
-    grouped_gemm_csrc_fp8_row_impl,
-    grouped_gemm_csrc_fp8_tensor_impl,
     grouped_gemm_fp8_blockwise_impl,
+    grouped_gemm_fp8_csrc_impl,
+    grouped_gemm_fp8_variable_k_csrc_impl,
     grouped_gemm_variable_k_fp8_blockwise_impl,
-    grouped_gemm_variable_k_fp8_row_csrc_impl,
-    grouped_gemm_variable_k_fp8_tensor_csrc_impl,
 )
 from primus_turbo.pytorch.kernels.quantize import (
     quant_fp8_blockwise_impl,
@@ -254,7 +252,7 @@ class GroupedGemmFP8RowFunc(torch.autograd.Function):
         a_fp8_row = quant_fp8_rowwise_impl(a, a_scale, a_dtype, row_quant=True)
         b_fp8_row = quant_fp8_rowwise_impl(b, b_scale, b_dtype, row_quant=trans_b)
 
-        out = grouped_gemm_csrc_fp8_row_impl(
+        out = grouped_gemm_fp8_csrc_impl(
             a_fp8_row,
             b_fp8_row,
             a_scale_inv,
@@ -264,6 +262,7 @@ class GroupedGemmFP8RowFunc(torch.autograd.Function):
             trans_a=False,
             trans_b=trans_b,
             out_dtype=a.dtype,
+            granularity=config.granularity,
             num_cu=num_cu,
         )
 
@@ -295,7 +294,7 @@ class GroupedGemmFP8RowFunc(torch.autograd.Function):
 
         grad_out_fp8 = quant_fp8_rowwise_impl(grad_out, grad_out_scale, grad_out_dtype, row_quant=True)
 
-        grad_a = grouped_gemm_csrc_fp8_row_impl(
+        grad_a = grouped_gemm_fp8_csrc_impl(
             grad_out_fp8,
             b_fp8_col,
             grad_out_scale_inv,
@@ -305,6 +304,7 @@ class GroupedGemmFP8RowFunc(torch.autograd.Function):
             trans_a=False,
             trans_b=not ctx.trans_b,
             out_dtype=ctx.out_dtype,
+            granularity=ctx.config.granularity,
             num_cu=ctx.num_cu,
         )
 
@@ -318,7 +318,7 @@ class GroupedGemmFP8RowFunc(torch.autograd.Function):
             (grad_out_scale_inv, a_scale_inv) if ctx.trans_b else (a_scale_inv, grad_out_scale_inv)
         )
 
-        grad_b = grouped_gemm_variable_k_fp8_row_csrc_impl(
+        grad_b = grouped_gemm_fp8_variable_k_csrc_impl(
             lhs,
             rhs,
             lhs_scale,
@@ -328,6 +328,7 @@ class GroupedGemmFP8RowFunc(torch.autograd.Function):
             trans_a=True,
             trans_b=False,
             out_dtype=ctx.out_dtype,
+            granularity=ctx.config.granularity,
             num_cu=ctx.num_cu,
         )
 
@@ -378,7 +379,7 @@ class GroupedGemmFP8TensorFunc(torch.autograd.Function):
         a_fp8 = quant_fp8_tensorwise_impl(a, a_scale, a_dtype)
         b_fp8 = quant_fp8_tensorwise_impl(b, b_scale, b_dtype)
 
-        out = grouped_gemm_csrc_fp8_tensor_impl(
+        out = grouped_gemm_fp8_csrc_impl(
             a_fp8,
             b_fp8,
             a_scale_inv,
@@ -388,6 +389,7 @@ class GroupedGemmFP8TensorFunc(torch.autograd.Function):
             trans_a=False,
             trans_b=trans_b,
             out_dtype=a.dtype,
+            granularity=config.granularity,
             num_cu=num_cu,
         )
 
@@ -411,7 +413,7 @@ class GroupedGemmFP8TensorFunc(torch.autograd.Function):
 
         grad_out_fp8 = quant_fp8_tensorwise_impl(grad_out, grad_out_scale, grad_out_dtype)
 
-        grad_a = grouped_gemm_csrc_fp8_tensor_impl(
+        grad_a = grouped_gemm_fp8_csrc_impl(
             grad_out_fp8,
             b_fp8_col,
             grad_out_scale_inv,
@@ -421,6 +423,7 @@ class GroupedGemmFP8TensorFunc(torch.autograd.Function):
             trans_a=False,
             trans_b=not ctx.trans_b,
             out_dtype=ctx.out_dtype,
+            granularity=ctx.config.granularity,
             num_cu=ctx.num_cu,
         )
 
@@ -429,7 +432,7 @@ class GroupedGemmFP8TensorFunc(torch.autograd.Function):
             (grad_out_scale_inv, a_scale_inv) if ctx.trans_b else (a_scale_inv, grad_out_scale_inv)
         )
 
-        grad_b = grouped_gemm_variable_k_fp8_tensor_csrc_impl(
+        grad_b = grouped_gemm_fp8_variable_k_csrc_impl(
             lhs,
             rhs,
             lhs_scale,
@@ -439,6 +442,7 @@ class GroupedGemmFP8TensorFunc(torch.autograd.Function):
             trans_a=True,
             trans_b=False,
             out_dtype=ctx.out_dtype,
+            granularity=ctx.config.granularity,
             num_cu=ctx.num_cu,
         )
 
