@@ -9,6 +9,31 @@
 
 namespace primus_turbo::pytorch {
 
+template <typename AType, typename BType, typename CType>
+inline CKGroupedGemmParams<AType, BType, CType>
+make_ck_groued_gemm_params(void *args_ptr, const at::Tensor &a, const at::Tensor &b, at::Tensor &c,
+                           const at::Tensor &group_lens, const at::Tensor &group_offs, bool transA,
+                           bool transB, ck_tile::index_t group_num, ck_tile::index_t m,
+                           ck_tile::index_t n, ck_tile::index_t k, hipStream_t stream,
+                           uint32_t num_cu) {
+    CKGroupedGemmParams<AType, BType, CType> params;
+    params.args_ptr       = args_ptr;
+    params.a_ptr          = reinterpret_cast<const AType *>(a.data_ptr());
+    params.b_ptr          = reinterpret_cast<const BType *>(b.data_ptr());
+    params.c_ptr          = reinterpret_cast<CType *>(c.data_ptr());
+    params.group_lens_ptr = reinterpret_cast<const int64_t *>(group_lens.data_ptr());
+    params.group_offs_ptr = reinterpret_cast<const int64_t *>(group_offs.data_ptr());
+    params.transA         = transA;
+    params.transB         = transB;
+    params.group_num      = group_num;
+    params.m              = m;
+    params.n              = n;
+    params.k              = k;
+    params.stream         = stream;
+    params.num_cu         = num_cu;
+    return params;
+}
+
 at::Tensor grouped_gemm_compute_offs(at::Tensor &group_lens) {
     // Check input tensor type
     PRIMUS_TURBO_CHECK(group_lens.scalar_type() == at::kLong,
@@ -65,22 +90,18 @@ at::Tensor grouped_gemm(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
         using AType = typename TorchToCKTileType<at::kHalf>::type;
         using BType = AType;
         using CType = AType;
-        ck_grouped_gemm<AType, BType, CType>(
-            args_tensor.data_ptr(), reinterpret_cast<const AType *>(a.data_ptr()),
-            reinterpret_cast<const BType *>(b.data_ptr()), reinterpret_cast<CType *>(c.data_ptr()),
-            reinterpret_cast<const int64_t *>(group_lens.data_ptr()),
-            reinterpret_cast<const int64_t *>(group_offs.data_ptr()), transA, transB, bs, m, n, k,
+        auto params = make_ck_groued_gemm_params<AType, BType, CType>(
+            args_tensor.data_ptr(), a, b, c, group_lens, group_offs, transA, transB, bs, m, n, k,
             stream, get_grouped_gemm_num_cu(num_cu));
+        ck_grouped_gemm<AType, BType, CType>(params);
     } else if (a.dtype() == at::kBFloat16) {
         using AType = typename TorchToCKTileType<at::kBFloat16>::type;
         using BType = AType;
         using CType = AType;
-        ck_grouped_gemm<AType, BType, CType>(
-            args_tensor.data_ptr(), reinterpret_cast<const AType *>(a.data_ptr()),
-            reinterpret_cast<const BType *>(b.data_ptr()), reinterpret_cast<CType *>(c.data_ptr()),
-            reinterpret_cast<const int64_t *>(group_lens.data_ptr()),
-            reinterpret_cast<const int64_t *>(group_offs.data_ptr()), transA, transB, bs, m, n, k,
+        auto params = make_ck_groued_gemm_params<AType, BType, CType>(
+            args_tensor.data_ptr(), a, b, c, group_lens, group_offs, transA, transB, bs, m, n, k,
             stream, get_grouped_gemm_num_cu(num_cu));
+        ck_grouped_gemm<AType, BType, CType>(params);
     } else {
         PRIMUS_TURBO_CHECK(false, "GroupedGemm only support float16 and bfloat16");
     }
@@ -119,22 +140,16 @@ at::Tensor grouped_gemm_fp8(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens
 
         if (out_dtype == at::kBFloat16) {
             using CType = ck_tile::bfloat16_t;
-            ck_grouped_gemm<AType, BType, CType>(
-                args_tensor.data_ptr(), reinterpret_cast<const AType *>(a.data_ptr()),
-                reinterpret_cast<const BType *>(b.data_ptr()),
-                reinterpret_cast<CType *>(c.data_ptr()),
-                reinterpret_cast<const int64_t *>(group_lens.data_ptr()),
-                reinterpret_cast<const int64_t *>(group_offs.data_ptr()), transA, transB, bs, m, n,
+            auto params = make_ck_groued_gemm_params<AType, BType, CType>(
+                args_tensor.data_ptr(), a, b, c, group_lens, group_offs, transA, transB, bs, m, n,
                 k, stream, get_grouped_gemm_num_cu(num_cu));
+            ck_grouped_gemm<AType, BType, CType>(params);
         } else if (out_dtype == at::kHalf) {
             using CType = ck_tile::half_t;
-            ck_grouped_gemm<AType, BType, CType>(
-                args_tensor.data_ptr(), reinterpret_cast<const AType *>(a.data_ptr()),
-                reinterpret_cast<const BType *>(b.data_ptr()),
-                reinterpret_cast<CType *>(c.data_ptr()),
-                reinterpret_cast<const int64_t *>(group_lens.data_ptr()),
-                reinterpret_cast<const int64_t *>(group_offs.data_ptr()), transA, transB, bs, m, n,
+            auto params = make_ck_groued_gemm_params<AType, BType, CType>(
+                args_tensor.data_ptr(), a, b, c, group_lens, group_offs, transA, transB, bs, m, n,
                 k, stream, get_grouped_gemm_num_cu(num_cu));
+            ck_grouped_gemm<AType, BType, CType>(params);
         } else {
             PRIMUS_TURBO_CHECK(false, "Unsupported out_dtype for fp8 e4m3");
         }
@@ -144,22 +159,16 @@ at::Tensor grouped_gemm_fp8(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens
 
         if (out_dtype == at::kBFloat16) {
             using CType = ck_tile::bfloat16_t;
-            ck_grouped_gemm<AType, BType, CType>(
-                args_tensor.data_ptr(), reinterpret_cast<const AType *>(a.data_ptr()),
-                reinterpret_cast<const BType *>(b.data_ptr()),
-                reinterpret_cast<CType *>(c.data_ptr()),
-                reinterpret_cast<const int64_t *>(group_lens.data_ptr()),
-                reinterpret_cast<const int64_t *>(group_offs.data_ptr()), transA, transB, bs, m, n,
+            auto params = make_ck_groued_gemm_params<AType, BType, CType>(
+                args_tensor.data_ptr(), a, b, c, group_lens, group_offs, transA, transB, bs, m, n,
                 k, stream, get_grouped_gemm_num_cu(num_cu));
+            ck_grouped_gemm<AType, BType, CType>(params);
         } else if (out_dtype == at::kHalf) {
             using CType = ck_tile::half_t;
-            ck_grouped_gemm<AType, BType, CType>(
-                args_tensor.data_ptr(), reinterpret_cast<const AType *>(a.data_ptr()),
-                reinterpret_cast<const BType *>(b.data_ptr()),
-                reinterpret_cast<CType *>(c.data_ptr()),
-                reinterpret_cast<const int64_t *>(group_lens.data_ptr()),
-                reinterpret_cast<const int64_t *>(group_offs.data_ptr()), transA, transB, bs, m, n,
+            auto params = make_ck_groued_gemm_params<AType, BType, CType>(
+                args_tensor.data_ptr(), a, b, c, group_lens, group_offs, transA, transB, bs, m, n,
                 k, stream, get_grouped_gemm_num_cu(num_cu));
+            ck_grouped_gemm<AType, BType, CType>(params);
         } else {
             PRIMUS_TURBO_CHECK(false, "Unsupported out_dtype for fp8 e5m2");
         }
@@ -199,22 +208,18 @@ at::Tensor grouped_gemm_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &gro
         using AType = typename TorchToCKTileType<at::kHalf>::type;
         using BType = AType;
         using CType = AType;
-        ck_grouped_gemm_variable_k<AType, BType, CType>(
-            args_tensor.data_ptr(), reinterpret_cast<const AType *>(a.data_ptr()),
-            reinterpret_cast<const BType *>(b.data_ptr()), reinterpret_cast<CType *>(c.data_ptr()),
-            reinterpret_cast<const int64_t *>(group_lens.data_ptr()),
-            reinterpret_cast<const int64_t *>(group_offs.data_ptr()), transA, transB, bs, m, n, k,
+        auto params = make_ck_groued_gemm_params<AType, BType, CType>(
+            args_tensor.data_ptr(), a, b, c, group_lens, group_offs, transA, transB, bs, m, n, k,
             stream, get_grouped_gemm_num_cu(num_cu));
+        ck_grouped_gemm_variable_k<AType, BType, CType>(params);
     } else if (a.dtype() == at::kBFloat16) {
         using AType = typename TorchToCKTileType<at::kBFloat16>::type;
         using BType = AType;
         using CType = AType;
-        ck_grouped_gemm_variable_k<AType, BType, CType>(
-            args_tensor.data_ptr(), reinterpret_cast<const AType *>(a.data_ptr()),
-            reinterpret_cast<const BType *>(b.data_ptr()), reinterpret_cast<CType *>(c.data_ptr()),
-            reinterpret_cast<const int64_t *>(group_lens.data_ptr()),
-            reinterpret_cast<const int64_t *>(group_offs.data_ptr()), transA, transB, bs, m, n, k,
+        auto params = make_ck_groued_gemm_params<AType, BType, CType>(
+            args_tensor.data_ptr(), a, b, c, group_lens, group_offs, transA, transB, bs, m, n, k,
             stream, get_grouped_gemm_num_cu(num_cu));
+        ck_grouped_gemm_variable_k<AType, BType, CType>(params);
     } else {
         PRIMUS_TURBO_CHECK(false, "GroupedGemm only support float16 and bfloat16");
     }
@@ -253,26 +258,26 @@ at::Tensor grouped_gemm_fp8_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor 
         using BType = AType;
         if (out_dtype == at::kBFloat16) {
             using CType = ck_tile::bfloat16_t;
-            ck_grouped_gemm_variable_k<AType, BType, CType>(
-                args_tensor.data_ptr(), reinterpret_cast<const AType *>(a.data_ptr()),
-                reinterpret_cast<const BType *>(b.data_ptr()),
-                reinterpret_cast<CType *>(c.data_ptr()),
-                reinterpret_cast<const int64_t *>(group_lens.data_ptr()),
-                reinterpret_cast<const int64_t *>(group_offs.data_ptr()), transA, transB, bs, m, n,
+            auto params = make_ck_groued_gemm_params<AType, BType, CType>(
+                args_tensor.data_ptr(), a, b, c, group_lens, group_offs, transA, transB, bs, m, n,
                 k, stream, get_grouped_gemm_num_cu(num_cu));
+            ck_grouped_gemm_variable_k<AType, BType, CType>(params);
+        } else {
+            // TODO:
+            PRIMUS_TURBO_CHECK(false, "");
         }
     } else if (a.dtype() == at::kFloat8_e5m2fnuz || a.dtype() == at::kFloat8_e5m2) {
         using AType = ck_tile::bf8_t;
         using BType = AType;
         if (out_dtype == at::kBFloat16) {
             using CType = ck_tile::bfloat16_t;
-            ck_grouped_gemm_variable_k<AType, BType, CType>(
-                args_tensor.data_ptr(), reinterpret_cast<const AType *>(a.data_ptr()),
-                reinterpret_cast<const BType *>(b.data_ptr()),
-                reinterpret_cast<CType *>(c.data_ptr()),
-                reinterpret_cast<const int64_t *>(group_lens.data_ptr()),
-                reinterpret_cast<const int64_t *>(group_offs.data_ptr()), transA, transB, bs, m, n,
+            auto params = make_ck_groued_gemm_params<AType, BType, CType>(
+                args_tensor.data_ptr(), a, b, c, group_lens, group_offs, transA, transB, bs, m, n,
                 k, stream, get_grouped_gemm_num_cu(num_cu));
+            ck_grouped_gemm_variable_k<AType, BType, CType>(params);
+        } else {
+            // TODO:
+            PRIMUS_TURBO_CHECK(false, "");
         }
     } else {
         PRIMUS_TURBO_CHECK(false, "GroupedGemmFp8 only support fp8");
