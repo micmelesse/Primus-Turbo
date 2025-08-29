@@ -30,6 +30,8 @@ TORCH_LIBRARY(primus_turbo_cpp_extension, m) {
     m.def("fp8_quantize_row_col(Tensor input, Tensor scale, ScalarType dest_dtype, bool "
           "is_row_major) -> Tensor");
 
+    m.def("quantize_fp8_tensorwise(Tensor input, ScalarType dest_dtype) -> Tensor[]");
+
     // ********* RMSNorm *********
     m.def("rmsnorm_fwd(Tensor input, Tensor gamma, float eps) -> Tensor");
     m.def("rmsnorm_bwd(Tensor input, Tensor gamma, Tensor grad_out, float eps) -> Tensor[]");
@@ -58,6 +60,8 @@ TORCH_LIBRARY_IMPL(primus_turbo_cpp_extension, CUDA, m) {
     m.impl("fp8_dequantize", fp8_dequantize);
     m.impl("fp8_quantize_row_col", fp8_quantize_row_col);
 
+    m.impl("quantize_fp8_tensorwise", quantize_fp8_tensorwise);
+
     // ********* RMSNorm *********
     m.impl("rmsnorm_fwd", rmsnorm_fwd);
     m.impl("rmsnorm_bwd", rmsnorm_bwd);
@@ -79,6 +83,8 @@ TORCH_LIBRARY_IMPL(primus_turbo_cpp_extension, Meta, m) {
     m.impl("fp8_quantize", fp8_quantize_meta);
     m.impl("fp8_dequantize", fp8_dequantize_meta);
     m.impl("fp8_quantize_row_col", fp8_quantize_row_col_meta);
+
+    m.impl("quantize_fp8_tensorwise", quantize_fp8_tensorwise_meta);
 
     // ********* RMSNorm *********
     m.impl("rmsnorm_fwd", rmsnorm_fwd_meta);

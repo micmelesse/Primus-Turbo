@@ -118,7 +118,7 @@ struct LowLatencyLayout {
         // Message sizes
         // NOTES: you should add a control `int4` for combine messages if you want to do data
         // transformation
-        PRIMUS_TURBO_CHECK(num_scales * sizeof(float) <= hidden);
+        PRIMUS_TURBO_CHECK(num_scales * sizeof(float) <= static_cast<size_t>(hidden));
         size_t num_bytes_per_dispatch_msg =
             sizeof(int4) +
             std::max(hidden * sizeof(hip_bfloat16), hidden + num_scales * sizeof(float));

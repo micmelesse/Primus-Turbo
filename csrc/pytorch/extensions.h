@@ -49,12 +49,11 @@ at::Tensor grouped_gemm_fp8_dequant(at::Tensor &input, at::Tensor &group_lens,
 at::Tensor grouped_gemm_fp8_dequant_variable_k(at::Tensor &input, at::Tensor &scale_a,
                                                at::Tensor &scale_b);
 
-at::Tensor grouped_gemm_fp8_dequant_meta(at::Tensor &input, at::Tensor &group_lens,
-                                         at::Tensor &group_offs, at::Tensor &scale_a,
-                                         at::Tensor &scale_b);
-
-at::Tensor grouped_gemm_fp8_dequant_variable_k_meta(at::Tensor &input, at::Tensor &scale_a,
-                                                    at::Tensor &scale_b);
+/* New Quantization */
+std::vector<torch::Tensor> quantize_fp8_tensorwise(const at::Tensor     input,
+                                                   const at::ScalarType dest_dtype);
+std::vector<torch::Tensor> quantize_fp8_tensorwise_meta(const at::Tensor     input,
+                                                        const at::ScalarType dest_dtype);
 
 /* GEMM */
 
