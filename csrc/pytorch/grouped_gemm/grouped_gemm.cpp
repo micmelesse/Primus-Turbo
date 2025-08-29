@@ -181,7 +181,7 @@ at::Tensor grouped_gemm_fp8(at::Tensor &a, at::Tensor &b, at::Tensor &a_scales,
     // TODO: When CK ready, remove below code
     {
         if (granularity == "TENSORWISE") {
-            return c * a_scales * b_scales;
+            return (a_scales * b_scales) * c;
         } else if (granularity == "ROWWISE") {
             return grouped_gemm_fp8_dequant(c, group_lens, group_offs, a_scales, b_scales);
         } else {
@@ -302,7 +302,7 @@ at::Tensor grouped_gemm_fp8_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor 
     // TODO: When CK ready, remove below code
     {
         if (granularity == "TENSORWISE") {
-            return c * a_scales * b_scales;
+            return (a_scales * b_scales) * c;
         } else if (granularity == "ROWWISE") {
             return grouped_gemm_fp8_dequant_variable_k(c, a_scales, b_scales);
         } else {

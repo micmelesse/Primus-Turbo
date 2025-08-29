@@ -27,9 +27,8 @@ from primus_turbo.pytorch.kernels.grouped_gemm.grouped_gemm_fp8_impl import (
 from primus_turbo.pytorch.kernels.quantize import (
     quant_fp8_blockwise_impl,
     quant_fp8_blockwise_segment_m_impl,
-    quant_fp8_rowwise_impl,
-    quant_fp8_tensorwise_impl,
 )
+from primus_turbo.pytorch.ops.quantization import quantize_fp8
 
 __all__ = [
     "grouped_gemm_fp8",
@@ -239,66 +238,61 @@ class GroupedGemmFP8RowFunc(torch.autograd.Function):
         config: Float8QuantConfig,
         num_cu: int | None,
     ):
-
         assert config.granularity == ScalingGranularity.ROWWISE
         assert a.ndim == 2, "Input tensor must be 3-dimensions."
         assert b.ndim == 3, "Weight tensor must be 3-dimensional."
+        out_dtype = a.dtype
+        assert out_dtype in [torch.float16, torch.bfloat16]
+
         a_dtype = GroupedGemmFP8RowFunc.get_fp8_dtype(config.format, True)
         b_dtype = GroupedGemmFP8RowFunc.get_fp8_dtype(config.format, True)
-
-        a_scale, a_scale_inv = calc_scale_and_scale_inv_rowwise(a, torch.finfo(a_dtype).max, row_wise=True)
-        b_scale, b_scale_inv = calc_scale_and_scale_inv_rowwise(b, torch.finfo(b_dtype).max, row_wise=trans_b)
-
-        a_fp8_row = quant_fp8_rowwise_impl(a, a_scale, a_dtype, row_quant=True)
-        b_fp8_row = quant_fp8_rowwise_impl(b, b_scale, b_dtype, row_quant=trans_b)
+        a_fp8_row, a_scale_inv_row = quantize_fp8(a, a_dtype, config.granularity, axis=-1)
+        b_fp8_row, b_scale_inv_row = quantize_fp8(
+            b, b_dtype, config.granularity, axis=(-1 if trans_b else -2)
+        )
 
         out = grouped_gemm_fp8_csrc_impl(
             a_fp8_row,
             b_fp8_row,
-            a_scale_inv,
-            b_scale_inv,
+            a_scale_inv_row,
+            b_scale_inv_row,
             group_lens,
             group_offs,
             trans_a=False,
             trans_b=trans_b,
-            out_dtype=a.dtype,
+            out_dtype=out_dtype,
             granularity=config.granularity,
             num_cu=num_cu,
         )
 
         # we need a/b do col quant for backward.
-        a_scale, a_scale_inv = calc_scale_and_scale_inv_rowwise(a, torch.finfo(a_dtype).max, row_wise=False)
-        b_scale, b_scale_inv = calc_scale_and_scale_inv_rowwise(
-            b, torch.finfo(b_dtype).max, row_wise=not trans_b
+        a_fp8_col, a_scale_inv_col = quantize_fp8(a, a_dtype, config.granularity, axis=-2)
+        b_fp8_col, b_scale_inv_col = quantize_fp8(
+            b, b_dtype, config.granularity, axis=(-2 if trans_b else -1)
         )
 
-        a_fp8_col = quant_fp8_rowwise_impl(a, a_scale, a_dtype, row_quant=False)
-        b_fp8_col = quant_fp8_rowwise_impl(b, b_scale, b_dtype, row_quant=not trans_b)
-
-        ctx.save_for_backward(a_fp8_col, b_fp8_col, a_scale_inv, b_scale_inv, group_lens, group_offs)
+        ctx.save_for_backward(a_fp8_col, b_fp8_col, a_scale_inv_col, b_scale_inv_col, group_lens, group_offs)
         ctx.trans_a = False
         ctx.trans_b = trans_b
         ctx.config = config
-        ctx.out_dtype = a.dtype
+        ctx.out_dtype = out_dtype
         ctx.num_cu = num_cu
         return out
 
     @staticmethod
     def backward(ctx, grad_out):
-        a_fp8_col, b_fp8_col, a_scale_inv, b_scale_inv, group_lens, group_offs = ctx.saved_tensors
+        a_fp8_col, b_fp8_col, a_scale_inv_col, b_scale_inv_col, group_lens, group_offs = ctx.saved_tensors
+
+        # For grad_a
         grad_out_dtype = GroupedGemmFP8RowFunc.get_fp8_dtype(ctx.config.format, False)
-
-        grad_out_scale, grad_out_scale_inv = calc_scale_and_scale_inv_rowwise(
-            grad_out, torch.finfo(grad_out_dtype).max, row_wise=True
+        grad_out_fp8_row, grad_out_scale_inv_row = quantize_fp8(
+            grad_out, grad_out_dtype, ctx.config.granularity, axis=-1
         )
-
-        grad_out_fp8 = quant_fp8_rowwise_impl(grad_out, grad_out_scale, grad_out_dtype, row_quant=True)
-
         grad_a = grouped_gemm_fp8_csrc_impl(
-            grad_out_fp8,
+            grad_out_fp8_row,
             b_fp8_col,
-            grad_out_scale_inv,
-            b_scale_inv,
+            grad_out_scale_inv_row,
+            b_scale_inv_col,
             group_lens,
             group_offs,
             trans_a=False,
@@ -308,14 +302,16 @@ class GroupedGemmFP8RowFunc(torch.autograd.Function):
             num_cu=ctx.num_cu,
         )
 
-        grad_out_scale, grad_out_scale_inv = calc_scale_and_scale_inv_rowwise(
-            grad_out, torch.finfo(grad_out_dtype).max, row_wise=False
+        # For grad_b
+        grad_out_fp8_col, grad_out_scale_inv_col = quantize_fp8(
+            grad_out, grad_out_dtype, ctx.config.granularity, axis=-2
         )
-        grad_out_fp8 = quant_fp8_rowwise_impl(grad_out, grad_out_scale, grad_out_dtype, row_quant=False)
 
-        lhs, rhs = (grad_out_fp8, a_fp8_col) if ctx.trans_b else (a_fp8_col, grad_out_fp8)
+        lhs, rhs = (grad_out_fp8_col, a_fp8_col) if ctx.trans_b else (a_fp8_col, grad_out_fp8_col)
         lhs_scale, rhs_scale = (
-            (grad_out_scale_inv, a_scale_inv) if ctx.trans_b else (a_scale_inv, grad_out_scale_inv)
+            (grad_out_scale_inv_col, a_scale_inv_col)
+            if ctx.trans_b
+            else (a_scale_inv_col, grad_out_scale_inv_col)
         )
 
         grad_b = grouped_gemm_fp8_variable_k_csrc_impl(
@@ -372,12 +368,8 @@ class GroupedGemmFP8TensorFunc(torch.autograd.Function):
         assert b.ndim == 3, "Weight tensor must be 3-dimensional."
         a_dtype = GroupedGemmFP8TensorFunc.get_fp8_dtype(config.format, True)
         b_dtype = GroupedGemmFP8TensorFunc.get_fp8_dtype(config.format, True)
-
-        a_scale, a_scale_inv = calc_scale_and_scale_inv_tensorwise(a, torch.finfo(a_dtype).max)
-        b_scale, b_scale_inv = calc_scale_and_scale_inv_tensorwise(b, torch.finfo(b_dtype).max)
-
-        a_fp8 = quant_fp8_tensorwise_impl(a, a_scale, a_dtype)
-        b_fp8 = quant_fp8_tensorwise_impl(b, b_scale, b_dtype)
+        a_fp8, a_scale_inv = quantize_fp8(a, a_dtype, config.granularity)
+        b_fp8, b_scale_inv = quantize_fp8(b, b_dtype, config.granularity)
 
         out = grouped_gemm_fp8_csrc_impl(
             a_fp8,
@@ -403,19 +395,14 @@ class GroupedGemmFP8TensorFunc(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_out):
-        a_fp8_col, b_fp8_col, a_scale_inv, b_scale_inv, group_lens, group_offs = ctx.saved_tensors
+        a_fp8, b_fp8, a_scale_inv, b_scale_inv, group_lens, group_offs = ctx.saved_tensors
 
         grad_out_dtype = GroupedGemmFP8TensorFunc.get_fp8_dtype(ctx.config.format, False)
-
-        grad_out_scale, grad_out_scale_inv = calc_scale_and_scale_inv_tensorwise(
-            grad_out, torch.finfo(grad_out_dtype).max
-        )
-
-        grad_out_fp8 = quant_fp8_tensorwise_impl(grad_out, grad_out_scale, grad_out_dtype)
+        grad_out_fp8, grad_out_scale_inv = quantize_fp8(grad_out, grad_out_dtype, ctx.config.granularity)
 
         grad_a = grouped_gemm_fp8_csrc_impl(
             grad_out_fp8,
-            b_fp8_col,
+            b_fp8,
             grad_out_scale_inv,
             b_scale_inv,
             group_lens,
@@ -427,7 +414,7 @@ class GroupedGemmFP8TensorFunc(torch.autograd.Function):
             num_cu=ctx.num_cu,
         )
 
-        lhs, rhs = (grad_out_fp8, a_fp8_col) if ctx.trans_b else (a_fp8_col, grad_out_fp8)
+        lhs, rhs = (grad_out_fp8, a_fp8) if ctx.trans_b else (a_fp8, grad_out_fp8)
         lhs_scale, rhs_scale = (
             (grad_out_scale_inv, a_scale_inv) if ctx.trans_b else (a_scale_inv, grad_out_scale_inv)
         )
