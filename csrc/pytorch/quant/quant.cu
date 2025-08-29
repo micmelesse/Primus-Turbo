@@ -7,9 +7,7 @@
 
 #include "../../kernels/pointwise/row_col_quant.h"
 #include "../../kernels/pointwise/vectorized_pointwise.h"
-#include "../extensions.h"
 #include "../type_traits.h"
-#include "../utils.h"
 
 namespace primus_turbo::pytorch {
 
@@ -41,7 +39,7 @@ at::Tensor fp8_quantize(const at::Tensor input, const at::Tensor scale,
     PRIMUS_TURBO_CHECK(input.scalar_type() == at::kBFloat16 || input.scalar_type() == at::kHalf ||
                        input.scalar_type() == at::kFloat);
     PRIMUS_TURBO_CHECK(scale.scalar_type() == at::kFloat);
-    PRIMUS_TURBO_CHECK(scale.ndimension() == 1);
+    PRIMUS_TURBO_CHECK(scale.numel() == 1);
     PRIMUS_TURBO_CHECK(is_torch_fp8(dest_dtype));
 
     auto stream = at::hip::getCurrentHIPStreamMasqueradingAsCUDA();

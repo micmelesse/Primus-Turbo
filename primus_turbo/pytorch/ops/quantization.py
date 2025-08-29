@@ -40,5 +40,7 @@ def quantize_fp8(
 
 
 """
-FP4 Quantize
+TODO:
+quantize_mxfp8
+quantize_mxfp4
 """
