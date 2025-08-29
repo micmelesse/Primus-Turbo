@@ -16,10 +16,6 @@ from primus_turbo.pytorch.kernels.quantization_impl import (
 
 __all__ = ["quantize_fp8"]
 
-"""
-FP8 Quantize
-"""
-
 
 def quantize_fp8(
     x: torch.Tensor,
@@ -28,6 +24,9 @@ def quantize_fp8(
     axis: Optional[int] = None,
     # block_size: Optional[Tuple[int, ...]] = None,
 ):
+    """
+    FP8 Quantize
+    """
     if granularity == ScalingGranularity.TENSORWISE:
         return quantize_fp8_tensorwise(x, dtype)
     elif granularity == ScalingGranularity.ROWWISE:

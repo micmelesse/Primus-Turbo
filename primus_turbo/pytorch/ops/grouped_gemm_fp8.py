@@ -195,28 +195,6 @@ def grouped_gemm_fp8_blockwise(
     return BlockwiseFP8GroupedGemmFunc.apply(x, weight, seg_lens, block_size, dtype)
 
 
-@torch.compile
-def calc_scale_and_scale_inv_rowwise(x: torch.Tensor, fp8_max: float, row_wise: bool = True):
-    if row_wise:
-        if x.dim() == 2:
-            amax = x.abs().amax(dim=1, keepdim=True)
-        elif x.dim() == 3:
-            amax = x.abs().amax(dim=2, keepdim=True)
-        else:
-            raise ValueError(f"Unsupported tensor dimension: {x.dim()}")
-    else:
-        if x.dim() == 2:
-            amax = x.abs().amax(dim=0, keepdim=True)
-        elif x.dim() == 3:
-            amax = x.abs().amax(dim=1, keepdim=True)
-        else:
-            raise ValueError(f"Unsupported tensor dimension: {x.dim()}")
-    scale = torch.full_like(amax, fill_value=fp8_max, dtype=torch.float32, device=x.device) / amax
-    scale_inv = 1.0 / scale
-
-    return scale, scale_inv
-
-
 class GroupedGemmFP8RowFunc(torch.autograd.Function):
     @staticmethod
     def get_fp8_dtype(format: Format, is_fwd_stage: bool):
@@ -331,15 +309,6 @@ class GroupedGemmFP8RowFunc(torch.autograd.Function):
         return grad_a, grad_b, None, None, None, None, None
 
 
-@torch.compile
-def calc_scale_and_scale_inv_tensorwise(x: torch.Tensor, fp8_max: float):
-    amax = x.abs().amax()
-    scale = torch.full([1], fill_value=fp8_max, dtype=torch.float32, device=x.device) / amax
-    scale_inv = 1.0 / scale
-
-    return scale, scale_inv
-
-
 class GroupedGemmFP8TensorFunc(torch.autograd.Function):
 
     @staticmethod
@@ -397,9 +366,9 @@ class GroupedGemmFP8TensorFunc(torch.autograd.Function):
     def backward(ctx, grad_out):
         a_fp8, b_fp8, a_scale_inv, b_scale_inv, group_lens, group_offs = ctx.saved_tensors
 
+        # For grad_a
         grad_out_dtype = GroupedGemmFP8TensorFunc.get_fp8_dtype(ctx.config.format, False)
         grad_out_fp8, grad_out_scale_inv = quantize_fp8(grad_out, grad_out_dtype, ctx.config.granularity)
-
         grad_a = grouped_gemm_fp8_csrc_impl(
             grad_out_fp8,
             b_fp8,
@@ -414,11 +383,11 @@ class GroupedGemmFP8TensorFunc(torch.autograd.Function):
             num_cu=ctx.num_cu,
         )
 
+        # For grad_b
         lhs, rhs = (grad_out_fp8, a_fp8) if ctx.trans_b else (a_fp8, grad_out_fp8)
         lhs_scale, rhs_scale = (
             (grad_out_scale_inv, a_scale_inv) if ctx.trans_b else (a_scale_inv, grad_out_scale_inv)
         )
-
         grad_b = grouped_gemm_fp8_variable_k_csrc_impl(
             lhs,
             rhs,
