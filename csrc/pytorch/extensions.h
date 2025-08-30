@@ -50,10 +50,15 @@ at::Tensor grouped_gemm_fp8_dequant_variable_k(at::Tensor &input, at::Tensor &sc
                                                at::Tensor &scale_b);
 
 /* New Quantization */
-std::vector<torch::Tensor> quantize_fp8_tensorwise(const at::Tensor     input,
-                                                   const at::ScalarType dest_dtype);
-std::vector<torch::Tensor> quantize_fp8_tensorwise_meta(const at::Tensor     input,
-                                                        const at::ScalarType dest_dtype);
+std::vector<at::Tensor> quantize_fp8_tensorwise(const at::Tensor     input,
+                                                const at::ScalarType dest_dtype);
+std::vector<at::Tensor> quantize_fp8_tensorwise_meta(const at::Tensor     input,
+                                                     const at::ScalarType dest_dtype);
+std::vector<at::Tensor> quantize_fp8_rowwise(const at::Tensor     input,
+                                             const at::ScalarType dest_dtype, const int64_t axis);
+std::vector<at::Tensor> quantize_fp8_rowwise_meta(const at::Tensor     input,
+                                                  const at::ScalarType dest_dtype,
+                                                  const int64_t        axis);
 
 /* GEMM */
 
