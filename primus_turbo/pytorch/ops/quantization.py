@@ -22,7 +22,6 @@ def quantize_fp8(
     dtype: torch.dtype,
     granularity: ScalingGranularity,
     axis: Optional[int] = None,
-    # block_size: Optional[Tuple[int, ...]] = None,
 ):
     """
     FP8 Quantize
@@ -33,8 +32,6 @@ def quantize_fp8(
         if axis is None:
             raise ValueError("axis must be specified for rowwise FP8 quantization")
         return quantize_fp8_rowwise(x, dtype, axis)
-    elif granularity == ScalingGranularity.BLOCKWISE:
-        raise NotImplementedError("Blockwise FP8 quantization is not supported yet")
     else:
         raise NotImplementedError(f"Unknown granularity {granularity}")
 

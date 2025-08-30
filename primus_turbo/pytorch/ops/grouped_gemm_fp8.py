@@ -428,3 +428,8 @@ def grouped_gemm_fp8(
         return GroupedGemmFP8RowFunc.apply(*args)
     else:
         raise ValueError(f"Unsupported FP8 ScalingGranularity: {config.granularity}")
+
+
+"""
+TODO: MXFP8, MXFP4
+"""
