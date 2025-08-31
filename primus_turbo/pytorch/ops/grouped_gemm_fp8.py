@@ -415,6 +415,10 @@ def grouped_gemm_fp8(
     num_cu: int | None = None,
 ) -> torch.Tensor:
     """ """
+    supported_dtypes = [torch.bfloat16]
+    assert a.dtype in supported_dtypes, f"Unsupported dtype {a.dtype}, expected one of {supported_dtypes}"
+    assert b.dtype in supported_dtypes, f"Unsupported dtype {b.dtype}, expected one of {supported_dtypes}"
+
     if group_offs is None:
         group_offs = grouped_gemm_compute_offs(group_lens)
     if config is None:
