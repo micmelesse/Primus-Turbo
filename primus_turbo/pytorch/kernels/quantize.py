@@ -35,12 +35,6 @@ def dequant_fp8_tensorwise_impl(
 
 
 """
-Rowwise Quantization Kernel
-"""
-# TODO
-
-
-"""
 Blockwise Quantization Kernel
 """
 

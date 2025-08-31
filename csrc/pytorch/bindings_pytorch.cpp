@@ -11,6 +11,7 @@ namespace primus_turbo::pytorch {
 /********************************************/
 
 TORCH_LIBRARY(primus_turbo_cpp_extension, m) {
+    // ********* Gemm *********
     m.def("hipblaslt_gemm(Tensor A, Tensor scaleA_inv, Tensor B, Tensor scaleB_inv,"
           "ScalarType out_dtype, bool transA, bool transB, bool "
           "transC) -> "
@@ -22,36 +23,82 @@ TORCH_LIBRARY(primus_turbo_cpp_extension, m) {
           "bool transA, bool transB, "
           "int block_size"
           ") -> Tensor");
+
+    // ********* Quantization *********
     m.def("fp8_quantize(Tensor input, Tensor scale, ScalarType dest_dtype) -> Tensor");
     m.def("fp8_dequantize(Tensor input, Tensor scale_inv, ScalarType dest_dtype) -> Tensor");
+    m.def("fp8_quantize_row_col(Tensor input, Tensor scale, ScalarType dest_dtype, bool "
+          "is_row_major) -> Tensor");
+
+    m.def("quantize_fp8_tensorwise(Tensor input, ScalarType dest_dtype) -> Tensor[]");
+    m.def("quantize_fp8_rowwise(Tensor input, ScalarType dest_dtype, int axis) -> Tensor[]");
+
+    // ********* RMSNorm *********
     m.def("rmsnorm_fwd(Tensor input, Tensor gamma, float eps) -> Tensor");
     m.def("rmsnorm_bwd(Tensor input, Tensor gamma, Tensor grad_out, float eps) -> Tensor[]");
+
+    // ********* Grouped Gemm *********
     m.def("grouped_gemm(Tensor a, Tensor b, Tensor group_lens, Tensor group_offs, bool transA, "
           "bool transB, int? num_cu=None) -> Tensor");
     m.def("grouped_gemm_variable_k(Tensor a, Tensor b, Tensor group_lens, Tensor group_offs, "
           "bool transA, bool transB, int? num_cu=None) -> Tensor");
+    m.def("grouped_gemm_fp8(Tensor a, Tensor b, Tensor a_scales, Tensor b_scales, "
+          "Tensor group_lens, Tensor group_offs, bool transA, bool transB, "
+          "ScalarType out_dtype, str granularity, int? num_cu) -> Tensor");
+    m.def("grouped_gemm_fp8_variable_k(Tensor a, Tensor b, Tensor a_scales, Tensor b_scales, "
+          "Tensor group_lens, Tensor group_offs, bool transA, bool transB, "
+          "ScalarType out_dtype, str granularity, int? num_cu) -> Tensor");
+    m.def("grouped_gemm_compute_offs(Tensor group_lens) -> Tensor");
 }
 
 TORCH_LIBRARY_IMPL(primus_turbo_cpp_extension, CUDA, m) {
+    // ********* Gemm *********
     m.impl("hipblaslt_gemm", hipblaslt_gemm);
     m.impl("gemm_fp8_blockwise", gemm_fp8_blockwise);
+
+    // ********* Quantization *********
     m.impl("fp8_quantize", fp8_quantize);
     m.impl("fp8_dequantize", fp8_dequantize);
+    m.impl("fp8_quantize_row_col", fp8_quantize_row_col);
+
+    m.impl("quantize_fp8_tensorwise", quantize_fp8_tensorwise);
+    m.impl("quantize_fp8_rowwise", quantize_fp8_rowwise);
+
+    // ********* RMSNorm *********
     m.impl("rmsnorm_fwd", rmsnorm_fwd);
     m.impl("rmsnorm_bwd", rmsnorm_bwd);
+
+    // ********* Grouped Gemm *********
     m.impl("grouped_gemm", grouped_gemm);
     m.impl("grouped_gemm_variable_k", grouped_gemm_variable_k);
+    m.impl("grouped_gemm_fp8", grouped_gemm_fp8);
+    m.impl("grouped_gemm_fp8_variable_k", grouped_gemm_fp8_variable_k);
+    m.impl("grouped_gemm_compute_offs", grouped_gemm_compute_offs);
 }
 
 TORCH_LIBRARY_IMPL(primus_turbo_cpp_extension, Meta, m) {
+    // ********* Gemm *********
     m.impl("hipblaslt_gemm", hipblaslt_gemm_meta);
     m.impl("gemm_fp8_blockwise", gemm_fp8_blockwise_meta);
+
+    // ********* Quantization *********
     m.impl("fp8_quantize", fp8_quantize_meta);
     m.impl("fp8_dequantize", fp8_dequantize_meta);
+    m.impl("fp8_quantize_row_col", fp8_quantize_row_col_meta);
+
+    m.impl("quantize_fp8_tensorwise", quantize_fp8_tensorwise_meta);
+    m.impl("quantize_fp8_rowwise", quantize_fp8_rowwise_meta);
+
+    // ********* RMSNorm *********
     m.impl("rmsnorm_fwd", rmsnorm_fwd_meta);
     m.impl("rmsnorm_bwd", rmsnorm_bwd_meta);
+
+    // ********* Grouped Gemm *********
     m.impl("grouped_gemm", grouped_gemm_meta);
     m.impl("grouped_gemm_variable_k", grouped_gemm_variable_k_meta);
+    m.impl("grouped_gemm_fp8", grouped_gemm_fp8_meta);
+    m.impl("grouped_gemm_fp8_variable_k", grouped_gemm_fp8_variable_k_meta);
+    m.impl("grouped_gemm_compute_offs", grouped_gemm_compute_offs_meta);
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {

@@ -7,11 +7,93 @@
 import torch
 import triton
 
+import primus_turbo.pytorch as turbo
+from primus_turbo.pytorch.core.float8 import ScalingGranularity
 from primus_turbo.triton.grouped_gemm.grouped_gemm_fp8_kernel import (
     compute_m_num_tiles_indptr,
     grouped_gemm_fp8_blockwise_kernel,
     grouped_gemm_variable_k_fp8_blockwise_tn_kernel,
 )
+
+
+def grouped_gemm_fp8_csrc_impl(
+    a: torch.Tensor,
+    b: torch.Tensor,
+    a_scales: torch.Tensor,
+    b_scales: torch.Tensor,
+    group_lens: torch.Tensor,
+    group_offs: torch.Tensor,
+    trans_a: bool,
+    trans_b: bool,
+    out_dtype: torch.dtype,
+    granularity: ScalingGranularity,
+    num_cu: int | None,
+) -> torch.Tensor:
+    assert a.dim() == 2, f"a must be 2D, got {a.shape}"
+    assert b.dim() == 3, f"b must be 3D, got {b.shape}"
+    assert a.dtype in [
+        turbo.float8_e4m3,
+        turbo.float8_e5m2,
+    ], f"a must be float8, got {a.dtype}"
+    assert b.dtype in [
+        turbo.float8_e4m3,
+        turbo.float8_e5m2,
+    ], f"b must be float8, got {b.dtype}"
+    assert trans_a == False
+
+    return torch.ops.primus_turbo_cpp_extension.grouped_gemm_fp8(
+        a,
+        b,
+        a_scales,
+        b_scales,
+        group_lens,
+        group_offs,
+        trans_a,
+        trans_b,
+        out_dtype,
+        granularity.name,
+        num_cu,
+    )
+
+
+def grouped_gemm_fp8_variable_k_csrc_impl(
+    a: torch.Tensor,
+    b: torch.Tensor,
+    a_scales: torch.Tensor,
+    b_scales: torch.Tensor,
+    group_lens: torch.Tensor,
+    group_offs: torch.Tensor,
+    trans_a: bool,
+    trans_b: bool,
+    out_dtype: torch.dtype,
+    granularity: ScalingGranularity,
+    num_cu: int | None,
+) -> torch.Tensor:
+    assert a.dim() == 2, f"a must be 2D, got {a.shape}"
+    assert b.dim() == 2, f"b must be 2D, got {b.shape}"
+    assert a.dtype in [
+        turbo.float8_e4m3,
+        turbo.float8_e5m2,
+    ], f"a must be float8, got {a.dtype}"
+    assert b.dtype in [
+        turbo.float8_e4m3,
+        turbo.float8_e5m2,
+    ], f"b must be float8, got {b.dtype}"
+    assert trans_a == True and trans_b == False, "Only trans_a=True and trans_b=False are supported."
+
+    return torch.ops.primus_turbo_cpp_extension.grouped_gemm_fp8_variable_k(
+        a,
+        b,
+        a_scales,
+        b_scales,
+        group_lens,
+        group_offs,
+        trans_a,
+        trans_b,
+        out_dtype,
+        granularity.name,
+        num_cu,
+    )
 
 
 def grouped_gemm_fp8_blockwise_impl(
@@ -154,3 +236,8 @@ def grouped_gemm_variable_k_fp8_blockwise_impl(
         **config,
     )
     return c
+
+
+def grouped_gemm_compute_offs(group_lens: torch.Tensor) -> torch.Tensor:
+    group_offs = torch.ops.primus_turbo_cpp_extension.grouped_gemm_compute_offs(group_lens)
+    return group_offs

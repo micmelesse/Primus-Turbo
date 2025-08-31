@@ -4,19 +4,14 @@
 
 #pragma once
 
-#include <string>
-
 #include "ck_tile/core.hpp"
+#include "ck_tile/host.hpp"
 #include "ck_tile/host/kernel_launch.hpp"
 #include "ck_tile/ops/elementwise/unary_element_wise_operation.hpp"
-#include "ck_tile/ops/gemm.hpp"
-
-#include <hip/hip_runtime.h>
-
-#include "ck_tile/core/numeric/half.hpp"
-#include "ck_tile/host.hpp"
 #include "ck_tile/ops/epilogue.hpp"
 #include "ck_tile/ops/gemm.hpp"
+#include <hip/hip_runtime.h>
+#include <string>
 
 #include "ck_grouped_gemm_kernel_config.h"
 

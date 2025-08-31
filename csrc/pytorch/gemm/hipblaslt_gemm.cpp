@@ -29,16 +29,6 @@ static hipDataType get_hipblaslt_dtype(const at::ScalarType t) {
         PRIMUS_TURBO_ERROR("Invalid type");
     }
 }
-
-static inline bool is_8bit_floating_point_dtype(at::ScalarType dtype) {
-    return dtype == at::kFloat8_e4m3fnuz || dtype == at::kFloat8_e4m3fn ||
-           dtype == at::kFloat8_e5m2fnuz || dtype == at::kFloat8_e5m2;
-}
-
-static inline bool is_floating_point_dtype(at::ScalarType dtype) {
-    return dtype == at::kHalf || dtype == at::kBFloat16 || dtype == at::kFloat;
-}
-
 at::Tensor hipblaslt_gemm(at::Tensor A, at::Tensor scaleA_inv, at::Tensor B, at::Tensor scaleB_inv,
                           const at::ScalarType out_dtype, bool transA, bool transB, bool transC) {
     const bool use_fp8 = is_8bit_floating_point_dtype(A.scalar_type()) &&

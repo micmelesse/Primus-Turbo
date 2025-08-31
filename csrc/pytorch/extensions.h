@@ -36,6 +36,30 @@ at::Tensor fp8_dequantize(const at::Tensor input, const at::Tensor scale_inv,
 at::Tensor fp8_dequantize_meta(const at::Tensor input, const at::Tensor scale_inv,
                                const at::ScalarType dest_dtype);
 
+at::Tensor fp8_quantize_row_col(at::Tensor &input, at::Tensor &scale,
+                                const at::ScalarType dest_dtype, const bool is_row_major);
+
+at::Tensor fp8_quantize_row_col_meta(at::Tensor &input, at::Tensor &scale,
+                                     const at::ScalarType dest_dtype, const bool is_row_major);
+
+at::Tensor grouped_gemm_fp8_dequant(at::Tensor &input, at::Tensor &group_lens,
+                                    at::Tensor &group_offs, at::Tensor &scale_a,
+                                    at::Tensor &scale_b);
+
+at::Tensor grouped_gemm_fp8_dequant_variable_k(at::Tensor &input, at::Tensor &scale_a,
+                                               at::Tensor &scale_b);
+
+/* New Quantization */
+std::vector<at::Tensor> quantize_fp8_tensorwise(const at::Tensor     input,
+                                                const at::ScalarType dest_dtype);
+std::vector<at::Tensor> quantize_fp8_tensorwise_meta(const at::Tensor     input,
+                                                     const at::ScalarType dest_dtype);
+std::vector<at::Tensor> quantize_fp8_rowwise(const at::Tensor     input,
+                                             const at::ScalarType dest_dtype, const int64_t axis);
+std::vector<at::Tensor> quantize_fp8_rowwise_meta(const at::Tensor     input,
+                                                  const at::ScalarType dest_dtype,
+                                                  const int64_t        axis);
+
 /* GEMM */
 
 at::Tensor hipblaslt_gemm(at::Tensor A, at::Tensor scaleA_inv, at::Tensor B, at::Tensor scaleB_inv,
@@ -81,5 +105,32 @@ at::Tensor grouped_gemm_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &gro
 at::Tensor grouped_gemm_variable_k_meta(at::Tensor &a, at::Tensor &b, at::Tensor &group_lens,
                                         at::Tensor &group_offs, const bool transA,
                                         const bool transB, c10::optional<int64_t> num_cu);
+
+at::Tensor grouped_gemm_fp8(at::Tensor &a, at::Tensor &b, at::Tensor &a_scales,
+                            at::Tensor &b_scales, at::Tensor &group_lens, at::Tensor &group_offs,
+                            const bool transA, const bool transB, at::ScalarType out_dtype,
+                            const std::string &granularity, c10::optional<int64_t> num_cu);
+
+at::Tensor grouped_gemm_fp8_meta(at::Tensor &a, at::Tensor &b, at::Tensor &a_scales,
+                                 at::Tensor &b_scales, at::Tensor &group_lens,
+                                 at::Tensor &group_offs, const bool transA, const bool transB,
+                                 at::ScalarType out_dtype, const std::string &granularity,
+                                 c10::optional<int64_t> num_cu);
+
+at::Tensor grouped_gemm_fp8_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &a_scales,
+                                       at::Tensor &b_scales, at::Tensor &group_lens,
+                                       at::Tensor &group_offs, const bool transA, const bool transB,
+                                       at::ScalarType out_dtype, const std::string &granularity,
+                                       c10::optional<int64_t> num_cu);
+
+at::Tensor grouped_gemm_fp8_variable_k_meta(at::Tensor &a, at::Tensor &b, at::Tensor &a_scales,
+                                            at::Tensor &b_scales, at::Tensor &group_lens,
+                                            at::Tensor &group_offs, const bool transA,
+                                            const bool transB, at::ScalarType out_dtype,
+                                            const std::string     &granularity,
+                                            c10::optional<int64_t> num_cu);
+
+at::Tensor grouped_gemm_compute_offs(at::Tensor &group_lens);
+at::Tensor grouped_gemm_compute_offs_meta(at::Tensor &group_lens);
 
 } // namespace primus_turbo::pytorch
