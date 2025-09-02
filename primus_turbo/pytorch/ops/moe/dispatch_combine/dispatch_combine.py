@@ -1,9 +1,7 @@
-from typing import Optional
-
-from primus_turbo.pytorch.ops.moe import deepep_dispatch_combine
+from primus_turbo.pytorch.ops.moe.dispatch_combine import deepep_impl
 
 try:
-    from primus_turbo.pytorch.ops.moe import mori_dispatch_combine
+    from primus_turbo.pytorch.ops.moe.dispatch_combine import mori_impl
 
     HAVE_MORI_BACKEND = True
 except ImportError:
@@ -36,11 +34,11 @@ def fused_dispatch(
         Result of FusedDispatch
     """
     if backend_type == "deepep":
-        FusedDispatch = deepep_dispatch_combine.FusedDispatch
+        FusedDispatch = deepep_impl.FusedDispatch
     elif backend_type == "mori":
         if not HAVE_MORI_BACKEND:
             raise NotImplementedError("Not Found mori, please install mori.")
-        FusedDispatch = mori_dispatch_combine.FusedDispatch
+        FusedDispatch = mori_impl.FusedDispatch
     else:
         raise ValueError("fused_dispatch only support deepep or mori")
 
@@ -61,7 +59,7 @@ def fused_combine(
     group,
     handle,
     previous_event=None,
-    num_use_cus: Optional[int] = 64,
+    num_use_cus: int = 64,
     backend_type: str = "deepep",
 ):
     """Perform fused combine operation if deep_ep is available.
@@ -77,11 +75,11 @@ def fused_combine(
         Result of FusedCombine
     """
     if backend_type == "deepep":
-        FusedCombine = deepep_dispatch_combine.FusedCombine
+        FusedCombine = deepep_impl.FusedCombine
     elif backend_type == "mori":
         if not HAVE_MORI_BACKEND:
             raise NotImplementedError("Not Found mori, please install mori.")
-        FusedCombine = mori_dispatch_combine.FusedCombine
+        FusedCombine = mori_impl.FusedCombine
     else:
         raise ValueError("fused_combine only support deepep or mori")
 
