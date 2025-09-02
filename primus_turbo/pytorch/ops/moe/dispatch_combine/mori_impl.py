@@ -9,9 +9,12 @@ from mori.ops import (
 
 _mori_initialized: bool = False
 _handle: EpDispatchCombineOp = None
-_handle_buffer_bytes: int = None
 _handle_num_cus: int = 64
 _num_gpus_per_node = 8
+
+
+# trick flag will be removed
+ENABLE_SYNC = False
 
 
 def mori_initialize(group: dist.ProcessGroup):
@@ -24,26 +27,6 @@ def mori_initialize(group: dist.ProcessGroup):
         _mori_initialized = True
 
 
-def get_mori_buffer_size(cfg: EpDispatchCombineConfig):
-    num_token_recv = (
-        cfg.world_size
-        * cfg.max_num_inp_token_per_rank
-        * min(cfg.num_experts_per_token, cfg.num_experts_per_rank)
-    )
-    token_size = num_token_recv * cfg.hidden_dim * cfg.data_type.itemsize
-    staging_topk_size = num_token_recv * (
-        cfg.hidden_dim * cfg.data_type.itemsize
-        + 8 * cfg.num_experts_per_token
-        + cfg.scale_dim * cfg.scale_type_size
-    )
-
-    weight_size = num_token_recv * cfg.num_experts_per_token * 4
-    scale_size = num_token_recv * cfg.scale_dim * cfg.scale_type_size
-    index_size = num_token_recv * cfg.num_experts_per_token * 4
-
-    return 2 * staging_topk_size + token_size + 2 * weight_size + 2 * scale_size + 2 * index_size
-
-
 def set_num_cus(num_cus: int):
     global _handle_num_cus
     _handle_num_cus = num_cus
@@ -52,7 +35,7 @@ def set_num_cus(num_cus: int):
 def get_mori_dispatch_combine(
     group, hidden_states: torch.Tensor, indices: torch.Tensor, num_experts: int
 ) -> EpDispatchCombineOp:
-    global _handle, _handle_group, _handle_buffer_bytes, _num_gpus_per_node, _handle_num_cus
+    global _handle, _handle_group, _num_gpus_per_node, _handle_num_cus
 
     world_size = group.size()
     rank = group.rank()
@@ -85,12 +68,9 @@ def get_mori_dispatch_combine(
         ),
     )
 
-    buffer_bytes = get_mori_buffer_size(cfg)
-
-    if _handle is None or _handle_buffer_bytes < buffer_bytes:
+    if _handle is None or _handle.config != cfg:
         _handle = EpDispatchCombineOp(cfg)
         _handle_group = group
-        _handle_buffer_bytes = buffer_bytes
 
     return _handle
 
@@ -100,13 +80,17 @@ def make_deepep_topken_indices(
     rank: int,
     num_ranks: int,
     num_experts: int,
+    recv_num_token: torch.Tensor,
     use_cuda_num_token_per_expert: bool = True,
 ):
-    num_recv_tokens, _ = token_indices.shape
+    num_recv_tokens, num_topk = token_indices.shape
+    num_recv_tokens_rows = torch.arange(num_recv_tokens, device=token_indices.device)
+
+    # 1. mapping recv topk_ids to token-expert map
     routing_map = torch.zeros((num_recv_tokens, num_experts), dtype=torch.long, device=token_indices.device)
 
-    routing_map[torch.arange(num_recv_tokens, device=routing_map.device).unsqueeze(1), token_indices] = (
-        torch.ones(1, device=routing_map.device, dtype=routing_map.dtype)
+    routing_map[num_recv_tokens_rows.unsqueeze(1), token_indices] = torch.ones(
+        1, device=routing_map.device, dtype=routing_map.dtype
     )
 
     num_local_expert = num_experts // num_ranks
@@ -115,11 +99,23 @@ def make_deepep_topken_indices(
     local_expert_id = torch.arange(
         recv_expert_begin, recv_expert_end, dtype=torch.long, device=token_indices.device
     )
+
+    if not ENABLE_SYNC:
+        routing_map_slice = num_recv_tokens_rows.repeat_interleave(num_experts).view(
+            num_recv_tokens, num_experts
+        )
+        routing_map_slice_ge_recv_num_token = routing_map_slice >= recv_num_token
+        routing_map.masked_fill_(routing_map_slice_ge_recv_num_token, 0)
     routing_map = torch.index_select(routing_map, dim=1, index=local_expert_id)
 
+    # fill -1 when the expert id of token_inces not in local_expert range
     mask = (token_indices < recv_expert_begin) | (token_indices >= recv_expert_end)
-    token_indices -= recv_expert_begin
-    recv_token_indices = token_indices.masked_fill(mask, -1)
+    if not ENABLE_SYNC:
+        mask_slice = num_recv_tokens_rows.repeat_interleave(num_topk).view(num_recv_tokens, num_topk)
+        mask_slice_ge_recv_num_token = mask_slice >= recv_num_token
+        mask = mask | mask_slice_ge_recv_num_token
+    recv_token_indices = token_indices - recv_expert_begin
+    recv_token_indices.masked_fill_(mask, -1)
 
     num_token_per_expert = routing_map.sum(dim=0)
 
@@ -152,28 +148,35 @@ class FusedDispatch(torch.autograd.Function):
 
         op = get_mori_dispatch_combine(group, x, token_indices, num_experts)
 
-        int_token_indices = token_indices.to(torch.int32)
+        int32_token_indices = token_indices.to(torch.int32)
         recv_x, recv_token_probs, _, recv_token_indices, recv_num_token = op.dispatch(
-            x, token_probs, None, int_token_indices
+            x, token_probs, None, int32_token_indices
         )
+        handle = (op, recv_token_indices, int32_token_indices)
 
-        recv_x = recv_x[:recv_num_token,]
-        recv_token_probs = recv_token_probs[:recv_num_token,]
-        recv_token_indices = recv_token_indices[:recv_num_token,]
-
-        handle = (op, recv_token_indices, int_token_indices)
+        if ENABLE_SYNC:
+            recv_x = recv_x[:recv_num_token]
+            recv_token_indices = recv_token_indices[:recv_num_token]
+            recv_token_probs = recv_token_probs[:recv_num_token]
 
         recv_token_indices, num_tokens_per_expert = make_deepep_topken_indices(
             recv_token_indices,
             group.rank(),
             group.size(),
             num_experts,
+            recv_num_token,
             use_cuda_num_token_per_expert=use_cuda_num_token_per_expert,
         )
 
         ctx.handle = handle
 
-        return recv_x, recv_token_indices, recv_token_probs, num_tokens_per_expert, handle
+        return (
+            recv_x.to(copy=True),
+            recv_token_indices,
+            recv_token_probs.to(copy=True),
+            num_tokens_per_expert,
+            handle,
+        )
 
     @staticmethod
     def backward(ctx, grad_output, grad_token_indices, grad_token_probs, grad_tokens_per_expert, grad_handle):
@@ -198,16 +201,25 @@ class FusedCombine(torch.autograd.Function):
 
         op, disaptch_indices, _ = handle
         combine_x, _ = op.combine(x, None, disaptch_indices)
+
         ctx.handle = handle
-        return combine_x, None
+        return combine_x.to(copy=True), None
 
     @staticmethod
     def backward(ctx, grad_output, revious_event=None):
         """Backward pass of fused combine."""
         op, _, token_indices = ctx.handle
-        empty_weight = torch.empty_like(grad_output, dtype=torch.float32, device=grad_output.device)
-        grad_x, _, _, _, recv_num_toke = op.dispatch(
+        # need mori support weight is None
+        empty_weight = torch.empty_like(
+            grad_output,
+            dtype=torch.float32,
+            device=grad_output.device,
+        )
+        grad_x, _, _, _, num_recv_tokens = op.dispatch(
             grad_output.contiguous(), empty_weight, None, token_indices
         )
-        grad_x = grad_x[:recv_num_toke,]
+
+        if ENABLE_SYNC:
+            grad_x = grad_x[:num_recv_tokens]
+
         return grad_x, None, None, None, None
