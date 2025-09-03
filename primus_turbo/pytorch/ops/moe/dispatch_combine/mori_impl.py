@@ -21,9 +21,19 @@ def mori_initialize(group: dist.ProcessGroup):
     global _mori_initialized
 
     if not _mori_initialized:
-        ranks = list(range(group.size()))
-        gloo_group = dist.new_group(ranks, backend="cpu:gloo,cuda:nccl")
-        mori.shmem.shmem_torch_process_group_init(gloo_group.group_name)
+        ep_size = group.size()
+        world_group = torch.distributed.new_group(backend="gloo")
+        world_size = torch.distributed.get_world_size(world_group)
+        num_domains = world_size // ep_size
+
+        if num_domains > 1:
+            ranks_per_domain_list = [[i * ep_size + t for t in range(ep_size)] for i in range(num_domains)]
+            ep_domain_group, _ = torch.distributed.new_subgroups_by_enumeration(
+                ranks_per_domain_list, backend="gloo"
+            )
+        else:
+            ep_domain_group = world_group
+        mori.shmem.shmem_torch_process_group_init(ep_domain_group.group_name)
         _mori_initialized = True
 
 
