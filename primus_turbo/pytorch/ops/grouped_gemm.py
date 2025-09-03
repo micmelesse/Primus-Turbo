@@ -17,6 +17,12 @@ from primus_turbo.pytorch.kernels.grouped_gemm.grouped_gemm_fp8_impl import (
 __all__ = ["grouped_gemm"]
 
 
+def compute_group_offs(group_lens: torch.Tensor) -> torch.Tensor:
+    return torch.cat(
+        [torch.zeros((1,), device=group_lens.device, dtype=group_lens.dtype), group_lens.cumsum(0)]
+    )
+
+
 class GroupedGemmFunc(torch.autograd.Function):
     @staticmethod
     def forward(
