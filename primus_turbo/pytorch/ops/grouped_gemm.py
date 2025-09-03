@@ -14,10 +14,9 @@ from primus_turbo.pytorch.kernels.grouped_gemm.grouped_gemm_csrc_impl import (
 __all__ = ["grouped_gemm"]
 
 
-@torch.compile
 def compute_group_offs(group_lens: torch.Tensor) -> torch.Tensor:
     return torch.cat(
-        [torch.tensor([0], device=group_lens.device, dtype=group_lens.dtype), group_lens.cumsum(0)]
+        [torch.zeros((1,), device=group_lens.device, dtype=group_lens.dtype), group_lens.cumsum(0)]
     )
 
 
