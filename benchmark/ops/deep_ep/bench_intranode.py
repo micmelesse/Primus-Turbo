@@ -13,21 +13,9 @@ import torch
 import torch.distributed as dist
 from tabulate import tabulate
 
+from benchmark.ops.deep_ep.model_cfg import DeepEPModelCfg
 from primus_turbo.pytorch import deep_ep
 from tests.pytorch.ref.deep_ep_ref import tune_and_verify_intranode
-
-
-@dataclass
-class DeepEPModelCfg:
-    model_name: str
-    hidden_size: int
-    num_experts: int
-    num_topk: int
-    seqlen: int
-    batch_size: int
-
-    def __post_init__(self):
-        self.num_tokens = self.batch_size * self.seqlen
 
 
 @dataclass
@@ -37,22 +25,6 @@ class DeepEPPerf(DeepEPModelCfg):
     num_sms: int
     bandwith: float
     avg_us: float
-
-
-g_model_cfg = [
-    DeepEPModelCfg(
-        model_name="deepseekv3", hidden_size=7168, num_experts=256, num_topk=8, seqlen=4096, batch_size=1
-    ),
-    DeepEPModelCfg(
-        model_name="deepseekv2", hidden_size=5120, num_experts=160, num_topk=6, seqlen=4096, batch_size=1
-    ),
-    DeepEPModelCfg(
-        model_name="qwen3_235b", hidden_size=4096, num_experts=128, num_topk=6, seqlen=4096, batch_size=1
-    ),
-    DeepEPModelCfg(
-        model_name="poolside-515B", hidden_size=8192, num_experts=112, num_topk=8, seqlen=4096, batch_size=1
-    ),
-]
 
 
 def bench(fn, num_warmups: int = 20, num_tests: int = 30, post_fn=None):
@@ -150,7 +122,7 @@ def bench_intranode(
             print("", flush=True)
             dispatch_result = DeepEPPerf(
                 **asdict(cfg),
-                mode="intranode-dispatch",
+                mode="dispatch",
                 nvl_chunk_size=best_results[1],
                 num_sms=num_sms,
                 bandwith=nvl_recv_bytes / 1e9 / best_time,
@@ -207,7 +179,7 @@ def bench_intranode(
 
         combine_result = DeepEPPerf(
             **asdict(cfg),
-            mode="intranode-combine",
+            mode="combine",
             nvl_chunk_size=best_results[1],
             num_sms=num_sms,
             bandwith=combine_bf16_nvl_send_bytes / 1e9 / best_time,
@@ -262,8 +234,8 @@ def record_perf(local_rank: int, num_local_ranks: int):
         print(tabulate(df_result, headers="keys", tablefmt="grid", showindex=False))
 
         # Save to CSV
-        df_result.to_csv("deep_ep_benchmark_results.csv", index=False)
-        print("Results saved to deep_ep_benchmark_result.csv")
+        df_result.to_csv("deep_ep_intranode_benchmark_results.csv", index=False)
+        print("Results saved to deep_ep_intranode_benchmark_results.csv")
 
     buffer.destroy()
     dist.barrier()
