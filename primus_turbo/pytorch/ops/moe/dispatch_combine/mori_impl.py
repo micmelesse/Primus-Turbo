@@ -13,7 +13,7 @@ _handle_num_cus: int = 64
 _num_gpus_per_node = 8
 
 
-# trick flag will be removed
+# NOTE(huangzhen): debug flag will be removed
 ENABLE_SYNC = False
 
 
@@ -162,12 +162,16 @@ class FusedDispatch(torch.autograd.Function):
         recv_x, recv_token_probs, _, recv_token_indices, recv_num_token = op.dispatch(
             x, token_probs, None, int32_token_indices
         )
-        handle = (op, recv_token_indices, int32_token_indices)
+        # NOTE(huangzhen): output of mori dispatch/combine comes from mori's symmetric memory, it should be copied when output will use.
+
+        copied_recv_token_indices = recv_token_indices.to(copy=True)
+
+        handle = (op, copied_recv_token_indices, int32_token_indices)
 
         if ENABLE_SYNC:
-            recv_x = recv_x[:recv_num_token]
-            recv_token_indices = recv_token_indices[:recv_num_token]
-            recv_token_probs = recv_token_probs[:recv_num_token]
+            recv_x = recv_x[:recv_num_token].to(copy=True)
+            recv_token_indices = recv_token_indices[:recv_num_token].to(copy=True)
+            recv_token_probs = recv_token_probs[:recv_num_token].to(copy=True)
 
         recv_token_indices, num_tokens_per_expert = make_deepep_topken_indices(
             recv_token_indices,
