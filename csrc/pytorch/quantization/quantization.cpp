@@ -3,8 +3,12 @@
 // See LICENSE for license information.
 
 #include "../extensions.h"
+#include "../utils.h"
+#include "primus_turbo/reduce.h"
 
 namespace primus_turbo::pytorch {
+
+using namespace primus_turbo::dtype;
 
 // TODO: Check correctness
 float get_float8_max(const at::ScalarType dtype) {
@@ -33,15 +37,23 @@ std::vector<at::Tensor> quantize_fp8_tensorwise(const at::Tensor     input,
     PRIMUS_TURBO_CHECK(input.scalar_type() == at::kBFloat16 || input.scalar_type() == at::kHalf ||
                        input.scalar_type() == at::kFloat);
     PRIMUS_TURBO_CHECK(is_torch_fp8(dest_dtype));
+    auto stream = at::cuda::getCurrentCUDAStream();
 
-    // TODO: Opt Reduce
-    // ReduceMax
-    const float fp8_max   = get_float8_max(dest_dtype);
-    auto        input_max = input.abs().max().to(at::kFloat);
-    input_max             = input_max.clamp_min(1e-12f);
+    // Reduce
+    auto          input_max = torch::empty({}, input.options().dtype(at::kFloat));
+    const int64_t ws_size   = get_reduce_row_workspace_sizes<float>(1, input.numel());
+    auto          workspace = torch::empty({ws_size}, input.options().dtype(at::kByte));
+    TORCH_TYPE_SWITCH_FLOAT(input.scalar_type(), InT, {
+        reduce_row<InT, float, float>(
+            PrimusTurboReduceOp::REDUCE_ABS_MAX, reinterpret_cast<InT *>(input.data_ptr()),
+            input_max.data_ptr<float>(), 1, input.numel(), ws_size, workspace.data_ptr(), stream);
+    });
+
+    input_max = input_max.clamp_min(1e-12f);
     // Compute Scale
-    auto scale     = fp8_max / input_max;
-    auto scale_inv = 1.0f / scale;
+    const float fp8_max   = get_float8_max(dest_dtype);
+    auto        scale     = fp8_max / input_max;
+    auto        scale_inv = 1.0f / scale;
 
     // Quantize
     // TODO: refactor
