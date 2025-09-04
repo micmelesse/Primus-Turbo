@@ -9,13 +9,17 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from packaging.version import Version
+from .patch import patch_torch_extension
+
+patch_torch_extension()
+
 
 PROJECT_ROOT = Path(os.path.dirname(__file__)).resolve().parent
 THIRD_PARTY_DIR = PROJECT_ROOT / "3rdparty"
 
 DEFAULT_BUILD_PATH = os.getenv("PRIMUS_TURBO_BUILD_DIR", PROJECT_ROOT / "build" / "3rdparty")
 DEFAULT_INSTALL_PREFIX = os.getenv("PRIMUS_TURBO_INSTALL_PREFIX", PROJECT_ROOT / "install")
-
+SKIP_DEPS_VERSION_CHECK = int(os.getenv("PRIMUS_TURBO_SKIP_DEPS_VERSION_CHECK", 1))
 
 ROCSHMEM_HOME: Optional[Path] = None
 ROCSHMEM_LIBRARY_PATH: Optional[Path] = None
@@ -47,6 +51,7 @@ def build_3rdparty(
 ) -> List[Library]:
     global ROCSHMEM_HOME, ROCSHMEM_LIBRARY_PATH, ROCSHMEM_INCLUDE_PATH
     global MPI_HOME, UCX_HOME, MPI_LIBRARY_PATH, MPI_INCLUDE_PATH, UCX_LIBRARY_PATH, UCX_INCLUDE_PATH
+    global SKIP_DEPS_VERSION_CHECK
 
     _check_submodules()
 
@@ -66,7 +71,7 @@ def build_3rdparty(
     if satisfied:
         satisfied = _check_ompi_ucx(ompi_home, ucx_home)
 
-    if not satisfied:
+    if not satisfied and not SKIP_DEPS_VERSION_CHECK:
         print(
             "[Primus-Turbo Setup] ompi and ucx not exist or not satisfy minimum version, building from source..."
         )

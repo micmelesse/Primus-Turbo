@@ -13,7 +13,7 @@ import torch
 import torch.distributed as dist
 from tabulate import tabulate
 
-from benchmark.ops.deep_ep.model_cfg import DeepEPModelCfg
+from benchmark.ops.deep_ep.model_cfg import DeepEPModelCfg, g_model_cfg
 from primus_turbo.pytorch import deep_ep
 from tests.pytorch.ref.deep_ep_ref import tune_and_verify_intranode
 
