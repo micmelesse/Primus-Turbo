@@ -69,7 +69,7 @@ __device__ __forceinline__ int __all_sync(uint64_t mask, int predicate) {
     return (~predicate_bit_pattern & mask) == 0;
 }
 
-__device__ __forceinline__ void __syncwarp() {
+__device__ __forceinline__ void syncwarp() {
     __builtin_amdgcn_fence(__ATOMIC_RELEASE, "wavefront");
     __builtin_amdgcn_wave_barrier();
     __builtin_amdgcn_fence(__ATOMIC_ACQUIRE, "wavefront");

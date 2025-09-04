@@ -518,7 +518,7 @@ __launch_bounds__(((kNumDispatchRDMASenderWarps + 1 + NUM_MAX_NVL_PEERS) * kWarp
             volatile int ret = __hip_atomic_fetch_add(&rdma_sender_counter[0], 1, __ATOMIC_RELAXED,
                                                       __HIP_MEMORY_SCOPE_WORKGROUP);
         }
-        __syncwarp();
+        syncwarp();
         while (rdma_sender_counter[0] < (kNumDispatchRDMASenderWarps + 1)) {
         }
     };
@@ -532,7 +532,7 @@ __launch_bounds__(((kNumDispatchRDMASenderWarps + 1 + NUM_MAX_NVL_PEERS) * kWarp
             volatile int ret = __hip_atomic_fetch_add(
                 &rdma_forwarder_counter[0], 1, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_WORKGROUP);
         }
-        __syncwarp();
+        syncwarp();
         while (rdma_forwarder_counter[0] < (NUM_MAX_NVL_PEERS + 1)) {
         }
     };
@@ -605,7 +605,7 @@ __launch_bounds__(((kNumDispatchRDMASenderWarps + 1 + NUM_MAX_NVL_PEERS) * kWarp
             // Acquire sequential lock
             while (lane_id == 0 and rdma_send_next_token_idx != token_idx)
                 ;
-            __syncwarp();
+            syncwarp();
 
             // Acquire next tail
             int rdma_tail_idx = -1;
@@ -615,7 +615,7 @@ __launch_bounds__(((kNumDispatchRDMASenderWarps + 1 + NUM_MAX_NVL_PEERS) * kWarp
                     cached_rdma_channel_head =
                         static_cast<int>(ld_volatile_global(rdma_channel_head.buffer(lane_id)));
             }
-            __syncwarp();
+            syncwarp();
 
             // Store RDMA head for combine
             if (lane_id < kNumRDMARanks and not kCachedMode)
@@ -694,7 +694,7 @@ __launch_bounds__(((kNumDispatchRDMASenderWarps + 1 + NUM_MAX_NVL_PEERS) * kWarp
         // Acquire sequential lock
         while (lane_id == 0 and rdma_send_next_token_idx != token_idx)
             ;
-        __syncwarp();
+        syncwarp();
 
         // Update last token tail
         if (last_rdma_tail_idx >= 0)
@@ -762,7 +762,7 @@ __launch_bounds__(((kNumDispatchRDMASenderWarps + 1 + NUM_MAX_NVL_PEERS) * kWarp
                 }
 
                 // Update tails
-                __syncwarp();
+                syncwarp();
                 if (lane_id == dst_rdma_rank) {
                     last_issued_tail += num_tokens_to_issue;
                     num_tokens_to_send -= num_tokens_to_issue;
@@ -829,7 +829,7 @@ __launch_bounds__(((kNumDispatchRDMASenderWarps + 1 + NUM_MAX_NVL_PEERS) * kWarp
                 }
             }
         }
-        __syncwarp();
+        syncwarp();
         // Shift cached head
         send_nvl_head += src_rdma_channel_prefix * NUM_MAX_NVL_PEERS + dst_nvl_rank;
 
@@ -862,7 +862,7 @@ __launch_bounds__(((kNumDispatchRDMASenderWarps + 1 + NUM_MAX_NVL_PEERS) * kWarp
                     trap();
                 }
             }
-            __syncwarp();
+            syncwarp();
 
             // Find next source RDMA rank (round-robin)
             start_time = wall_clock64();
@@ -965,13 +965,13 @@ __launch_bounds__(((kNumDispatchRDMASenderWarps + 1 + NUM_MAX_NVL_PEERS) * kWarp
                     (cached_rdma_channel_head = src_rdma_tail);
 
             // Move tail index
-            __syncwarp();
+            syncwarp();
             if (lane_id == 0)
                 st_relaxed_sys_global(nvl_channel_tail.buffer(), cached_nvl_channel_tail);
         }
 
         // Retired
-        __syncwarp();
+        syncwarp();
         if (lane_id == 0)
             forward_channel_retired[dst_nvl_rank] = true;
     } else if (warp_role == WarpRole::kForwarderCoordinator) {
@@ -1052,7 +1052,7 @@ __launch_bounds__(((kNumDispatchRDMASenderWarps + 1 + NUM_MAX_NVL_PEERS) * kWarp
             recv_gbl_channel_prefix_matrix[(lane_id * NUM_MAX_NVL_PEERS + src_nvl_rank) *
                                                num_channels +
                                            channel_id] = total_offset;
-        __syncwarp();
+        syncwarp();
 
         int cached_channel_head_idx = 0, cached_channel_tail_idx = 0;
         while (num_tokens_to_recv > 0) {
@@ -1117,7 +1117,7 @@ __launch_bounds__(((kNumDispatchRDMASenderWarps + 1 + NUM_MAX_NVL_PEERS) * kWarp
             }
 
             // Move queue
-            __syncwarp();
+            syncwarp();
             if (lane_id == 0)
                 st_relaxed_sys_global(nvl_channel_head.buffer(), cached_channel_head_idx);
         }
@@ -1498,7 +1498,7 @@ __launch_bounds__((NUM_MAX_NVL_PEERS + kNumForwarders) * kEmulatedWarpSize + kWa
                                   ? num_tokens
                                   : gbl_channel_prefix_matrix[prefix_idx + 1];
         }
-        __syncwarp();
+        syncwarp();
 
         // NOTES: here the cached value of each lane is only responsible for a single RDMA buffer
         int cached_channel_head_idx = 0, cached_channel_tail_idx = 0;
@@ -1588,7 +1588,7 @@ __launch_bounds__((NUM_MAX_NVL_PEERS + kNumForwarders) * kEmulatedWarpSize + kWa
             }
 
             // Move queue tail
-            __syncwarp();
+            syncwarp();
             if (lane_id < kNumRDMARanks and is_lane_ready)
                 st_relaxed_sys_global(nvl_channel_tail.buffer() + lane_id, cached_channel_tail_idx);
         }
@@ -1642,7 +1642,7 @@ __launch_bounds__((NUM_MAX_NVL_PEERS + kNumForwarders) * kEmulatedWarpSize + kWa
                 volatile int ret = __hip_atomic_fetch_add(
                     &rdma_forwarder_counter[0], 1, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_WORKGROUP);
             }
-            __syncwarp();
+            syncwarp();
             while (rdma_forwarder_counter[0] < (kNumForwarders + 1)) {
             }
         };
@@ -1651,7 +1651,7 @@ __launch_bounds__((NUM_MAX_NVL_PEERS + kNumForwarders) * kEmulatedWarpSize + kWa
                 volatile int ret = __hip_atomic_fetch_add(
                     &rdma_receiver_counter[0], 1, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_WORKGROUP);
             }
-            __syncwarp();
+            syncwarp();
             while (rdma_receiver_counter[0] < (kNumRDMAReceivers + 1)) {
             }
         };
@@ -1666,7 +1666,7 @@ __launch_bounds__((NUM_MAX_NVL_PEERS + kNumForwarders) * kEmulatedWarpSize + kWa
                                              : rdma_channel_data.send_buffer(dst_rdma_rank);
             auto       sync_large_warp = [=](const int iter, const int mode) {
                 if (kNumWarpsPerForwarder == 1) {
-                    __syncwarp();
+                    syncwarp();
                 } else {
 
                     // LDS index to store for sync
@@ -1685,7 +1685,7 @@ __launch_bounds__((NUM_MAX_NVL_PEERS + kNumForwarders) * kEmulatedWarpSize + kWa
                             __hip_atomic_fetch_add(&sync_large_warp_counters[lds_dst_rdma_rank], 1,
                                                          __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_WORKGROUP);
                     }
-                    __syncwarp();
+                    syncwarp();
                     // The while(...) loop polls the counter until all warps have arrived
                     if (lane_id == 0) {
                         while (sync_large_warp_counters[lds_dst_rdma_rank] <
@@ -1698,12 +1698,12 @@ __launch_bounds__((NUM_MAX_NVL_PEERS + kNumForwarders) * kEmulatedWarpSize + kWa
                             }
                         }
                     }
-                    __syncwarp();
+                    syncwarp();
                     if (lane_id == 0 &&
                         sync_large_warp_counters[reset_idx] == kNumWarpsPerForwarder) {
                         sync_large_warp_counters[reset_idx] = 0;
                     }
-                    __syncwarp();
+                    syncwarp();
                 }
             };
             PRIMUS_TURBO_STATIC_CHECK(kNumWarpsPerForwarder == 1 or kNumRDMARanks + 2 <= 16,
@@ -1845,7 +1845,7 @@ __launch_bounds__((NUM_MAX_NVL_PEERS + kNumForwarders) * kEmulatedWarpSize + kWa
                     }
 
                     // Write new RDMA tail
-                    __syncwarp();
+                    syncwarp();
                     if (lane_id == 0)
                         rocshmem::rocshmem_ctx_ulong_atomic_add(
                             ctx, rdma_channel_tail.buffer(rdma_rank), num_chunked_tokens,
@@ -1854,7 +1854,7 @@ __launch_bounds__((NUM_MAX_NVL_PEERS + kNumForwarders) * kEmulatedWarpSize + kWa
             }
 
             // Retired
-            __syncwarp();
+            syncwarp();
             if (lane_id == 0)
                 forwarder_retired[warp_id] = true;
         } else if (warp_role == WarpRole::kRDMAReceiver) {
@@ -1904,7 +1904,7 @@ __launch_bounds__((NUM_MAX_NVL_PEERS + kNumForwarders) * kEmulatedWarpSize + kWa
                     }
                     __builtin_amdgcn_s_sleep(1);
                 }
-                __syncwarp();
+                syncwarp();
 
                 // Combine current token
                 auto recv_fn = [&](int src_rdma_rank, int slot_idx, int hidden_int4_idx) -> int4 {
@@ -1928,7 +1928,7 @@ __launch_bounds__((NUM_MAX_NVL_PEERS + kNumForwarders) * kEmulatedWarpSize + kWa
             }
 
             // Retired
-            __syncwarp();
+            syncwarp();
             if (lane_id == 0)
                 rdma_receiver_retired[warp_id] = true;
         } else {
