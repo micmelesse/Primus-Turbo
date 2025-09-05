@@ -1774,9 +1774,13 @@ __launch_bounds__((NUM_MAX_NVL_PEERS + kNumForwarders) * kEmulatedWarpSize + kWa
                     PRIMUS_TURBO_STATIC_CHECK(kNumRDMARanks <= kWarpSize,
                                               "Invalid number of RDMA peers");
                     int expected_head = -1;
-                    if (lane_id < NUM_MAX_NVL_PEERS)
+                    if (lane_id < NUM_MAX_NVL_PEERS) {
                         expected_head = ld_nc_global(combined_nvl_head +
                                                      token_idx * NUM_MAX_NVL_PEERS + lane_id);
+                        expected_head < 0
+                            ? (forwarder_nvl_head[warp_id][lane_id] = -expected_head - 1)
+                            : (forwarder_nvl_head[warp_id][lane_id] = expected_head);
+                    }
 
                     // Wait lanes to be ready
                     start_time = wall_clock64();
@@ -2033,6 +2037,9 @@ void combine(hipDataType type, void *combined_x, float *combined_topk_weights,
     PRIMUS_TURBO_CHECK(num_max_nvl_chunked_recv_tokens % num_rdma_ranks == 0);
     PRIMUS_TURBO_CHECK(num_max_nvl_chunked_recv_tokens / num_rdma_ranks >
                        std::max(num_max_rdma_chunked_send_tokens, num_max_nvl_chunked_send_tokens));
+    PRIMUS_TURBO_CHECK(num_max_nvl_chunked_recv_tokens / num_rdma_ranks - num_warps_per_forwarder >=
+                       num_max_nvl_chunked_send_tokens);
+    PRIMUS_TURBO_CHECK(num_max_rdma_chunked_send_tokens >= num_warps_per_forwarder);
     PRIMUS_TURBO_CHECK(type == HIP_R_16BF);
 
     SETUP_LAUNCH_CONFIG(num_channels * 2,
