@@ -164,9 +164,9 @@ at::Tensor grouped_gemm_fp8(at::Tensor &a, at::Tensor &b, at::Tensor &a_scales,
     if (granularity == "TENSORWISE") {
         // Create and fill tensors directly
         aq_tensor =
-            at::full({m, 1}, a_scales[0].item<float>(), at::dtype(at::kFloat).device(at::kCUDA));
-        bq_tensor = at::full({bs, n, 1}, b_scales[0].item<float>(),
-                             at::dtype(at::kFloat).device(at::kCUDA));
+            at::full({m, 1}, a_scales.item<float>(), at::dtype(at::kFloat).device(at::kCUDA));
+        bq_tensor =
+            at::full({bs, n, 1}, b_scales.item<float>(), at::dtype(at::kFloat).device(at::kCUDA));
     } else {
         aq_tensor = a_scales.clone();
         bq_tensor = b_scales.clone();
@@ -216,17 +216,6 @@ at::Tensor grouped_gemm_fp8(at::Tensor &a, at::Tensor &b, at::Tensor &a_scales,
         PRIMUS_TURBO_CHECK(false, "GroupedGemmFp8 only support fp8/bf8");
     }
 
-    // Dequant:
-    // TODO: When CK ready, remove below code
-    // {
-    //     if (granularity == "TENSORWISE") {
-    //         return (a_scales * b_scales) * c;
-    //     } else if (granularity == "ROWWISE") {
-    //         return grouped_gemm_fp8_dequant(c, group_lens, group_offs, a_scales, b_scales);
-    //     } else {
-    //         PRIMUS_TURBO_CHECK(false, "Unsupported granularity");
-    //     }
-    // }
     return c;
 }
 
@@ -310,9 +299,9 @@ at::Tensor grouped_gemm_fp8_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor 
     if (granularity == "TENSORWISE") {
         // Create and fill tensors directly
         aq_tensor =
-            at::full({m, 1}, a_scales[0].item<float>(), at::dtype(at::kFloat).device(at::kCUDA));
+            at::full({m, 1}, a_scales.item<float>(), at::dtype(at::kFloat).device(at::kCUDA));
         bq_tensor =
-            at::full({n, 1}, b_scales[0].item<float>(), at::dtype(at::kFloat).device(at::kCUDA));
+            at::full({n, 1}, b_scales.item<float>(), at::dtype(at::kFloat).device(at::kCUDA));
 
     } else {
         aq_tensor = a_scales.clone();
@@ -362,18 +351,6 @@ at::Tensor grouped_gemm_fp8_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor 
     } else {
         PRIMUS_TURBO_CHECK(false, "GroupedGemmFp8 only support fp8");
     }
-
-    // Dequant:
-    // TODO: When CK ready, remove below code
-    // {
-    //     if (granularity == "TENSORWISE") {
-    //         return (a_scales * b_scales) * c;
-    //     } else if (granularity == "ROWWISE") {
-    //         return grouped_gemm_fp8_dequant_variable_k(c, a_scales, b_scales);
-    //     } else {
-    //         PRIMUS_TURBO_CHECK(false, "Unsupported granularity");
-    //     }
-    // }
 
     return c;
 }
