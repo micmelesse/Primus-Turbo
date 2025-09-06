@@ -131,9 +131,3 @@ def test_blockwise_fp8_grouped_gemm_func(B, M, NK, ori_dtype, dtype, block_size)
     wgrad_snr = compute_snr(w_grad_ref, w_grad)
     print(f"WGrad-SNR: {wgrad_snr:.2f} dB")
     assert wgrad_snr > 20, "wgrad_snr too low"
-
-
-if __name__ == "__main__":
-    test_grouped_gemm_fp8(
-        2, 1024, (4096, 7168), torch.half, Format.E4M3, ScalingGranularity.TENSORWISE, True, True
-    )
