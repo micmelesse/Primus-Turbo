@@ -64,6 +64,7 @@ class FusedDispatch(torch.autograd.Function):
         previous_event=None,
         use_cuda_num_token_per_expert: bool = True,
         num_use_cus: int = 64,
+        num_worst_tokens: int = 0,
     ):
         global _groupgemm_backend
         """Forward pass of fused dispatch."""
@@ -84,10 +85,6 @@ class FusedDispatch(torch.autograd.Function):
             async_finish=False,
             allocate_on_comm_stream=False,
         )
-
-        num_tokens, _ = token_indices.shape
-        world_size = group.size()
-        num_worst_tokens = num_tokens * world_size
 
         # Do MoE dispatch
         # NOTES: the CPU will wait for GPU's signal to arrive,
@@ -137,7 +134,7 @@ class FusedDispatch(torch.autograd.Function):
             async_finish=False,
             allocate_on_comm_stream=False,
         )
-        return grad_x, None, grad_token_probs, None, None, None, None, None
+        return grad_x, None, grad_token_probs, None, None, None, None, None, None
 
 
 class FusedCombine(torch.autograd.Function):

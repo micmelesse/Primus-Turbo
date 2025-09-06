@@ -17,6 +17,7 @@ def fused_dispatch(
     previous_event=None,
     use_cuda_num_token_per_expert: bool = True,
     num_use_cus: int = 64,
+    num_worst_tokens: int = 0,
     backend_type: str = "deepep",
 ):
     """Perform fused dispatch operation if deep_ep is available.
@@ -28,7 +29,9 @@ def fused_dispatch(
         num_experts: Number of experts
         group: Process group
         previous_event: Previous CUDA event
+        num_use_cus: the SMs used in high-throughput kernels
         backend_type: use deepep or mori
+        num_worst_tokens: the worst number of tokens to receive, if specified, there will be no CPU sync
 
     Returns:
         Result of FusedDispatch
@@ -51,6 +54,7 @@ def fused_dispatch(
         previous_event,
         use_cuda_num_token_per_expert,
         num_use_cus,
+        num_worst_tokens,
     )
 
 
