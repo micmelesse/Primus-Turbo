@@ -73,8 +73,10 @@ void reduce_row(PrimusTurboReduceOp reduce_op, const InType *input, OutType *out
         reduce_row_impl<AbsMaxOp, InType, OutType, ComputeType>(input, output, outer_len, inner_len,
                                                                 workspace_sizes, workspace, stream);
         return;
+    default:
+        PRIMUS_TURBO_CHECK(false, "Unsupported reduce op");
+        return;
     }
-    PRIMUS_TURBO_CHECK(false, "Unsupported reduce op");
 }
 
 template void reduce_row<float, float, float>(PrimusTurboReduceOp reduce_op, const float *input,

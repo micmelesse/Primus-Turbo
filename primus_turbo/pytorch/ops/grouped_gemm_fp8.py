@@ -228,7 +228,6 @@ class GroupedGemmFP8RowFunc(torch.autograd.Function):
         b_fp8_row, b_scale_inv_row = quantize_fp8(
             b, b_dtype, config.granularity, axis=(-1 if trans_b else -2)
         )
-
         out = grouped_gemm_fp8_csrc_impl(
             a_fp8_row,
             b_fp8_row,
@@ -266,6 +265,7 @@ class GroupedGemmFP8RowFunc(torch.autograd.Function):
         grad_out_fp8_row, grad_out_scale_inv_row = quantize_fp8(
             grad_out, grad_out_dtype, ctx.config.granularity, axis=-1
         )
+
         grad_a = grouped_gemm_fp8_csrc_impl(
             grad_out_fp8_row,
             b_fp8_col,
@@ -415,7 +415,7 @@ def grouped_gemm_fp8(
     num_cu: int | None = None,
 ) -> torch.Tensor:
     """ """
-    supported_dtypes = [torch.bfloat16]
+    supported_dtypes = [torch.bfloat16, torch.half]
     assert a.dtype in supported_dtypes, f"Unsupported dtype {a.dtype}, expected one of {supported_dtypes}"
     assert b.dtype in supported_dtypes, f"Unsupported dtype {b.dtype}, expected one of {supported_dtypes}"
 
