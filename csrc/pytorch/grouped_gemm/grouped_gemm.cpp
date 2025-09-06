@@ -159,18 +159,20 @@ at::Tensor grouped_gemm_fp8(at::Tensor &a, at::Tensor &b, at::Tensor &a_scales,
     const int64_t args_sizes = get_ck_grouped_gemm_args_sizes(group_lens.numel());
     at::Tensor    args_tensor =
         at::empty({args_sizes}, at::TensorOptions().dtype(at::kByte).device(group_lens.device()));
+
+    // Process Scale
     at::Tensor aq_tensor;
     at::Tensor bq_tensor;
     if (granularity == "TENSORWISE") {
-        // Create and fill tensors directly
-        aq_tensor =
-            at::full({m, 1}, a_scales.item<float>(), at::dtype(at::kFloat).device(at::kCUDA));
-        bq_tensor =
-            at::full({bs, n, 1}, b_scales.item<float>(), at::dtype(at::kFloat).device(at::kCUDA));
+        aq_tensor = a_scales.reshape({1, 1}).expand({m, 1});
+        bq_tensor = b_scales.reshape({1, 1, 1}).expand({bs, 1, n});
     } else {
         aq_tensor = a_scales.clone();
         bq_tensor = b_scales.clone();
     }
+    aq_tensor = aq_tensor.contiguous();
+    bq_tensor = bq_tensor.contiguous();
+
     at::Tensor c      = at::empty({m, n}, at::dtype(out_dtype).device(at::kCUDA));
     auto       stream = at::cuda::getCurrentCUDAStream();
 
@@ -243,7 +245,7 @@ at::Tensor grouped_gemm_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &gro
     const int64_t n  = transB ? b.size(0) : b.size(1);
     const int32_t k  = transA ? a.size(0) : a.size(1);
     at::Tensor    c  = at::empty({bs, m, n}, at::dtype(out_dtype).device(at::kCUDA));
-    printf("%d %d %d %d\n", bs, m, n, k);
+
     auto stream = at::cuda::getCurrentCUDAStream();
     if (a.dtype() == at::kHalf) {
         using AType = typename TorchToCKTileType<at::kHalf>::type;
@@ -294,19 +296,18 @@ at::Tensor grouped_gemm_fp8_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor 
     const int32_t k  = transA ? a.size(0) : a.size(1);
     at::Tensor    c  = at::empty({bs, m, n}, at::dtype(out_dtype).device(at::kCUDA));
 
+    // Process Scale
     at::Tensor aq_tensor;
     at::Tensor bq_tensor;
     if (granularity == "TENSORWISE") {
-        // Create and fill tensors directly
-        aq_tensor =
-            at::full({m, 1}, a_scales.item<float>(), at::dtype(at::kFloat).device(at::kCUDA));
-        bq_tensor =
-            at::full({n, 1}, b_scales.item<float>(), at::dtype(at::kFloat).device(at::kCUDA));
-
+        aq_tensor = a_scales.reshape({1, 1}).expand({m, 1});
+        bq_tensor = b_scales.reshape({1, 1, 1}).expand({bs, 1, n});
     } else {
         aq_tensor = a_scales.clone();
         bq_tensor = b_scales.clone();
     }
+    aq_tensor = aq_tensor.contiguous();
+    bq_tensor = bq_tensor.contiguous();
 
     auto stream = at::cuda::getCurrentCUDAStream();
 
@@ -326,8 +327,7 @@ at::Tensor grouped_gemm_fp8_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor 
                 transA, transB, bs, m, n, k, stream, get_grouped_gemm_num_cu(num_cu));
             ck_grouped_gemm_fp8_variable_k<AType, BType, CType, float>(params);
         } else {
-            // TODO:
-            PRIMUS_TURBO_CHECK(false, "");
+            PRIMUS_TURBO_CHECK(false, "GroupedGemmFp8: out dtype only support fp16 and bf16");
         }
     } else if (a.dtype() == at::kFloat8_e5m2fnuz || a.dtype() == at::kFloat8_e5m2) {
         using AType = ck_tile::bf8_t;
@@ -346,10 +346,10 @@ at::Tensor grouped_gemm_fp8_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor 
             ck_grouped_gemm_fp8_variable_k<AType, BType, CType, float>(params);
         } else {
             // TODO:
-            PRIMUS_TURBO_CHECK(false, "");
+            PRIMUS_TURBO_CHECK(false, "GroupedGemmFp8: out dtype only support fp16 and bf16");
         }
     } else {
-        PRIMUS_TURBO_CHECK(false, "GroupedGemmFp8 only support fp8");
+        PRIMUS_TURBO_CHECK(false, "GroupedGemmFp8 input dtype only support fp8/bf8");
     }
 
     return c;

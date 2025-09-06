@@ -415,7 +415,7 @@ def grouped_gemm_fp8(
     num_cu: int | None = None,
 ) -> torch.Tensor:
     """ """
-    supported_dtypes = [torch.bfloat16, torch.half]
+    supported_dtypes = [torch.bfloat16, torch.float16]
     assert a.dtype in supported_dtypes, f"Unsupported dtype {a.dtype}, expected one of {supported_dtypes}"
     assert b.dtype in supported_dtypes, f"Unsupported dtype {b.dtype}, expected one of {supported_dtypes}"
 
