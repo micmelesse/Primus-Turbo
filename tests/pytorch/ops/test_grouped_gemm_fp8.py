@@ -24,7 +24,7 @@ from tests.test_utils import compute_snr
 @pytest.mark.parametrize("B", [1, 2, 3, 4, 8, 16])
 @pytest.mark.parametrize("M", [128, 256, 512, 1024, 2048])
 @pytest.mark.parametrize("NK", [(2048, 1536), (2816, 2048), (3072, 5120), (5120, 1536), (4096, 7168)])
-@pytest.mark.parametrize("ori_dtype", [torch.bfloat16])
+@pytest.mark.parametrize("ori_dtype", [torch.bfloat16, torch.float16])
 @pytest.mark.parametrize("format", [Format.E4M3, Format.E5M2])
 @pytest.mark.parametrize("granularity", [ScalingGranularity.TENSORWISE, ScalingGranularity.ROWWISE])
 @pytest.mark.parametrize("trans_b", [True, False])
@@ -54,8 +54,6 @@ def test_grouped_gemm_fp8(B, M, NK, ori_dtype, format, granularity, trans_b, bal
     config = Float8QuantConfig(format=format, granularity=granularity)
     out = grouped_gemm_fp8(a, b, group_lens, trans_b=trans_b, config=config)
     out.backward(grad_out)
-
-    # print(out_ref, out.shape)
     out_snr = compute_snr(out_ref, out)
     print(f"Out-SNR: {out_snr:.2f} dB")
     assert out_snr > 20, "out_snr too low"

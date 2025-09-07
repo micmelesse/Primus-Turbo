@@ -99,6 +99,7 @@ def get_common_flags():
     cxx_flags = [
         "-O3",
         "-fvisibility=hidden",
+        "-std=c++20",
     ]
 
     nvcc_flags = [
@@ -121,6 +122,7 @@ def get_common_flags():
         "-amdgpu-early-inline-all=true",
         "-mllvm",
         "-amdgpu-function-calls=false",
+        "-std=c++20",
     ]
 
     # Device Arch
