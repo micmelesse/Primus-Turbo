@@ -1,3 +1,10 @@
+###############################################################################
+# Copyright (c) 2025, Advanced Micro Devices, Inc. All rights reserved.
+#
+# See LICENSE for license information.
+###############################################################################
+
+
 import mori
 import torch
 import torch.distributed as dist
@@ -9,12 +16,8 @@ from mori.ops import (
 
 _mori_initialized: bool = False
 _handle: EpDispatchCombineOp = None
-_handle_num_cus: int = 64
+_handle_num_cu: int = 64
 _num_gpus_per_node = 8
-
-
-# NOTE(huangzhen): debug flag will be removed
-ENABLE_SYNC = False
 
 
 def mori_initialize(group: dist.ProcessGroup):
@@ -37,15 +40,20 @@ def mori_initialize(group: dist.ProcessGroup):
         _mori_initialized = True
 
 
-def set_num_cus(num_cus: int):
-    global _handle_num_cus
-    _handle_num_cus = num_cus
+def set_num_cu(num_cu: int):
+    global _handle_num_cu
+    _handle_num_cu = num_cu
+
+
+def get_num_cu() -> int:
+    global _handle_num_cu
+    return _handle_num_cu
 
 
 def get_mori_dispatch_combine(
     group, hidden_states: torch.Tensor, indices: torch.Tensor, num_experts: int
 ) -> EpDispatchCombineOp:
-    global _handle, _handle_group, _num_gpus_per_node, _handle_num_cus
+    global _handle, _handle_group, _num_gpus_per_node
 
     world_size = group.size()
     rank = group.rank()
@@ -71,7 +79,7 @@ def get_mori_dispatch_combine(
         num_experts_per_rank=num_local_experts,
         num_experts_per_token=router_topk,
         warp_num_per_block=16,
-        block_num=_handle_num_cus,
+        block_num=get_num_cu(),
         max_token_type_size=hidden_states.dtype.itemsize,
         kernel_type=(
             EpDispatchCombineKernelType.InterNode if num_nodes > 1 else EpDispatchCombineKernelType.IntraNode
@@ -110,20 +118,16 @@ def make_deepep_topken_indices(
         recv_expert_begin, recv_expert_end, dtype=torch.long, device=token_indices.device
     )
 
-    if not ENABLE_SYNC:
-        routing_map_slice = num_recv_tokens_rows.repeat_interleave(num_experts).view(
-            num_recv_tokens, num_experts
-        )
-        routing_map_slice_ge_recv_num_token = routing_map_slice >= recv_num_token
-        routing_map.masked_fill_(routing_map_slice_ge_recv_num_token, 0)
+    routing_map_slice = num_recv_tokens_rows.repeat_interleave(num_experts).view(num_recv_tokens, num_experts)
+    routing_map_slice_ge_recv_num_token = routing_map_slice >= recv_num_token
+    routing_map.masked_fill_(routing_map_slice_ge_recv_num_token, 0)
     routing_map = torch.index_select(routing_map, dim=1, index=local_expert_id)
 
     # fill -1 when the expert id of token_inces not in local_expert range
     mask = (token_indices < recv_expert_begin) | (token_indices >= recv_expert_end)
-    if not ENABLE_SYNC:
-        mask_slice = num_recv_tokens_rows.repeat_interleave(num_topk).view(num_recv_tokens, num_topk)
-        mask_slice_ge_recv_num_token = mask_slice >= recv_num_token
-        mask = mask | mask_slice_ge_recv_num_token
+    mask_slice = num_recv_tokens_rows.repeat_interleave(num_topk).view(num_recv_tokens, num_topk)
+    mask_slice_ge_recv_num_token = mask_slice >= recv_num_token
+    mask = mask | mask_slice_ge_recv_num_token
     recv_token_indices = token_indices - recv_expert_begin
     recv_token_indices.masked_fill_(mask, -1)
 
@@ -136,8 +140,6 @@ def make_deepep_topken_indices(
 
 
 class FusedDispatch(torch.autograd.Function):
-    """Fused dispatch operation for MoE routing combining computation and communication."""
-
     @staticmethod
     def forward(
         ctx,
@@ -150,9 +152,7 @@ class FusedDispatch(torch.autograd.Function):
         use_cuda_num_token_per_expert: bool = True,
         num_use_cus: int = 64,
     ):
-        """Forward pass of fused dispatch."""
-        global _handle_num_cus
-        _handle_num_cus = num_use_cus
+        set_num_cu(num_use_cus)
 
         mori_initialize(group)
 
@@ -162,16 +162,14 @@ class FusedDispatch(torch.autograd.Function):
         recv_x, recv_token_probs, _, recv_token_indices, recv_num_token = op.dispatch(
             x, token_probs, None, int32_token_indices
         )
+
         # NOTE(huangzhen): output of mori dispatch/combine comes from mori's symmetric memory, it should be copied when output will use.
+        recv_x = recv_x.to(copy=True)
+        recv_token_probs = recv_token_probs.to(copy=True)
+        recv_token_indices = recv_token_indices.to(copy=True)
+        recv_num_token = recv_num_token.to(copy=True)
 
-        copied_recv_token_indices = recv_token_indices.to(copy=True)
-
-        handle = (op, copied_recv_token_indices, int32_token_indices)
-
-        if ENABLE_SYNC:
-            recv_x = recv_x[:recv_num_token].to(copy=True)
-            recv_token_indices = recv_token_indices[:recv_num_token].to(copy=True)
-            recv_token_probs = recv_token_probs[:recv_num_token].to(copy=True)
+        handle = (op, recv_token_indices, int32_token_indices)
 
         recv_token_indices, num_tokens_per_expert = make_deepep_topken_indices(
             recv_token_indices,
@@ -185,16 +183,15 @@ class FusedDispatch(torch.autograd.Function):
         ctx.handle = handle
 
         return (
-            recv_x.to(copy=True),
+            recv_x,
             recv_token_indices,
-            recv_token_probs.to(copy=True),
+            recv_token_probs,
             num_tokens_per_expert,
             handle,
         )
 
     @staticmethod
     def backward(ctx, grad_output, grad_token_indices, grad_token_probs, grad_tokens_per_expert, grad_handle):
-        """Backward pass of fused dispatch."""
         op, recv_token_indices, _ = ctx.handle
         grad_x, grad_token_probs = op.combine(
             grad_output.contiguous(), grad_token_probs.float(), recv_token_indices
@@ -203,13 +200,9 @@ class FusedDispatch(torch.autograd.Function):
 
 
 class FusedCombine(torch.autograd.Function):
-    """Fused combine operation for MoE output combining computation and communication."""
-
     @staticmethod
     def forward(ctx, x, group, handle, previous_event=None, num_use_cus: int = 64):
-        """Forward pass of fused combine."""
-        global _handle_num_cus
-        _handle_num_cus = num_use_cus
+        set_num_cu(num_use_cus)
 
         mori_initialize(group)
 
@@ -221,7 +214,6 @@ class FusedCombine(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output, revious_event=None):
-        """Backward pass of fused combine."""
         op, _, token_indices = ctx.handle
         # need mori support weight is None
         empty_weight = torch.empty_like(
@@ -232,8 +224,5 @@ class FusedCombine(torch.autograd.Function):
         grad_x, _, _, _, num_recv_tokens = op.dispatch(
             grad_output.contiguous(), empty_weight, None, token_indices
         )
-
-        if ENABLE_SYNC:
-            grad_x = grad_x[:num_recv_tokens]
 
         return grad_x, None, None, None, None

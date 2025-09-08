@@ -1,3 +1,7 @@
+from typing import List, Optional, Tuple, Union
+
+import torch
+
 from primus_turbo.pytorch.ops.moe.dispatch_combine import deepep_impl
 
 try:
@@ -18,7 +22,7 @@ def fused_dispatch(
     use_cuda_num_token_per_expert: bool = True,
     num_use_cus: int = 64,
     backend_type: str = "deepep",
-):
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Union[torch.Tensor, List[int]], Tuple]:
     """Perform fused dispatch operation if deep_ep is available.
 
     Args:
@@ -28,6 +32,8 @@ def fused_dispatch(
         num_experts: Number of experts
         group: Process group
         previous_event: Previous CUDA event
+        use_cuda_num_token_per_expert: Whether return token_per_expert as cuda tensor
+        num_use_cus: number of cus of deepep and mori
         backend_type: use deepep or mori
 
     Returns:
@@ -61,7 +67,7 @@ def fused_combine(
     previous_event=None,
     num_use_cus: int = 64,
     backend_type: str = "deepep",
-):
+) -> Tuple[torch.Tensor, Optional[torch.cuda.Event]]:
     """Perform fused combine operation if deep_ep is available.
 
     Args:
@@ -70,6 +76,7 @@ def fused_combine(
         handle: Communication handle
         previous_event: Previous CUDA event
         num_use_cus: number of cus of deepep and mori
+        backend_type: use deepep or mori
 
     Returns:
         Result of FusedCombine

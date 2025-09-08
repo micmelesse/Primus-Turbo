@@ -1,3 +1,9 @@
+###############################################################################
+# Copyright (c) 2025, Advanced Micro Devices, Inc. All rights reserved.
+#
+# See LICENSE for license information.
+###############################################################################
+
 import torch
 
 from primus_turbo.pytorch.deep_ep import Buffer
@@ -6,27 +12,10 @@ _buffer = None
 
 
 def get_hidden_bytes(x: torch.Tensor) -> int:
-    """Calculate the number of hidden bytes for a tensor.
-
-    Args:
-        x (torch.Tensor): Input tensor
-
-    Returns:
-        int: Number of hidden bytes
-    """
     return x.size(1) * max(x.element_size(), 2)
 
 
 def get_buffer(group: torch.distributed.ProcessGroup, hidden_bytes: int):
-    """Get or create a buffer for all-to-all communication.
-
-    Args:
-        group (torch.distributed.ProcessGroup): Process group for communication
-        hidden_bytes (int): Number of hidden bytes needed
-
-    Returns:
-        Buffer: Communication buffer
-    """
     global _buffer
     num_nvl_bytes, num_rdma_bytes = 0, 0
 
@@ -34,12 +23,8 @@ def get_buffer(group: torch.distributed.ProcessGroup, hidden_bytes: int):
         Buffer.get_dispatch_config(group.size()),
         Buffer.get_combine_config(group.size()),
     ):
-        # Split long line for PEP8 compliance
         num_nvl_bytes = max(config.get_nvl_buffer_size_hint(hidden_bytes, group.size()), num_nvl_bytes)
         num_rdma_bytes = max(config.get_rdma_buffer_size_hint(hidden_bytes, group.size()), num_rdma_bytes)
-
-    # Allocate buffer if not existed or not enough buffer
-    # NOTES: the adaptive routing configuration of the network **must be off**
     if (
         _buffer is None
         or _buffer.group != group
@@ -51,7 +36,6 @@ def get_buffer(group: torch.distributed.ProcessGroup, hidden_bytes: int):
 
 
 class FusedDispatch(torch.autograd.Function):
-    """Fused dispatch operation for MoE routing combining computation and communication."""
 
     @staticmethod
     def forward(
@@ -65,9 +49,6 @@ class FusedDispatch(torch.autograd.Function):
         use_cuda_num_token_per_expert: bool = True,
         num_use_cus: int = 64,
     ):
-        global _groupgemm_backend
-        """Forward pass of fused dispatch."""
-        # Calculate layout before actual dispatch
         Buffer.set_num_sms(num_use_cus)
         buffer = get_buffer(group, get_hidden_bytes(x))
 
@@ -88,10 +69,6 @@ class FusedDispatch(torch.autograd.Function):
         num_tokens, _ = token_indices.shape
         world_size = group.size()
         num_worst_tokens = num_tokens * world_size
-
-        # Do MoE dispatch
-        # NOTES: the CPU will wait for GPU's signal to arrive,
-        # so this is not compatible with CUDA graph
         (
             recv_x,
             recv_token_indices,
@@ -102,7 +79,7 @@ class FusedDispatch(torch.autograd.Function):
         ) = buffer.dispatch(
             x,
             topk_idx=token_indices,
-            topk_weights=token_probs,  # DeepEP only supports float32 probs
+            topk_weights=token_probs,
             num_tokens_per_rank=num_tokens_per_rank,
             num_tokens_per_rdma_rank=num_tokens_per_rdma_rank,
             is_token_in_rank=is_token_in_rank,
@@ -125,7 +102,6 @@ class FusedDispatch(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output, grad_token_indices, grad_token_probs, grad_tokens_per_expert, grad_handle):
-        """Backward pass of fused dispatch."""
         buffer = get_buffer(ctx.group, get_hidden_bytes(grad_output))
         handle = ctx.handle
 
@@ -141,11 +117,8 @@ class FusedDispatch(torch.autograd.Function):
 
 
 class FusedCombine(torch.autograd.Function):
-    """Fused combine operation for MoE output combining computation and communication."""
-
     @staticmethod
     def forward(ctx, x, group, handle, previous_event=None, num_use_cus: int = 64):
-        """Forward pass of fused combine."""
         Buffer.set_num_sms(num_use_cus)
         buffer = get_buffer(group, get_hidden_bytes(x))
         combined_x, _, event = buffer.combine(
@@ -158,7 +131,6 @@ class FusedCombine(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output, previous_event=None):
-        """Backward pass of fused combine."""
         buffer = get_buffer(ctx.group, get_hidden_bytes(grad_output))
         grad_x, _, _, _, _, event = buffer.dispatch(
             grad_output.contiguous(),
