@@ -179,12 +179,9 @@ def build_kernels_extension(libraries: List[Library]):
 
     return HIPExtension(
         name="libprimus_turbo_kernels",
-        include_dirs=[
-            Path(PROJECT_ROOT / "csrc" / "include"),
-            Path(PROJECT_ROOT / "3rdparty" / "composable_kernel" / "include"),
-            Path(PROJECT_ROOT / "csrc"),
-        ],
+        include_dirs=include_dirs,
         sources=kernels_sources,
+        library_dirs=library_dirs,
         libraries=["hipblas"],
         **extra_flags,
     )

@@ -13,6 +13,13 @@
 #include "utils.h"
 #include <rocshmem/rocshmem.hpp>
 
+// TODO: fix unroll warnings
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wpass-failed"
+#pragma clang diagnostic ignored "-Wdeprecated-volatile"
+#endif // __clang__
+
 namespace primus_turbo::deep_ep {
 
 namespace internode {
@@ -2044,3 +2051,7 @@ void combine(hipDataType type, void *combined_x, float *combined_topk_weights,
 } // namespace internode
 
 } // namespace primus_turbo::deep_ep
+
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif // __clang__
