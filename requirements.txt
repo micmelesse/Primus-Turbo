@@ -1,8 +1,10 @@
 pre-commit
 --extra-index-url https://test.pypi.org/simple
+--extra-index-url https://download.pytorch.org/whl/rocm6.4
 hip-python
 clang-format==18.1.6
 hipify_torch @ git+https://github.com/ROCm/hipify_torch.git
 jax[rocm]
 build
+torch==2.8.0
 triton==3.3.0
