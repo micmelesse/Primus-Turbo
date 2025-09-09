@@ -1,20 +1,40 @@
-"""
-This is a Triton implementation of the Flash Attention v2 algorithm from Tri Dao
-(https://tridao.me/publications/flash2/flash2.pdf)
-Credits: OpenAI kernel team, AMD ML Frameworks Triton team
+###############################################################################
+# This file includes a Triton implementation of the FlashAttention v2 algorithm,
+# originally developed by Tri Dao.
+#
+# References:
+#   @inproceedings{dao2023flashattention2,
+#       title={Flash{A}ttention-2: Faster Attention with Better Parallelism and Work Partitioning},
+#       author={Dao, Tri},
+#       booktitle={International Conference on Learning Representations (ICLR)},
+#       year={2024}
+#   }
+#
+# Source code:
+#   https://github.com/Dao-AILab/flash-attention
+#
+# License:
+#   BSD 3-Clause License
+#   https://github.com/Dao-AILab/flash-attention/blob/main/LICENSE
+#
+# Credits:
+#   OpenAI kernel team, AMD ML Frameworks Triton team
+#
+# Modifications:
+#   Adapted and extended by Primus-Turbo team for integration into
+#   primus_turbo/triton/attention.
+#
+###############################################################################
+# Features supported:
+# 1) Fwd with causal masking
+# 2) Any sequence lengths without padding (currently fwd kernel only)
+# 3) Support for different sequence lengths for q and k
+# 4) Nested tensor API currently does not support dropout or bias.
+#
+# Not currently supported:
+# 1) Non power of two head dims
+###############################################################################
 
-Features supported:
-
-1) Fwd with causal masking
-2) Any sequence lengths without padding (currently fwd kernel only)
-3) Support for different sequence lengths for q and k
-4) Nested tensor API currently does not support dropout or bias.
-
-Not currently supported:
-
-1) Non power of two head dims
-
-"""
 
 import os
 
