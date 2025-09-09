@@ -18,7 +18,7 @@ PROJECT_ROOT = Path(os.path.dirname(__file__)).parent.parent.parent.resolve()
 sys.path.insert(0, str(PROJECT_ROOT))
 
 
-from benchmark.ops.deep_ep.model_cfg import DeepEPModelCfg
+from benchmark.ops.deep_ep.model_cfg import DeepEPModelCfg, get_model_cfg
 from tests.pytorch.ref.deep_ep_ref import tune_and_verify_internode
 
 # fmt: on
@@ -288,7 +288,6 @@ def init_dist(local_rank: int, num_local_ranks: int, backend: str = "nccl"):
 
 
 def record_perf(local_rank: int, num_local_ranks: int):
-    global g_model_cfg
 
     # DataFrame to store results
     best_result = []
@@ -300,7 +299,7 @@ def record_perf(local_rank: int, num_local_ranks: int):
     assert num_local_ranks == 8 and num_ranks > 8
     torch.manual_seed(rank)
 
-    for cfg in g_model_cfg:
+    for cfg in get_model_cfg():
         for num_sms in (
             24,
             32,

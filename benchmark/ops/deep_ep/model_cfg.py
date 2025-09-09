@@ -49,3 +49,8 @@ g_model_cfg = [
         batch_size=1,
     ),
 ]
+
+
+def get_model_cfg() -> DeepEPModelCfg:
+    global g_model_cfg
+    return g_model_cfg

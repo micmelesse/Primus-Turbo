@@ -260,7 +260,7 @@ if __name__ == "__main__":
 
     # Extensions
     kernels_ext = build_kernels_extension(libraries)
-    # TODO: Control build one or all.
+
     torch_ext = build_torch_extension()
     jax_ext = build_jax_extension()
     ext_modules = [kernels_ext] + [e for e in (torch_ext, jax_ext) if e is not None]

@@ -5,7 +5,9 @@
 ###############################################################################
 
 import os
+import sys
 from dataclasses import asdict, dataclass
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -13,9 +15,16 @@ import torch
 import torch.distributed as dist
 from tabulate import tabulate
 
-from benchmark.ops.deep_ep.model_cfg import DeepEPModelCfg, g_model_cfg
 from primus_turbo.pytorch import deep_ep
+
+# fmt: off
+PROJECT_ROOT = Path(os.path.dirname(__file__)).parent.parent.parent.resolve()
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from benchmark.ops.deep_ep.model_cfg import DeepEPModelCfg, get_model_cfg
 from tests.pytorch.ref.deep_ep_ref import tune_and_verify_intranode
+
+# fmt: on
 
 
 @dataclass
@@ -211,7 +220,6 @@ def init_dist(local_rank: int, num_local_ranks: int, backend: str = "nccl"):
 
 
 def record_perf(local_rank: int, num_local_ranks: int):
-    global g_model_cfg
 
     # DataFrame to store results
     best_result = []
@@ -219,7 +227,7 @@ def record_perf(local_rank: int, num_local_ranks: int):
     buffer = deep_ep.Buffer(group, int(2e9), 0, False, 1, explicitly_destroy=True)
     torch.manual_seed(rank)
 
-    for cfg in g_model_cfg:
+    for cfg in get_model_cfg():
         for num_sms in (24, 32, 64, 80):
             dispatch_result, combine_result = bench_intranode(
                 cfg, num_sms, local_rank, num_ranks, rank, buffer, group
