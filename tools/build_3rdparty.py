@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from packaging.version import Version
+
 from .patch import patch_torch_extension
 
 patch_torch_extension()
@@ -17,8 +18,8 @@ patch_torch_extension()
 PROJECT_ROOT = Path(os.path.dirname(__file__)).resolve().parent
 THIRD_PARTY_DIR = PROJECT_ROOT / "3rdparty"
 
-DEFAULT_BUILD_PATH = os.getenv("PRIMUS_TURBO_BUILD_DIR", PROJECT_ROOT / "build" / "3rdparty")
-DEFAULT_INSTALL_PREFIX = os.getenv("PRIMUS_TURBO_INSTALL_PREFIX", PROJECT_ROOT / "install")
+DEFAULT_DEPS_BUILD_DIR = os.getenv("PRIMUS_TURBO_DEPS_BUILD_DIR", PROJECT_ROOT / "build" / "3rdparty")
+DEFAULT_DEPS_INSTALL_PREFIX = os.getenv("PRIMUS_TURBO_DEPS_INSTALL_PREFIX", PROJECT_ROOT / "install")
 SKIP_DEPS_VERSION_CHECK = int(os.getenv("PRIMUS_TURBO_SKIP_DEPS_VERSION_CHECK", 1))
 
 ROCSHMEM_HOME: Optional[Path] = None
@@ -47,7 +48,7 @@ class Library:
 
 
 def build_3rdparty(
-    build_dir: Path = DEFAULT_BUILD_PATH, install_prefix: Path = DEFAULT_INSTALL_PREFIX
+    build_dir: Path = DEFAULT_DEPS_BUILD_DIR, install_prefix: Path = DEFAULT_DEPS_INSTALL_PREFIX
 ) -> List[Library]:
     global ROCSHMEM_HOME, ROCSHMEM_LIBRARY_PATH, ROCSHMEM_INCLUDE_PATH
     global MPI_HOME, UCX_HOME, MPI_LIBRARY_PATH, MPI_INCLUDE_PATH, UCX_LIBRARY_PATH, UCX_INCLUDE_PATH
@@ -68,13 +69,10 @@ def build_3rdparty(
     # 2. check if the found ompi and ucx versions are compatible
     # if not compatible, build them from source
     satisfied = ompi_home and ucx_home
-    if satisfied:
+    if satisfied and not SKIP_DEPS_VERSION_CHECK:
         satisfied = _check_ompi_ucx(ompi_home, ucx_home)
 
-    if not satisfied and not SKIP_DEPS_VERSION_CHECK:
-        print(
-            "[Primus-Turbo Setup] ompi and ucx not exist or not satisfy minimum version, building from source..."
-        )
+    if not satisfied:
         ompi_home, ucx_home = _build_ompi_ucx(build_dir, install_prefix)
 
     # 3. set global variables for ompi and ucx
