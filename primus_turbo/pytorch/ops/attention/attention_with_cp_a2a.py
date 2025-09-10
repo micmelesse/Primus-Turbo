@@ -384,6 +384,7 @@ class AttentionCKFunctionCPA2A(torch.autograd.Function):
         how_v3_bf16_cvt: Optional[int] = 1,
     ):
         assert bias is None
+        assert return_lse == False
         is_grad = is_grad_enabled and any(x.requires_grad for x in [q, k, v])
 
         n = cp_group.size()
@@ -392,6 +393,7 @@ class AttentionCKFunctionCPA2A(torch.autograd.Function):
         s = s * n
         assert h_q % n == 0
         assert h_kv % n == 0
+        
         # bshd only
         seq_dim = 1
         attn_helper = get_attention_cp_a2a_helper(b, s, h_q, h_kv, d_qk, d_v, seq_dim, n)
@@ -448,13 +450,7 @@ class AttentionCKFunctionCPA2A(torch.autograd.Function):
         )
         output_local_tokens = attn_helper.reshape_o_after_a2a(output_local_tokens)
 
-        result = [output_local_tokens]
-        if return_lse:
-            result.append(softmax_lse)
-        if return_softmax:
-            result.append(S_dmask)
-
-        return result[0] if len(result) == 1 else tuple(result)
+        return output_local_tokens
 
     @staticmethod
     def backward(ctx, dout, *args):
