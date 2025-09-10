@@ -148,6 +148,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         .def("low_latency_combine", &deep_ep::Buffer::low_latency_combine)
         .def("get_next_low_latency_combine_buffer",
              &deep_ep::Buffer::get_next_low_latency_combine_buffer);
+    
+    auto helper_module = m.def_submodule("helpers", "Hip helper functions.");
+    helper_module.def("create_stream_with_cu_masks", &create_stream_with_cu_masks);
+    helper_module.def("destroy_stream", &destroy_stream);
 }
 
 /********************************************/
