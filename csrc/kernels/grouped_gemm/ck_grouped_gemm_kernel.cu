@@ -60,9 +60,6 @@ get_ck_grouped_gemm_instance(const ck_tile::index_t group_num, const ck_tile::in
             using TileConfig = CKGroupedGemmTileCfg_256x128x64_32x32x16_2x2x1;
             using Runner = CKGroupedGemmRunner<ADataType, BDataType, CDataType, ALayout, BLayout,
                                                CLayout, TileConfig, AccDataType>;
-            printf("[WARNING] CKGroupedGemmRunner4:   n=%d %% 256 != 0, use "
-                   "CKGroupedGemmTileCfg_256x128x64_32x32x16_2x2x1 instead\n",
-                   n);
             return std::make_unique<Runner>();
         }
 
@@ -77,9 +74,6 @@ get_ck_grouped_gemm_instance(const ck_tile::index_t group_num, const ck_tile::in
             using TileConfig = CKGroupedGemmTileCfg_256x128x128_32x32x32_2x2x1;
             using Runner     = CKQuantGroupedGemmRunner<ADataType, BDataType, CDataType, ALayout,
                                                         BLayout, CLayout, TileConfig, AccDataType>;
-            printf("[WARNING] CKGroupedGemmRunner4:   n=%d %% 256 != 0, use "
-                   "CKGroupedGemmTileCfg_256x128x128_32x32x32_2x2x1 instead\n",
-                   n);
             return std::make_unique<Runner>();
         }
     } else {
