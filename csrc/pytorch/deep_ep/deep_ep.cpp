@@ -20,11 +20,12 @@
 namespace primus_turbo::pytorch::deep_ep {
 
 Buffer::Buffer(int rank, int num_ranks, int64_t num_nvl_bytes, int64_t num_rdma_bytes,
-               bool low_latency_mode, bool explicitly_destroy)
+               bool low_latency_mode, bool explicitly_destroy, bool use_default_stream_as_comm_stream)
     : rank(rank), num_ranks(num_ranks), num_nvl_bytes(num_nvl_bytes),
       num_rdma_bytes(num_rdma_bytes), low_latency_mode(low_latency_mode),
       explicitly_destroy(explicitly_destroy),
-      comm_stream(at::hip::getStreamFromPoolMasqueradingAsCUDA(true)) {
+      use_default_stream_as_comm_stream(use_default_stream_as_comm_stream),
+      comm_stream(use_default_stream_as_comm_stream ? at::hip::getCurrentHIPStreamMasqueradingAsCUDA() : at::hip::getStreamFromPoolMasqueradingAsCUDA(true)) {
     // Metadata memory
     int64_t barrier_signal_bytes     = NUM_MAX_NVL_PEERS * sizeof(int);
     int64_t buffer_ptr_bytes         = NUM_MAX_NVL_PEERS * sizeof(void *);
@@ -288,11 +289,13 @@ Buffer::get_dispatch_layout(const torch::Tensor &topk_idx, int num_experts,
         at::hip::setCurrentHIPStreamMasqueradingAsCUDA(comm_stream);
     }
 
-    // Wait previous tasks to be finished
-    if (previous_event.has_value()) {
-        stream_wait(comm_stream, previous_event.value());
-    } else {
-        stream_wait(comm_stream, compute_stream);
+    if (not use_default_stream_as_comm_stream) {
+        // Wait previous tasks to be finished
+        if (previous_event.has_value()) {
+            stream_wait(comm_stream, previous_event.value());
+        } else {
+            stream_wait(comm_stream, compute_stream);
+        }
     }
 
     auto num_tokens = static_cast<int>(topk_idx.size(0)),
@@ -330,7 +333,9 @@ Buffer::get_dispatch_layout(const torch::Tensor &topk_idx, int num_experts,
                 to.has_value() ? to->record_stream(compute_stream) : void();
         }
     } else {
-        stream_wait(compute_stream, comm_stream);
+        if (not use_default_stream_as_comm_stream) {
+            stream_wait(compute_stream, comm_stream);
+        }
     }
 
     // Switch back compute stream
@@ -447,10 +452,12 @@ Buffer::intranode_dispatch(
     }
 
     // Wait previous tasks to be finished
-    if (previous_event.has_value()) {
-        stream_wait(comm_stream, previous_event.value());
-    } else {
-        stream_wait(comm_stream, compute_stream);
+    if (not use_default_stream_as_comm_stream) {
+        if (previous_event.has_value()) {
+            stream_wait(comm_stream, previous_event.value());
+        } else {
+            stream_wait(comm_stream, compute_stream);
+        }
     }
 
     // Create handles (only return for non-cached mode)
@@ -459,7 +466,7 @@ Buffer::intranode_dispatch(
     auto             channel_prefix_matrix = torch::Tensor();
     std::vector<int> num_recv_tokens_per_expert_list;
     torch::Tensor    num_recv_tokens_per_expert = torch::empty(
-        {num_local_experts}, torch::TensorOptions().dtype(torch::kInt32).device(torch::kCUDA));
+        {num_local_experts}, torch::TensorOptions().dtype(torch::kLong).device(torch::kCUDA));
 
     // Barrier or send sizes
     // To clean: channel start/end offset, head and tail
@@ -494,7 +501,7 @@ Buffer::intranode_dispatch(
         primus_turbo::deep_ep::intranode::notify_dispatch(
             num_tokens_per_rank->data_ptr<int>(), moe_recv_counter_mapped, num_ranks,
             num_tokens_per_expert->data_ptr<int>(), moe_recv_expert_counter_mapped,
-            num_recv_tokens_per_expert.data_ptr<int>(), num_experts, num_tokens,
+            num_recv_tokens_per_expert.data_ptr<int64_t>(), num_experts, num_tokens,
             is_token_in_rank.data_ptr<bool>(), channel_prefix_matrix.data_ptr<int>(),
             rank_prefix_matrix.data_ptr<int>(), num_memset_int, expert_alignment, buffer_ptrs_gpu,
             barrier_signal_ptrs_gpu, rank, comm_stream, num_channels);
@@ -607,7 +614,9 @@ Buffer::intranode_dispatch(
                 to.has_value() ? to->record_stream(compute_stream) : void();
         }
     } else {
-        stream_wait(compute_stream, comm_stream);
+        if (not use_default_stream_as_comm_stream) {
+            stream_wait(compute_stream, comm_stream);
+        }
     }
 
     // Switch back compute stream
@@ -673,10 +682,12 @@ Buffer::intranode_combine(const torch::Tensor &x, const std::optional<torch::Ten
     }
 
     // Wait previous tasks to be finished
-    if (previous_event.has_value()) {
-        stream_wait(comm_stream, previous_event.value());
-    } else {
-        stream_wait(comm_stream, compute_stream);
+    if (not use_default_stream_as_comm_stream) {
+        if (previous_event.has_value()) {
+            stream_wait(comm_stream, previous_event.value());
+        } else {
+            stream_wait(comm_stream, compute_stream);
+        }
     }
 
     int    num_topk              = 0;
@@ -745,7 +756,9 @@ Buffer::intranode_combine(const torch::Tensor &x, const std::optional<torch::Ten
                 to.has_value() ? to->record_stream(compute_stream) : void();
         }
     } else {
-        stream_wait(compute_stream, comm_stream);
+        if (not use_default_stream_as_comm_stream) {
+            stream_wait(compute_stream, comm_stream);
+        }
     }
 
     // Switch back compute stream
