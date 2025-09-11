@@ -21,9 +21,11 @@ from tests.pytorch.ref.gemm_ref import (
 from tests.test_utils import compute_snr
 
 
-@pytest.mark.parametrize("B", [1, 2, 3, 4, 8, 16])
+@pytest.mark.parametrize("B", [1, 2, 3, 8, 16, 32])
 @pytest.mark.parametrize("M", [128, 256, 512, 1024, 2048])
-@pytest.mark.parametrize("NK", [(2048, 1536), (2816, 2048), (3072, 5120), (5120, 1536), (4096, 7168)])
+@pytest.mark.parametrize(
+    "NK", [(2048, 1536), (2048, 1408), (2816, 2048), (3072, 5120), (5120, 1536), (4096, 7168), (7168, 2048)]
+)
 @pytest.mark.parametrize("ori_dtype", [torch.bfloat16, torch.float16])
 @pytest.mark.parametrize("format", [Format.E4M3, Format.E5M2])
 @pytest.mark.parametrize("granularity", [ScalingGranularity.TENSORWISE, ScalingGranularity.ROWWISE])
