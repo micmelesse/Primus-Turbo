@@ -1,8 +1,13 @@
+from typing import Optional
+
 import torch
 
-from primus_turbo.pytorch.deep_ep import Buffer
+from primus_turbo.pytorch.deep_ep import Buffer, Config
 
 _buffer = None
+
+_dispatch_config: Config = None
+_combine_config: Config = None
 
 
 def get_hidden_bytes(x: torch.Tensor) -> int:
@@ -65,8 +70,10 @@ class FusedDispatch(torch.autograd.Function):
         use_cuda_num_token_per_expert: bool = True,
         num_use_cus: int = 64,
         num_worst_tokens: int = 0,
+        config: Optional[Config] = None,
     ):
-        global _groupgemm_backend
+        global _dispatch_config
+        _dispatch_config = config
         """Forward pass of fused dispatch."""
         # Calculate layout before actual dispatch
         Buffer.set_num_sms(num_use_cus)
@@ -109,6 +116,7 @@ class FusedDispatch(torch.autograd.Function):
             allocate_on_comm_stream=False,
             num_recv_tokens_per_expert_as_cuda=use_cuda_num_token_per_expert,
             num_worst_tokens=num_worst_tokens,
+            config=_dispatch_config,
         )
 
         ctx.group = group
@@ -123,6 +131,8 @@ class FusedDispatch(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_output, grad_token_indices, grad_token_probs, grad_tokens_per_expert, grad_handle):
         """Backward pass of fused dispatch."""
+        global _combine_config
+
         buffer = get_buffer(ctx.group, get_hidden_bytes(grad_output))
         handle = ctx.handle
 
@@ -133,20 +143,31 @@ class FusedDispatch(torch.autograd.Function):
             previous_event=None,
             async_finish=False,
             allocate_on_comm_stream=False,
+            config=_combine_config,
         )
-        return grad_x, None, grad_token_probs, None, None, None, None, None, None
+        return grad_x, None, grad_token_probs, None, None, None, None, None, None, None
 
 
 class FusedCombine(torch.autograd.Function):
     """Fused combine operation for MoE output combining computation and communication."""
 
     @staticmethod
-    def forward(ctx, x, group, handle, previous_event=None, num_use_cus: int = 64):
+    def forward(
+        ctx, x, group, handle, previous_event=None, num_use_cus: int = 64, config: Optional[Config] = None
+    ):
         """Forward pass of fused combine."""
+        global _combine_config
+        _combine_config = config
+
         Buffer.set_num_sms(num_use_cus)
         buffer = get_buffer(group, get_hidden_bytes(x))
         combined_x, _, event = buffer.combine(
-            x, handle=handle, async_finish=False, previous_event=None, allocate_on_comm_stream=False
+            x,
+            handle=handle,
+            async_finish=False,
+            previous_event=None,
+            allocate_on_comm_stream=False,
+            config=_combine_config,
         )
         ctx.handle = handle
         ctx.group = group
@@ -156,6 +177,8 @@ class FusedCombine(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_output, previous_event=None):
         """Backward pass of fused combine."""
+        global _dispatch_config
+
         buffer = get_buffer(ctx.group, get_hidden_bytes(grad_output))
         grad_x, _, _, _, _, event = buffer.dispatch(
             grad_output.contiguous(),
@@ -163,5 +186,6 @@ class FusedCombine(torch.autograd.Function):
             previous_event=previous_event,
             async_finish=False,
             allocate_on_comm_stream=False,
+            config=_dispatch_config,
         )
-        return grad_x, None, None, None, None
+        return grad_x, None, None, None, None, None

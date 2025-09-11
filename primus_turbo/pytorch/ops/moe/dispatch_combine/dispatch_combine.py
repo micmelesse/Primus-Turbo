@@ -1,3 +1,6 @@
+from typing import Optional
+
+from primus_turbo.pytorch.deep_ep import Config
 from primus_turbo.pytorch.ops.moe.dispatch_combine import deepep_impl
 
 try:
@@ -18,6 +21,7 @@ def fused_dispatch(
     use_cuda_num_token_per_expert: bool = True,
     num_use_cus: int = 64,
     num_worst_tokens: int = 0,
+    config: Optional[Config] = None,
     backend_type: str = "deepep",
 ):
     """Perform fused dispatch operation if deep_ep is available.
@@ -32,6 +36,7 @@ def fused_dispatch(
         num_use_cus: the SMs used in high-throughput kernels
         backend_type: use deepep or mori
         num_worst_tokens: the worst number of tokens to receive, if specified, there will be no CPU sync
+        config: DeepEP dispatch config for tuning
 
     Returns:
         Result of FusedDispatch
@@ -55,6 +60,7 @@ def fused_dispatch(
         use_cuda_num_token_per_expert,
         num_use_cus,
         num_worst_tokens,
+        config,
     )
 
 
@@ -64,6 +70,7 @@ def fused_combine(
     handle,
     previous_event=None,
     num_use_cus: int = 64,
+    config: Optional[Config] = None,
     backend_type: str = "deepep",
 ):
     """Perform fused combine operation if deep_ep is available.
@@ -74,6 +81,7 @@ def fused_combine(
         handle: Communication handle
         previous_event: Previous CUDA event
         num_use_cus: number of cus of deepep and mori
+        config: DeepEP combine config for tuning
 
     Returns:
         Result of FusedCombine
@@ -87,4 +95,4 @@ def fused_combine(
     else:
         raise ValueError("fused_combine only support deepep or mori")
 
-    return FusedCombine.apply(x, group, handle, previous_event, num_use_cus)
+    return FusedCombine.apply(x, group, handle, previous_event, num_use_cus, config)
