@@ -156,7 +156,7 @@ at::Tensor grouped_gemm_fp8(at::Tensor &a, at::Tensor &b, at::Tensor &a_scales,
     const int32_t n  = transB ? b.size(1) : b.size(2);
     const int32_t k  = transA ? a.size(0) : a.size(1);
     // Alloc args workspace
-    const int64_t args_sizes = get_ck_grouped_gemm_args_sizes(group_lens.numel());
+    const int64_t args_sizes = get_ck_grouped_gemm_fp8_args_sizes(group_lens.numel());
     at::Tensor    args_tensor =
         at::empty({args_sizes}, at::TensorOptions().dtype(at::kByte).device(group_lens.device()));
 
@@ -285,7 +285,7 @@ at::Tensor grouped_gemm_fp8_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor 
                        "out_dtype must be kBFloat16 or kHalf");
 
     // Alloc args workspace
-    const int64_t args_sizes = get_ck_grouped_gemm_args_sizes(group_lens.numel());
+    const int64_t args_sizes = get_ck_grouped_gemm_fp8_args_sizes(group_lens.numel());
     at::Tensor    args_tensor =
         at::empty({args_sizes}, at::TensorOptions().dtype(at::kByte).device(group_lens.device()));
 
