@@ -39,6 +39,7 @@ class Buffer:
         allow_nvlink_for_low_latency_mode: bool = True,
         allow_mnnvl: bool = False,
         explicitly_destroy: bool = False,
+        use_default_stream_as_comm_stream: bool = True,
     ) -> None:
         """
         Initialize the communication buffer.
@@ -70,7 +71,13 @@ class Buffer:
         self.low_latency_mode = low_latency_mode
         self.explicitly_destroy = explicitly_destroy
         self.runtime = deep_ep_cpp.Buffer(
-            self.rank, self.group_size, num_nvl_bytes, num_rdma_bytes, low_latency_mode, explicitly_destroy
+            self.rank,
+            self.group_size,
+            num_nvl_bytes,
+            num_rdma_bytes,
+            low_latency_mode,
+            explicitly_destroy,
+            use_default_stream_as_comm_stream,
         )
 
         # Synchronize device IDs
@@ -507,9 +514,9 @@ class Buffer:
                 recv_topk_idx,
                 recv_topk_weights,
                 (
-                    num_recv_tokens_per_expert_list
-                    if not num_recv_tokens_per_expert_as_cuda
-                    else num_recv_tokens_per_expert_cuda
+                    num_recv_tokens_per_expert_cuda
+                    if num_recv_tokens_per_expert_as_cuda
+                    else num_recv_tokens_per_expert_list
                 ),
                 handle,
                 EventOverlap(event),

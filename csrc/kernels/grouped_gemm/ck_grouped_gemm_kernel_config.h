@@ -71,7 +71,7 @@ using CKGroupedGemmTileCfg_256x128x128_32x32x32_2x2x1 = CKGroupedGemmTileConfig<
     256, 128, 128, 32, 32, 32, 2, 2, 1, false, false
 >;
 using CKGroupedGemmTileCfg_256x128x128_32x32x32_2x2x1_padding = CKGroupedGemmTileConfig<
-    256, 128, 128, 32, 32, 32, 2, 2, 1, false, false
+    256, 128, 128, 32, 32, 32, 2, 2, 1, false, true
 >;
 // clang-format on
 } // namespace primus_turbo
