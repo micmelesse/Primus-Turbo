@@ -10,15 +10,11 @@ from primus_turbo.pytorch.kernels.grouped_gemm.grouped_gemm_csrc_impl import (
     grouped_gemm_csrc_impl,
     grouped_gemm_variable_k_csrc_impl,
 )
+from primus_turbo.pytorch.kernels.grouped_gemm.grouped_gemm_fp8_impl import (
+    grouped_gemm_compute_offs,
+)
 
 __all__ = ["grouped_gemm"]
-
-
-@torch.compile
-def compute_group_offs(group_lens: torch.Tensor) -> torch.Tensor:
-    return torch.cat(
-        [torch.tensor([0], device=group_lens.device, dtype=group_lens.dtype), group_lens.cumsum(0)]
-    )
 
 
 class GroupedGemmFunc(torch.autograd.Function):
@@ -29,7 +25,8 @@ class GroupedGemmFunc(torch.autograd.Function):
         b: torch.Tensor,
         group_lens: torch.Tensor,  # [B,] int64
         group_offs: torch.Tensor,  # [B+1,] int64
-        trans_b: bool = False,
+        trans_b: bool,
+        num_cu: int | None,
     ):
         out = grouped_gemm_csrc_impl(
             a,
@@ -38,10 +35,12 @@ class GroupedGemmFunc(torch.autograd.Function):
             group_offs,
             trans_a=False,
             trans_b=trans_b,
+            num_cu=num_cu,
         )
         ctx.save_for_backward(a, b, group_lens, group_offs)
         ctx.trans_a = False
         ctx.trans_b = trans_b
+        ctx.num_cu = num_cu
         return out
 
     @staticmethod
@@ -54,6 +53,7 @@ class GroupedGemmFunc(torch.autograd.Function):
             group_offs,
             trans_a=False,
             trans_b=not ctx.trans_b,
+            num_cu=ctx.num_cu,
         )
 
         lhs, rhs = (grad_out, a) if ctx.trans_b else (a, grad_out)
@@ -64,6 +64,7 @@ class GroupedGemmFunc(torch.autograd.Function):
             group_offs,
             trans_a=True,
             trans_b=False,
+            num_cu=ctx.num_cu,
         )
         return grad_a, grad_b, None, None, None, None
 
@@ -74,6 +75,7 @@ def grouped_gemm(
     group_lens: torch.Tensor,
     group_offs: torch.Tensor | None = None,
     trans_b: bool = False,
+    num_cu: int | None = None,
 ) -> torch.Tensor:
     """
     Grouped GEMM.
@@ -85,6 +87,7 @@ def grouped_gemm(
         group_offs (torch.Tensor | None): Exclusive prefix-sum of group_lens, shape [G+1].
                                           If None, it will be computed internally.
         trans_b (bool): If True, treat each b[g] as transposed.
+        num_cu (int | None): Limit the number of CUs to use. None = default.
 
     Returns:
         torch.Tensor: Output of shape [sum(group_lens), N], same dtype/device as `a`.
@@ -99,6 +102,6 @@ def grouped_gemm(
         torch.Size([96, 64])
     """
     if group_offs is None:
-        group_offs = compute_group_offs(group_lens)
+        group_offs = grouped_gemm_compute_offs(group_lens)
 
-    return GroupedGemmFunc.apply(a, b, group_lens, group_offs, trans_b)
+    return GroupedGemmFunc.apply(a, b, group_lens, group_offs, trans_b, num_cu)

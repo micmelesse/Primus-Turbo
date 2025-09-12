@@ -13,6 +13,10 @@ from primus_turbo.utils.hip_extension import HIPExtension
 PROJECT_ROOT = Path(os.path.dirname(__file__)).resolve()
 DEFAULT_HIPCC = "/opt/rocm/bin/hipcc"
 
+# -------- env switches --------
+BUILD_TORCH = os.environ.get("PRIMUS_TURBO_BUILD_TORCH", "1") == "1"
+BUILD_JAX = os.environ.get("PRIMUS_TURBO_BUILD_JAX", "0") == "1"
+
 
 class TurboBuildExt(BuildExtension):
     KERNEL_EXT_NAME = "libprimus_turbo_kernels"
@@ -42,19 +46,14 @@ class TurboBuildExt(BuildExtension):
             print(f"  - {build_dst_dir}")
 
 
-def all_files_in_dir(path, name_extensions=[]):
+def all_files_in_dir(path, name_extensions=None):
     all_files = []
     for dirname, _, names in os.walk(path):
         for name in names:
-            skip = True
-            for name_extension in name_extensions:
-                if name_extension in name:
-                    skip = False
-                    break
-            if skip:
+            suffix = Path(name).suffix.lstrip(".")
+            if name_extensions and suffix not in name_extensions:
                 continue
             all_files.append(Path(dirname, name))
-
     return all_files
 
 
@@ -100,6 +99,7 @@ def get_common_flags():
     cxx_flags = [
         "-O3",
         "-fvisibility=hidden",
+        "-std=c++20",
     ]
 
     nvcc_flags = [
@@ -122,15 +122,17 @@ def get_common_flags():
         "-amdgpu-early-inline-all=true",
         "-mllvm",
         "-amdgpu-function-calls=false",
+        "-std=c++20",
     ]
 
     # Device Arch
     # TODO: Add ENV Setting
     # TODO: ROCM Version support
-    # nvcc_flags += [
-    #     "--offload-arch=gfx942",
-    #     "--offload-arch=gfx950",
-    # ]
+    nvcc_flags += [
+        "--offload-arch=native",
+        # "--offload-arch=gfx942",
+        # "--offload-arch=gfx950",
+    ]
 
     max_jobs = int(os.getenv("MAX_JOBS", "4"))
     nvcc_flags.append(f"-parallel-jobs={max_jobs}")
@@ -152,7 +154,8 @@ def build_kernels_extension():
     ]
 
     kernels_source_files = Path(PROJECT_ROOT / "csrc" / "kernels")
-    kernels_source = all_files_in_dir(kernels_source_files, name_extensions=["cpp", "cc", "cu"])
+    kernels_sources = all_files_in_dir(kernels_source_files, name_extensions=["cpp", "cc", "cu"])
+
     return HIPExtension(
         name="libprimus_turbo_kernels",
         include_dirs=[
@@ -160,13 +163,16 @@ def build_kernels_extension():
             Path(PROJECT_ROOT / "3rdparty" / "composable_kernel" / "include"),
             Path(PROJECT_ROOT / "csrc"),
         ],
-        sources=kernels_source,
+        sources=kernels_sources,
         libraries=["hipblas"],
         **extra_flags,
     )
 
 
 def build_torch_extension():
+    if not BUILD_TORCH:
+        return None
+
     # Link and Compile flags
     extra_flags = get_common_flags()
     extra_flags["extra_link_args"] = [
@@ -193,6 +199,9 @@ def build_torch_extension():
 
 
 def build_jax_extension():
+    if not BUILD_JAX:
+        return None
+
     import pybind11
     from jax import ffi
 
@@ -229,25 +238,27 @@ if __name__ == "__main__":
 
     # Extensions
     kernels_ext = build_kernels_extension()
-    # TODO: Control build one or all.
     torch_ext = build_torch_extension()
     jax_ext = build_jax_extension()
+    ext_modules = [kernels_ext] + [e for e in (torch_ext, jax_ext) if e is not None]
+
+    # Entry points and Install Requires
+    entry_points = {}
+    install_requires = [
+        "aiter @ git+https://github.com/ROCm/aiter.git@97007320d4b1d7b882d99af02cad02fbb9957559",
+        "hip-python",
+    ]
+    if BUILD_JAX:
+        entry_points["jax_plugins"] = ["primus_turbo = primus_turbo.jax"]
+        install_requires.append("jax[rocm]")
 
     setup(
         name="primus_turbo",
         version=get_version(),
         packages=find_packages(exclude=["tests", "tests.*"]),
         package_data={"primus_turbo": ["lib/*.so"]},
-        ext_modules=[kernels_ext, torch_ext, jax_ext],
+        ext_modules=ext_modules,
         cmdclass={"build_ext": TurboBuildExt.with_options(use_ninja=True)},
-        entry_points={
-            "jax_plugins": [
-                "primus_turbo = primus_turbo.jax",
-            ],
-        },
-        install_requires=[
-            "aiter @ git+https://github.com/ROCm/aiter.git@4822e6755ae66ba727f0d1d33d348673972cbe9c",
-            "hip-python",
-            "jax[rocm]",
-        ],
+        entry_points=entry_points,
+        install_requires=install_requires,
     )

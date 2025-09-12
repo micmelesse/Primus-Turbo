@@ -7,9 +7,8 @@
 #include "ck/utility/data_type.hpp"
 #include "ck_tile/core/numeric/bfloat16.hpp"
 #include "ck_tile/core/numeric/half.hpp"
-#include <torch/extension.h>
-
 #include "primus_turbo/dtype.h"
+#include <torch/extension.h>
 
 namespace primus_turbo::pytorch {
 
@@ -66,10 +65,21 @@ template <> struct TorchToCKTileType<torch::kBFloat16> {
     using type = ck_tile::bfloat16_t;
 };
 
+template <> struct TorchToCKTileType<torch::kFloat> {
+    using type = float32;
+};
 // ************************************************
 
 static inline bool is_16bit_floating_point_dtype(at::ScalarType dtype) {
     return dtype == at::kHalf || dtype == at::kBFloat16;
 }
 
+static inline bool is_8bit_floating_point_dtype(at::ScalarType dtype) {
+    return dtype == at::kFloat8_e4m3fnuz || dtype == at::kFloat8_e4m3fn ||
+           dtype == at::kFloat8_e5m2fnuz || dtype == at::kFloat8_e5m2;
+}
+
+static inline bool is_floating_point_dtype(at::ScalarType dtype) {
+    return dtype == at::kHalf || dtype == at::kBFloat16 || dtype == at::kFloat;
+}
 } // namespace primus_turbo::pytorch

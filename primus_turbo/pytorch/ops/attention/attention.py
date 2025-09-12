@@ -25,7 +25,7 @@ from primus_turbo.pytorch.ops.attention.attention_utils import (
     get_p_scale,
 )
 
-__all__ = ["attention", "attention_fp8_blockwise"]
+__all__ = ["flash_attn_func", "attention_fp8_blockwise"]
 
 
 class AttentionCKFunction(torch.autograd.Function):
@@ -53,9 +53,6 @@ class AttentionCKFunction(torch.autograd.Function):
             softmax_scale = q.shape[-1] ** (-0.5)
         head_size_q_og = q.size(3)
         head_size_v_og = v.size(3)
-        # todo fix if head_size_v_og!=head_size_q_og, no padding
-        if head_size_q_og != head_size_v_og:
-            v = torch.nn.functional.pad(v, [0, head_size_q_og - head_size_v_og])
         if head_size_q_og % 8 != 0:
             q = torch.nn.functional.pad(q, [0, 8 - head_size_q_og % 8])
             k = torch.nn.functional.pad(k, [0, 8 - head_size_q_og % 8])
@@ -100,27 +97,34 @@ class AttentionCKFunction(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, dout, *args):
-        q, k, v, out, softmax_lse, rng_state = ctx.saved_tensors
-        dq, dk, dv = torch.zeros_like(q), torch.empty_like(k), torch.empty_like(v)
+        q, k, v, out_padded, softmax_lse, rng_state = ctx.saved_tensors
+
         bias = ctx.bias
         dbias = torch.empty_like(bias) if bias is not None else None
         head_size_q_og = ctx.head_size_q_og
         head_size_v_og = dout.size(3)
         dout_padded = dout
+        v_padded = v
+
         if head_size_v_og % 8 != 0:
             dout_padded = torch.nn.functional.pad(dout, [0, 8 - head_size_v_og % 8])
         if head_size_q_og != head_size_v_og:
+            v_padded = torch.nn.functional.pad(v_padded, [0, head_size_q_og - head_size_v_og])
+            out_padded = torch.nn.functional.pad(out_padded, [0, head_size_q_og - head_size_v_og])
             dout_padded = torch.nn.functional.pad(dout, [0, head_size_q_og - head_size_v_og])
+
+        dq, dk, dv_padded = torch.zeros_like(q), torch.empty_like(k), torch.empty_like(v_padded)
+
         attention_aiter_csrc_backward_impl(
             dout_padded,
             q,
             k,
-            v,
-            out,
+            v_padded,
+            out_padded,
             softmax_lse,
             dq,
             dk,
-            dv,
+            dv_padded,
             dbias,
             ctx.dropout_p,
             ctx.softmax_scale,
@@ -136,7 +140,7 @@ class AttentionCKFunction(torch.autograd.Function):
         )
         dq = dq[..., :head_size_q_og]  # We could have padded the head dimension
         dk = dk[..., :head_size_q_og]
-        dv = dv[..., :head_size_v_og]
+        dv = dv_padded[..., :head_size_v_og]
         return dq, dk, dv, None, None, None, None, dbias, None, None, None, None, None, None, None
 
 
@@ -243,7 +247,7 @@ class AttentionTritonFunction(torch.autograd.Function):
         return dq, dk, dv, None, None, None, None, None, None, None, None, None, None
 
 
-def attention(
+def flash_attn_func(
     q,
     k,
     v,
