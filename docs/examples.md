@@ -205,7 +205,7 @@ import torch
 import torch.distributed as dist
 from typing import List, Tuple, Optional, Union
 
-from deep_ep import Buffer, EventOverlap
+from primus_turbo.pytorch.deep_ep import Buffer, EventOverlap
 
 # Communication buffer (will allocate at runtime)
 _buffer: Optional[Buffer] = None
