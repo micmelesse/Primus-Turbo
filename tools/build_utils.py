@@ -1,9 +1,9 @@
 import os
 import shutil
 import warnings
-from typing import List, Optional
 from dataclasses import dataclass
 from pathlib import Path
+from typing import List, Optional
 
 from .patch import patch_torch_extension
 
@@ -11,6 +11,7 @@ patch_torch_extension()
 
 
 TURBO_FALLBACK_LIBRARY_HOME = "/opt/rocm"
+
 
 @dataclass
 class Library:
@@ -26,8 +27,7 @@ def _guess_library_home(exec_names: List[str]) -> Optional[str]:
     for execute_name in exec_names:
         exec_home = shutil.which(execute_name)
         if exec_home is not None:
-            exec_home = os.path.dirname(
-                os.path.dirname(os.path.realpath(exec_home)))
+            exec_home = os.path.dirname(os.path.dirname(os.path.realpath(exec_home)))
         else:
             fallback_path = TURBO_FALLBACK_LIBRARY_HOME
             if os.path.exists(fallback_path):
@@ -44,17 +44,19 @@ def _find_library_home(env_names: List[str], exec_names: Optional[List[str]] = N
         lib_home = lib_home or os.getenv(env)
         if lib_home:
             break
-        
+
     if lib_home is None and exec_names is not None:
         lib_home = _guess_library_home(exec_names)
-        
+
     if not os.path.exists(lib_home):
         return None
     return lib_home
 
 
 def find_mpi_home():
-    return _find_library_home(env_names=["MPI_HOME", "MPI_PATH", "MPI_DIR"], exec_names=["mpirun", "mpicc",  "ompi_info"])
+    return _find_library_home(
+        env_names=["MPI_HOME", "MPI_PATH", "MPI_DIR"], exec_names=["mpirun", "mpicc", "ompi_info"]
+    )
 
 
 def find_rocshmem_home():
@@ -65,7 +67,9 @@ def find_rocshmem_library() -> Library:
     rocshmem_home = find_rocshmem_home()
     mpi_home = find_mpi_home()
     if rocshmem_home is None or mpi_home is None:
-        warnings.warn("rocSHMEM or MPI library is not found, internode of DeepEP will be disabled. Please set 'MPI_HOME' and 'ROCSHMEM_HOME' env variables and reinstall.")
+        warnings.warn(
+            "rocSHMEM or MPI library is not found, internode of DeepEP will be disabled. Please set 'MPI_HOME' and 'ROCSHMEM_HOME' env variables and reinstall."
+        )
         return None
 
     rocshmem_home = Path(rocshmem_home).resolve()
