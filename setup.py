@@ -8,8 +8,7 @@ from pathlib import Path
 from setuptools import find_packages, setup
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 
-from primus_turbo.utils.hip_extension import HIPExtension
-from tools.build_utils import find_rocshmem_library
+from tools.build_utils import HIPExtension, find_rocshmem_library
 
 PROJECT_ROOT = Path(os.path.dirname(__file__)).resolve()
 DEFAULT_HIPCC = "/opt/rocm/bin/hipcc"

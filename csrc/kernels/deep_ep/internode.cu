@@ -413,7 +413,7 @@ __launch_bounds__(((kNumDispatchRDMASenderWarps + 1 + NUM_MAX_NVL_PEERS) * kWarp
     };
 
     __shared__ rocshmem::rocshmem_ctx_t ctx;
-    rocshmem::rocshmem_wg_ctx_create(&ctx);
+    rocshmem::rocshmem_wg_ctx_create(0, &ctx);
 
     const auto sm_id       = static_cast<int>(blockIdx.x);
     const auto num_threads = static_cast<int>(blockDim.x), num_warps = num_threads / kWarpSize;
@@ -1419,7 +1419,7 @@ __launch_bounds__((NUM_MAX_NVL_PEERS + kNumForwarders) * kEmulatedWarpSize + kWa
     const bool is_rdma_receiver_sm = sm_id % 2 == 1;
 
     __shared__ rocshmem::rocshmem_ctx_t ctx;
-    rocshmem::rocshmem_wg_ctx_create(&ctx);
+    rocshmem::rocshmem_wg_ctx_create(0, &ctx);
 
     PRIMUS_TURBO_DEVICE_CHECK(num_topk <= kEmulatedWarpSize);
     PRIMUS_TURBO_DEVICE_CHECK(hidden % (sizeof(int4) / sizeof(dtype_t)) == 0);

@@ -20,12 +20,15 @@
 namespace primus_turbo::pytorch::deep_ep {
 
 Buffer::Buffer(int rank, int num_ranks, int64_t num_nvl_bytes, int64_t num_rdma_bytes,
-               bool low_latency_mode, bool explicitly_destroy, bool use_default_stream_as_comm_stream)
+               bool low_latency_mode, bool explicitly_destroy,
+               bool use_default_stream_as_comm_stream)
     : rank(rank), num_ranks(num_ranks), num_nvl_bytes(num_nvl_bytes),
       num_rdma_bytes(num_rdma_bytes), low_latency_mode(low_latency_mode),
       explicitly_destroy(explicitly_destroy),
       use_default_stream_as_comm_stream(use_default_stream_as_comm_stream),
-      comm_stream(use_default_stream_as_comm_stream ? at::hip::getCurrentHIPStreamMasqueradingAsCUDA() : at::hip::getStreamFromPoolMasqueradingAsCUDA(true)) {
+      comm_stream(use_default_stream_as_comm_stream
+                      ? at::hip::getCurrentHIPStreamMasqueradingAsCUDA()
+                      : at::hip::getStreamFromPoolMasqueradingAsCUDA(true)) {
     // Metadata memory
     int64_t barrier_signal_bytes     = NUM_MAX_NVL_PEERS * sizeof(int);
     int64_t buffer_ptr_bytes         = NUM_MAX_NVL_PEERS * sizeof(void *);
@@ -50,7 +53,8 @@ Buffer::Buffer(int rank, int num_ranks, int64_t num_nvl_bytes, int64_t num_rdma_
 
 #ifdef DISABLE_ROCSHMEM
     PRIMUS_TURBO_CHECK(num_rdma_ranks == 1 and not low_latency_mode and
-                       "ROCSHMEM is disabled during compilation");
+                       "rocSHMEM is disabled during compilation, please install rocSHMEM by "
+                       "following docs/install_dependencies.md");
 #endif
     // Get device info
     hipDeviceProp_t device_prop = {};
@@ -154,7 +158,8 @@ pybind11::bytearray Buffer::get_local_nvshmem_unique_id() const {
     auto unique_id = primus_turbo::deep_ep::internode::get_unique_id();
     return {reinterpret_cast<const char *>(unique_id.data()), unique_id.size()};
 #else
-    PRIMUS_TURBO_CHECK(false, "ROCSHMEM is disabled during compilation");
+    PRIMUS_TURBO_CHECK(false, "rocSHMEM is disabled during compilation, please install rocSHMEM by "
+                              "following docs/install_dependencies.md");
 #endif
 }
 
@@ -1111,7 +1116,8 @@ Buffer::internode_dispatch(const torch::Tensor &x, const std::optional<torch::Te
             event};
 
 #else
-    PRIMUS_TURBO_CHECK(false, "ROCSHMEM is disabled during compilation");
+    PRIMUS_TURBO_CHECK(false, "rocSHMEM is disabled during compilation, please install rocSHMEM by "
+                              "following docs/install_dependencies.md");
     return {};
 #endif
 }
@@ -1267,7 +1273,8 @@ Buffer::internode_combine(
     // Return values
     return {combined_x, combined_topk_weights, event};
 #else
-    PRIMUS_TURBO_CHECK(false, "ROCSHMEM is disabled during compilation");
+    PRIMUS_TURBO_CHECK(false, "rocSHMEM is disabled during compilation, please install rocSHMEM by "
+                              "following docs/install_dependencies.md");
     return {};
 #endif
 }

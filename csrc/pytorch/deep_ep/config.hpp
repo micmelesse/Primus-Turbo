@@ -104,7 +104,8 @@ struct Config {
         num_bytes = ((num_bytes + 127) / 128) * 128;
         return num_bytes;
 #else
-        PRIMUS_TURBO_CHECK(false, "ROCSHMEM is disable during compilation");
+        PRIMUS_TURBO_CHECK(false, "rocSHMEM is disabled during compilation, please install "
+                                  "rocSHMEM by following docs/install_dependencies.md");
 #endif
     }
 };
