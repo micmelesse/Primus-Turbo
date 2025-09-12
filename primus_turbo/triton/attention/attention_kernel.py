@@ -224,6 +224,7 @@ def _attn_fwd_inner(
     q,
     q_descale,
     k_descale,
+    v_descale,
     p_scale: tl.constexpr,
     USE_FP8: tl.constexpr,
     k_ptrs,
@@ -275,8 +276,10 @@ def _attn_fwd_inner(
         if USE_FP8:
             idx_block_n = tl.full([1], start_n // BLOCK_N, dtype=tl.int32)
             blk_k_descale = k_descale.gather(index=idx_block_n, axis=0)
+            blk_v_descale = v_descale.gather(index=idx_block_n, axis=0)
         else:
             blk_k_descale = 1.0
+            blk_v_descale = 1.0
 
         if MASK_STEPS:
             k_offs_n = start_n + tl.arange(0, BLOCK_N)
@@ -390,7 +393,8 @@ def _attn_fwd_inner(
         if USE_FP8:
             p *= p_scale
 
-        acc = tl.dot(p.to(v.dtype), v, acc=acc, allow_tf32=False, out_dtype=tl.float32)
+        descaled_pv = tl.dot(p.to(v.dtype), v, allow_tf32=False, out_dtype=tl.float32) * blk_v_descale
+        acc += descaled_pv
 
         k_ptrs += BLOCK_N * stride_kn
         v_ptrs += BLOCK_N * stride_vk
@@ -442,7 +446,7 @@ def attn_fwd(
     p_scale: tl.constexpr,
     q_descale_ptr,
     k_descale_ptr,
-    v_scale_ptr,
+    v_descale_ptr,
     USE_FP8: tl.constexpr,
     SM_SCALE: tl.constexpr,
     LSE,
@@ -482,7 +486,11 @@ def attn_fwd(
     stride_kdescale_z: tl.constexpr,
     stride_kdescale_h: tl.constexpr,
     stride_kdescale_m: tl.constexpr,
+    stride_vdescale_z: tl.constexpr,
+    stride_vdescale_h: tl.constexpr,
+    stride_vdescale_m: tl.constexpr,
     padded_kscale_block_num: tl.constexpr,
+    padded_vscale_block_num: tl.constexpr,
     cu_seqlens_q,
     cu_seqlens_k,
     dropout_p,
@@ -532,7 +540,10 @@ def attn_fwd(
     # we assume q and k has the same length
     if USE_FP8:
         actual_kscale_block_num = stride_kdescale_h
+        actual_vscale_block_num = stride_vdescale_h
         kscale_mask = tl.arange(0, padded_kscale_block_num) < actual_kscale_block_num
+        vscale_mask = tl.arange(0, padded_vscale_block_num) < actual_vscale_block_num
+
         k_descale_offset = (
             k_descale_ptr
             + stride_kdescale_z * off_z
@@ -542,16 +553,22 @@ def attn_fwd(
         q_descale_offset = (
             q_descale_ptr + stride_qdescale_z * off_z + stride_qdescale_h * off_h_q + start_m
         )  #  + stride_qdescale_m * cu_seqlens_q
+        v_descale_offset = (
+            v_descale_ptr
+            + stride_vdescale_z * off_z
+            + stride_vdescale_h * off_h_k
+            + tl.arange(0, padded_vscale_block_num)
+        )
 
         k_descale = tl.load(k_descale_offset, mask=kscale_mask, other=1.0)
         q_descale = tl.load(q_descale_offset)
-        v_scale = tl.load(v_scale_ptr)
+        v_descale = tl.load(v_descale_offset, mask=vscale_mask, other=1.0)
     else:
         k_descale = 1.0
         q_descale = 1.0
-        v_scale = 1.0
+        v_descale = 1.0
 
-    acc_descale = 1.0 / (p_scale * v_scale)
+    acc_descale = 1.0 / p_scale
 
     if VARLEN:
         cu_seqlens_q_start = tl.load(cu_seqlens_q + off_z)
@@ -710,6 +727,7 @@ def attn_fwd(
             q,
             q_descale,
             k_descale,
+            v_descale,
             p_scale,
             USE_FP8,
             k_ptrs,
@@ -779,6 +797,7 @@ def attn_fwd(
             q,
             q_descale,
             k_descale,
+            v_descale,
             p_scale,
             USE_FP8,
             k_ptrs,
@@ -1040,7 +1059,7 @@ def _bwd_kernel_dkdv(
     sm_scale: tl.constexpr,
     q_descale_ptr,
     k_descale_ptr,
-    v_scale_ptr,
+    v_descale_ptr,
     p_scale: tl.constexpr,
     do_descale_ptr,
     Out,
@@ -1078,9 +1097,9 @@ def _bwd_kernel_dkdv(
     stride_kscalez: tl.constexpr,
     stride_kscaleh: tl.constexpr,
     stride_kscalem: tl.constexpr,
-    padded_doscale_block_num: tl.constexpr,
-    padded_qscale_block_num: tl.constexpr,
-    padded_kscale_block_num: tl.constexpr,
+    stride_vscalez: tl.constexpr,
+    stride_vscaleh: tl.constexpr,
+    stride_vscalem: tl.constexpr,
     Z,
     HQ: tl.constexpr,
     HK: tl.constexpr,
@@ -1145,9 +1164,6 @@ def _bwd_kernel_dkdv(
     dv_offset = DV + off_z * stride_vz + off_h_k * stride_vh + k_start * stride_vn
 
     if USE_FP8:
-        # we keep v in per-tensor scaling
-        # while q, k, do in per-block scaling
-        v_scale = tl.load(v_scale_ptr)  # + tl.arange(0, num_block_n)
         q_descale_offset = (
             q_descale_ptr + off_z * stride_qscalez + off_h_q * stride_qscaleh + q_start * stride_qscalem
         )
@@ -1155,7 +1171,6 @@ def _bwd_kernel_dkdv(
             do_descale_ptr + off_z * stride_doscalez + off_h_q * stride_doscaleh + q_start * stride_doscalem
         )
     else:
-        v_scale = 1.0
         q_descale_offset = None
         do_descale_offset = None
 
@@ -1194,8 +1209,14 @@ def _bwd_kernel_dkdv(
             k_descale_ptr + off_z * stride_kscalez + off_h_k * stride_kscaleh + start_n * stride_kscalem
         )
         blk_k_descale = tl.load(k_descale_offset)
+
+        v_descale_offset = (
+            v_descale_ptr + off_z * stride_vscalez + off_h_k * stride_vscaleh + start_n * stride_vscalem
+        )
+        blk_v_descale = tl.load(v_descale_offset)
     else:
         blk_k_descale = 1.0
+        blk_v_descale = 1.0
 
     for group_idx in range(GROUP_SIZE):
         dk, dv = _attn_bwd_dkdv(
@@ -1221,7 +1242,7 @@ def _bwd_kernel_dkdv(
             q_descale_offset,
             do_descale_offset,
             blk_k_descale,
-            v_scale,
+            blk_v_descale,
             p_scale,
             sm_scale,
             log_p_scale,
@@ -1280,7 +1301,7 @@ def _attn_bwd_dkdv(
     q_descale_offset,
     do_descale_offset,
     k_descale,
-    v_scale,
+    v_descale,
     p_scale: tl.constexpr,
     sm_scale: tl.constexpr,
     log_p_scale: tl.constexpr,
@@ -1350,7 +1371,7 @@ def _attn_bwd_dkdv(
         dp = tl.dot(do, v, out_dtype=tl.float32, allow_tf32=False)
 
         if USE_FP8:
-            dp_descale = blk_do_descale / v_scale
+            dp_descale = blk_do_descale * v_descale
             dp = dp * dp_descale
 
         Di = tl.gather(lds, index=tl.arange(BLOCK_M, 2 * BLOCK_M), axis=0)
@@ -1394,7 +1415,7 @@ def _bwd_kernel_dq(
     sm_scale: tl.constexpr,
     q_descale_ptr,
     k_descale_ptr,
-    v_scale_ptr,
+    v_descale_ptr,
     p_scale: tl.constexpr,
     do_descale_ptr,
     Out,
@@ -1432,9 +1453,13 @@ def _bwd_kernel_dq(
     stride_kscalez: tl.constexpr,
     stride_kscaleh: tl.constexpr,
     stride_kscalem: tl.constexpr,
+    stride_vscalez: tl.constexpr,
+    stride_vscaleh: tl.constexpr,
+    stride_vscalem: tl.constexpr,
     padded_doscale_block_num: tl.constexpr,
     padded_qscale_block_num: tl.constexpr,
     padded_kscale_block_num: tl.constexpr,
+    padded_vscale_block_num: tl.constexpr,
     Z,
     HQ: tl.constexpr,
     HK: tl.constexpr,
@@ -1499,10 +1524,8 @@ def _bwd_kernel_dq(
     dq_offset = DQ + off_z * stride_qz + off_h_q * stride_qh + q_start * stride_qm
 
     if USE_FP8:
-        # we keep v in per-tensor scaling
-        # while q, k, do in per-block scaling
-        v_scale = tl.load(v_scale_ptr)  # + tl.arange(0, num_block_n)
         acutal_kscale_block_num = stride_kscaleh
+        actual_vscale_block_num = stride_vscaleh
 
         kscale_mask = tl.arange(0, padded_kscale_block_num) < acutal_kscale_block_num
         k_descale_offset = (
@@ -1510,11 +1533,20 @@ def _bwd_kernel_dq(
             + off_z * stride_kscalez
             + off_h_k * stride_kscaleh
             + tl.arange(0, padded_kscale_block_num)
-        )  #  + q_start * stride_qm
+        )
         k_descale = tl.load(k_descale_offset, mask=kscale_mask, other=1.0)
+
+        vscale_mask = tl.arange(0, padded_vscale_block_num) < actual_vscale_block_num
+        v_descale_offset = (
+            v_descale_ptr
+            + off_z * stride_vscalez
+            + off_h_k * stride_vscaleh
+            + tl.arange(0, padded_vscale_block_num)
+        )
+        v_descale = tl.load(v_descale_offset, mask=vscale_mask, other=1.0)
     else:
         k_descale = 1.0
-        v_scale = 1.0
+        v_descale = 1.0
 
     if CAUSAL:
         causal_boundary = start_m * BLOCK_M - BLOCK_N
@@ -1581,7 +1613,7 @@ def _bwd_kernel_dq(
         blk_q_descale,
         k_descale,
         blk_do_descale,
-        v_scale,
+        v_descale,
         p_scale,
         sm_scale,
         log_p_scale,
@@ -1623,7 +1655,7 @@ def _attn_bwd_dq(
     q_descale,
     k_descale,
     do_descale,
-    v_scale,
+    v_descale,
     p_scale: tl.constexpr,
     sm_scale: tl.constexpr,
     log_p_scale: tl.constexpr,
@@ -1669,6 +1701,7 @@ def _attn_bwd_dq(
             # can fuse with sm_scale
             idx_block_n += 1
             blk_k_descale = tl.gather(k_descale, index=idx_block_n, axis=0)
+            blk_v_descale = tl.gather(v_descale, index=idx_block_n, axis=0)
             qk_descale = q_descale * blk_k_descale
             qk = qk * qk_descale  # we fused sm_scale into blk_q_descale so we do not need one more mul here
 
@@ -1690,7 +1723,7 @@ def _attn_bwd_dq(
         dp = tl.dot(do, tl.trans(v), out_dtype=tl.float32, allow_tf32=False)
 
         if USE_FP8:
-            dp_descale = do_descale / v_scale
+            dp_descale = do_descale * blk_v_descale
             dp = dp * dp_descale
 
         ds = p * (dp - Di[:, None])
