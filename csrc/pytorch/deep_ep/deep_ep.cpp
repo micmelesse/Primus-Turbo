@@ -46,8 +46,11 @@ Buffer::Buffer(int rank, int num_ranks, int64_t num_nvl_bytes, int64_t num_rdma_
     rdma_rank = rank / NUM_MAX_NVL_PEERS, nvl_rank = rank % NUM_MAX_NVL_PEERS;
     num_rdma_ranks = std::max(1, num_ranks / NUM_MAX_NVL_PEERS),
     num_nvl_ranks  = std::min(num_ranks, NUM_MAX_NVL_PEERS);
-    PRIMUS_TURBO_CHECK(not low_latency_mode and "low_latency_mode");
 
+#ifdef DISABLE_ROCSHMEM
+    PRIMUS_TURBO_CHECK(num_rdma_ranks == 1 and not low_latency_mode and
+                       "ROCSHMEM is disabled during compilation");
+#endif
     // Get device info
     hipDeviceProp_t device_prop = {};
     PRIMUS_TURBO_CHECK_HIP(hipGetDeviceProperties(&device_prop, device_id));
@@ -145,9 +148,13 @@ pybind11::bytearray Buffer::get_local_ipc_handle() const {
 }
 
 pybind11::bytearray Buffer::get_local_nvshmem_unique_id() const {
-    PRIMUS_TURBO_CHECK(rdma_rank == 0 and "Only RDMA rank 0 can get NVSHMEM unique ID");
+#ifndef DISABLE_ROCSHMEM
+    PRIMUS_TURBO_CHECK(rdma_rank == 0 and "Only RDMA rank 0 can get ROCSHMEM unique ID");
     auto unique_id = primus_turbo::deep_ep::internode::get_unique_id();
     return {reinterpret_cast<const char *>(unique_id.data()), unique_id.size()};
+#else
+    PRIMUS_TURBO_CHECK(false, "ROCSHMEM is disabled during compilation");
+#endif
 }
 
 torch::Tensor Buffer::get_local_buffer_tensor(const pybind11::object &dtype, int64_t offset,
@@ -188,8 +195,8 @@ void Buffer::destroy() {
         PRIMUS_TURBO_CHECK_HIP(hipFree(buffer_ptrs[nvl_rank]));
     }
 
-    // Free NVSHMEM
-#ifndef DISABLE_NVSHMEM
+    // Free ROCSHMEM
+#ifndef DISABLE_ROCSHMEM
     if (is_available() and num_rdma_bytes > 0) {
         PRIMUS_TURBO_CHECK_HIP(hipDeviceSynchronize());
         primus_turbo::deep_ep::internode::barrier();
@@ -243,7 +250,9 @@ void Buffer::sync(const std::vector<int>                                &device_
         PRIMUS_TURBO_CHECK_HIP(hipDeviceSynchronize());
     }
 
-    // Sync NVSHMEM handles and allocate memory
+#ifndef DISABLE_ROCSHMEM
+
+    // Sync ROCSHMEM handles and allocate memory
     if (num_rdma_bytes > 0) {
         // Initialize NVSHMEM
         PRIMUS_TURBO_CHECK(root_unique_id_opt.has_value());
@@ -268,7 +277,7 @@ void Buffer::sync(const std::vector<int>                                &device_
         primus_turbo::deep_ep::internode::barrier();
         PRIMUS_TURBO_CHECK_HIP(hipDeviceSynchronize());
     }
-
+#endif
     // Ready to use
     available = true;
 }
@@ -777,7 +786,7 @@ Buffer::internode_dispatch(const torch::Tensor &x, const std::optional<torch::Te
                            int expert_alignment, const Config &config,
                            std::optional<EventHandle> &previous_event, bool async,
                            bool allocate_on_comm_stream) {
-
+#ifndef DISABLE_ROCSHMEM
     // In dispatch, CPU will busy-wait until GPU receive tensor size metadata from other ranks,
     // which can be quite long. If users of DeepEP need to execute other Python code on other
     // threads, such as KV transfer, their code will get stuck due to GIL unless we release GIL
@@ -1087,6 +1096,11 @@ Buffer::internode_dispatch(const torch::Tensor &x, const std::optional<torch::Te
             send_rdma_head,
             send_nvl_head,
             event};
+
+#else
+    PRIMUS_TURBO_CHECK(false, "ROCSHMEM is disabled during compilation");
+    return {};
+#endif
 }
 
 std::tuple<torch::Tensor, std::optional<torch::Tensor>, std::optional<EventHandle>>
@@ -1098,7 +1112,7 @@ Buffer::internode_combine(
     const torch::Tensor &gbl_channel_prefix_matrix, const torch::Tensor &combined_rdma_head,
     const torch::Tensor &combined_nvl_head, const Config &config,
     std::optional<EventHandle> &previous_event, bool async, bool allocate_on_comm_stream) {
-
+#ifndef DISABLE_ROCSHMEM
     const int num_channels = config.num_sms / 2;
     PRIMUS_TURBO_CHECK(config.num_sms % 2 == 0);
 
@@ -1239,6 +1253,10 @@ Buffer::internode_combine(
 
     // Return values
     return {combined_x, combined_topk_weights, event};
+#else
+    PRIMUS_TURBO_CHECK(false, "ROCSHMEM is disabled during compilation");
+    return {};
+#endif
 }
 
 void Buffer::clean_low_latency_buffer(int num_max_dispatch_tokens_per_rank, int hidden,

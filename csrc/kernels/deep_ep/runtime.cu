@@ -12,8 +12,10 @@
 #include "launch.h"
 #include "primus_turbo/common.h"
 #include "utils.h"
-#include <rocshmem/rocshmem.hpp>
 
+#ifndef DISABLE_ROCSHMEM
+#include <rocshmem/rocshmem.hpp>
+#endif
 namespace primus_turbo::deep_ep {
 
 namespace intranode {
@@ -36,6 +38,7 @@ void barrier(int **barrier_signal_ptrs, int rank, int num_ranks, hipStream_t str
 
 namespace internode {
 
+#ifndef DISABLE_ROCSHMEM
 rocshmem::rocshmem_team_t        cpu_rdma_team = rocshmem::ROCSHMEM_TEAM_INVALID;
 rocshmem::rocshmem_team_config_t cpu_rdma_team_config;
 
@@ -93,6 +96,7 @@ void finalize() {
     }
     rocshmem::rocshmem_finalize();
 }
+#endif
 } // namespace internode
 
 } // namespace primus_turbo::deep_ep

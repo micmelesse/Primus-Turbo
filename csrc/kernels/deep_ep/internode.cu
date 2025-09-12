@@ -11,6 +11,9 @@
 #include "launch.h"
 #include "primus_turbo/macros.h"
 #include "utils.h"
+
+#ifndef DISABLE_ROCSHMEM
+
 #include <rocshmem/rocshmem.hpp>
 
 // TODO: fix unroll warnings
@@ -2055,3 +2058,5 @@ void combine(hipDataType type, void *combined_x, float *combined_topk_weights,
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif // __clang__
+
+#endif
