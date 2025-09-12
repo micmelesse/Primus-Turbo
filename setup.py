@@ -4,13 +4,12 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
-from typing import List
 
 from setuptools import find_packages, setup
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 
 from primus_turbo.utils.hip_extension import HIPExtension
-from tools.build_utils import Library, find_rocshmem_library
+from tools.build_utils import find_rocshmem_library
 
 PROJECT_ROOT = Path(os.path.dirname(__file__)).resolve()
 DEFAULT_HIPCC = "/opt/rocm/bin/hipcc"
@@ -29,8 +28,7 @@ class TurboBuildExt(BuildExtension):
     def get_ext_filename(self, ext_name: str) -> str:
         filename = super().get_ext_filename(ext_name)
         if ext_name == self.KERNEL_EXT_NAME:
-            filename = os.path.join(
-                *filename.split(os.sep)[:-1], "libprimus_turbo_kernels.so")
+            filename = os.path.join(*filename.split(os.sep)[:-1], "libprimus_turbo_kernels.so")
         return filename
 
     def build_extension(self, ext):
@@ -69,15 +67,12 @@ def setup_cxx_env():
         print(f"[Primus-Turbo Setup] Using user-provided CXX: {user_cxx}")
     else:
         os.environ["CXX"] = DEFAULT_HIPCC
-        print(
-            f"[Primus-Turbo Setup] No CXX provided. Defaulting to: {DEFAULT_HIPCC}")
+        print(f"[Primus-Turbo Setup] No CXX provided. Defaulting to: {DEFAULT_HIPCC}")
 
     os.environ.setdefault("CMAKE_CXX_COMPILER", os.environ["CXX"])
     os.environ.setdefault("CMAKE_HIP_COMPILER", os.environ["CXX"])
-    print(
-        f"[Primus-Turbo Setup] CMAKE_CXX_COMPILER set to: {os.environ['CMAKE_CXX_COMPILER']}")
-    print(
-        f"[Primus-Turbo Setup] CMAKE_HIP_COMPILER set to: {os.environ['CMAKE_HIP_COMPILER']}")
+    print(f"[Primus-Turbo Setup] CMAKE_CXX_COMPILER set to: {os.environ['CMAKE_CXX_COMPILER']}")
+    print(f"[Primus-Turbo Setup] CMAKE_HIP_COMPILER set to: {os.environ['CMAKE_HIP_COMPILER']}")
 
 
 def get_version():
@@ -92,8 +87,7 @@ def get_version():
         raise RuntimeError("Cannot find version.")
 
     try:
-        commit = subprocess.check_output(
-            ["git", "rev-parse", "--short", "HEAD"]).decode("ascii").strip()
+        commit = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"]).decode("ascii").strip()
         return f"{base_version}+{commit}"  # PEP440
     except Exception:
         return base_version
@@ -156,7 +150,6 @@ def get_common_flags():
     }
 
 
-
 def build_kernels_extension():
     extra_flags = get_common_flags()
     extra_flags["extra_link_args"] += [
@@ -165,8 +158,7 @@ def build_kernels_extension():
     ]
 
     kernels_source_files = Path(PROJECT_ROOT / "csrc" / "kernels")
-    kernels_sources = all_files_in_dir(
-        kernels_source_files, name_extensions=["cpp", "cc", "cu"])
+    kernels_sources = all_files_in_dir(kernels_source_files, name_extensions=["cpp", "cc", "cu"])
 
     include_dirs = [
         Path(PROJECT_ROOT / "csrc" / "include"),
@@ -176,14 +168,17 @@ def build_kernels_extension():
     library_dirs = []
 
     if ROCSHMEM_LIBRARY is None:
-        extra_flags['extra_compile_args']['nvcc'].append("-DDISABLE_ROCSHMEM")
-        extra_flags['extra_compile_args']['cxx'].append("-DDISABLE_ROCSHMEM")
+        extra_flags["extra_compile_args"]["nvcc"].append("-DDISABLE_ROCSHMEM")
+        extra_flags["extra_compile_args"]["cxx"].append("-DDISABLE_ROCSHMEM")
     else:
         include_dirs.extend(ROCSHMEM_LIBRARY.include_dirs)
         library_dirs.extend(ROCSHMEM_LIBRARY.library_dirs)
         extra_flags["extra_link_args"].extend(ROCSHMEM_LIBRARY.extra_link_args)
 
-        if "-fgpu-rdc" in ROCSHMEM_LIBRARY.extra_link_args or "--hip-link" in ROCSHMEM_LIBRARY.extra_link_args:
+        if (
+            "-fgpu-rdc" in ROCSHMEM_LIBRARY.extra_link_args
+            or "--hip-link" in ROCSHMEM_LIBRARY.extra_link_args
+        ):
             extra_flags["extra_compile_args"]["nvcc"] += ["-fgpu-rdc"]
 
     return HIPExtension(
@@ -208,15 +203,14 @@ def build_torch_extension():
         "-lprimus_turbo_kernels",
         *extra_flags.get("extra_link_args", []),
     ]
-    
+
     if ROCSHMEM_LIBRARY is None:
-        extra_flags['extra_compile_args']['nvcc'].append("-DDISABLE_ROCSHMEM")
-        extra_flags['extra_compile_args']['cxx'].append("-DDISABLE_ROCSHMEM")
+        extra_flags["extra_compile_args"]["nvcc"].append("-DDISABLE_ROCSHMEM")
+        extra_flags["extra_compile_args"]["cxx"].append("-DDISABLE_ROCSHMEM")
 
     # CPP
     pytorch_csrc_source_files = Path(PROJECT_ROOT / "csrc" / "pytorch")
-    sources = all_files_in_dir(
-        pytorch_csrc_source_files, name_extensions=["cpp", "cc", "cu"])
+    sources = all_files_in_dir(pytorch_csrc_source_files, name_extensions=["cpp", "cc", "cu"])
 
     return CUDAExtension(
         name="primus_turbo.pytorch._C",
@@ -248,8 +242,7 @@ def build_jax_extension():
 
     # CPP
     jax_csrc_source_files = Path(PROJECT_ROOT / "csrc" / "jax")
-    sources = all_files_in_dir(
-        jax_csrc_source_files, name_extensions=["cpp", "cc", "cu"])
+    sources = all_files_in_dir(jax_csrc_source_files, name_extensions=["cpp", "cc", "cu"])
 
     return HIPExtension(
         name="primus_turbo.jax._C",
@@ -275,8 +268,7 @@ if __name__ == "__main__":
 
     torch_ext = build_torch_extension()
     jax_ext = build_jax_extension()
-    ext_modules = [kernels_ext] + \
-        [e for e in (torch_ext, jax_ext) if e is not None]
+    ext_modules = [kernels_ext] + [e for e in (torch_ext, jax_ext) if e is not None]
 
     # Entry points and Install Requires
     entry_points = {}
