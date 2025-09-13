@@ -21,10 +21,20 @@ from tests.pytorch.ref.gemm_ref import (
 from tests.test_utils import compute_snr
 
 
-@pytest.mark.parametrize("B", [1, 2, 3, 8, 16, 32])
-@pytest.mark.parametrize("M", [128, 256, 512, 1024, 2048])
+@pytest.mark.parametrize("B", [1, 2, 3, 8, 16, 32, 64])
+@pytest.mark.parametrize("M", [128, 256, 512, 1024, 2048, 4096, 8192])
 @pytest.mark.parametrize(
-    "NK", [(2048, 1536), (2048, 1408), (2816, 2048), (3072, 5120), (5120, 1536), (4096, 7168), (7168, 2048)]
+    "NK",
+    [
+        (2048, 1536),
+        (2048, 1408),
+        (1408, 2048),
+        (2816, 2048),
+        (3072, 5120),
+        (5120, 1536),
+        (4096, 7168),
+        (7168, 2048),
+    ],
 )
 @pytest.mark.parametrize("ori_dtype", [torch.bfloat16, torch.float16])
 @pytest.mark.parametrize("format", [Format.E4M3, Format.E5M2])
@@ -58,17 +68,20 @@ def test_grouped_gemm_fp8(B, M, NK, ori_dtype, format, granularity, trans_b, bal
     out = grouped_gemm_fp8(a, b, group_lens, trans_b=trans_b, config=config)
     out.backward(grad_out)
 
+    # Check
+    snr_threshold = 25 if format == Format.E4M3 else 20
+
     out_snr = compute_snr(out_ref, out)
     print(f"Out-SNR: {out_snr:.2f} dB")
-    assert out_snr > 20, "out_snr too low"
+    assert out_snr > snr_threshold, "out_snr too low"
 
     a_grad_snr = compute_snr(a_ref.grad, a.grad)
     print(f"AGrad-SNR: {a_grad_snr:.2f} dB")
-    assert a_grad_snr > 20, "a_grad_snr too low"
+    assert a_grad_snr > snr_threshold, "a_grad_snr too low"
 
     b_grad_snr = compute_snr(b_ref.grad, b.grad)
     print(f"BGrad-SNR: {b_grad_snr:.2f} dB")
-    assert b_grad_snr > 20, "b_grad_snr too low"
+    assert b_grad_snr > snr_threshold, "b_grad_snr too low"
 
 
 @pytest.mark.parametrize("B", [1, 2, 3, 32])
