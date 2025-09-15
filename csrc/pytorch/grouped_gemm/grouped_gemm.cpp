@@ -300,11 +300,11 @@ at::Tensor grouped_gemm_fp8_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor 
     at::Tensor aq_tensor;
     at::Tensor bq_tensor;
     if (granularity == "TENSORWISE") {
-        aq_tensor = a_scales.reshape({1, 1}).expand({m, 1});
-        bq_tensor = b_scales.reshape({1, 1, 1}).expand({bs, 1, n});
+        aq_tensor = a_scales.reshape({1, 1}).expand({bs, m});
+        bq_tensor = b_scales.reshape({1, 1}).expand({bs, n});
     } else {
-        aq_tensor = a_scales.clone();
-        bq_tensor = b_scales.clone();
+        aq_tensor = a_scales.reshape(1, m).expand({bs, m});
+        bq_tensor = b_scales.reshape(1, n).expand({bs, n});
     }
     aq_tensor = aq_tensor.contiguous();
     bq_tensor = bq_tensor.contiguous();
