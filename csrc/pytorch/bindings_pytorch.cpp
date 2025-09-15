@@ -108,6 +108,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
            c10::ScalarType dtype) { return rendezvous_shmem(group_name, shape, dtype); },
         py::arg("group_name"), py::arg("shape"), py::arg("dtype"));
 
+    // ********* DeepEP *********
     auto deep_ep_module =
         m.def_submodule("deep_ep", "DeepEP: an efficient expert-parallel communication library");
     pybind11::class_<deep_ep::Config>(deep_ep_module, "Config")
@@ -148,10 +149,11 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         .def("low_latency_combine", &deep_ep::Buffer::low_latency_combine)
         .def("get_next_low_latency_combine_buffer",
              &deep_ep::Buffer::get_next_low_latency_combine_buffer);
-    
-    auto helper_module = m.def_submodule("helpers", "Hip helper functions.");
-    helper_module.def("create_stream_with_cu_masks", &create_stream_with_cu_masks);
-    helper_module.def("destroy_stream", &destroy_stream);
+
+    // ********* Runtime *********
+    auto runtime_module = m.def_submodule("runtime", "Runtime utilities");
+    runtime_module.def("create_stream_with_cu_masks", &create_stream_with_cu_masks);
+    runtime_module.def("destroy_stream", &destroy_stream);
 }
 
 /********************************************/
