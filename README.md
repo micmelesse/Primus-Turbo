@@ -22,6 +22,10 @@ rocm/megatron-lm:v25.7_py310
 git clone https://github.com/AMD-AIG-AIMA/Primus-Turbo.git --recursive
 cd Primus-Turbo
 ```
+
+#### Install rocSHMEM (optional)
+DeepEP depends on rocSHMEM. Please refer to our [rocSHMEM Installation Guide](docs/install_dependencies.md) for instructions.
+
 #### User Install
 ```
 pip3 install -r requirements.txt
