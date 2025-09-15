@@ -31,7 +31,7 @@ class TurboStream:
           has completed before the stream is destroyed.
     """
 
-    def __init__(self, device: torch.device | str | int | None, cu_masks: list[int]):
+    def __init__(self, device: torch.device | str | int | None, cu_masks: list[int] | None):
         if not torch.cuda.is_available():
             raise RuntimeError("CUDA/ROCm is not available")
 
@@ -49,6 +49,13 @@ class TurboStream:
             raise ValueError(f"device.type must be 'cuda', got {device.type}")
         if device.index is None:
             device = torch.device("cuda", torch.cuda.current_device())
+
+        # Mask
+        if not isinstance(cu_masks, (list, tuple)) or not all(isinstance(x, int) for x in cu_masks):
+            num_cu = torch.cuda.get_device_properties(device.index).multi_processor_count
+            cu_masks = [0xFFFFFFFF] * ((num_cu + 31) // 32)
+        else:
+            cu_masks = [max(0, min(int(x), 0xFFFFFFFF)) for x in cu_masks]
 
         self._device = device
         self._raw_stream = runtime.create_stream_with_cu_masks(device.index, cu_masks)
