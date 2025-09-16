@@ -21,8 +21,8 @@ from tests.pytorch.ref.gemm_ref import (
 )
 from tests.test_utils import compute_snr
 
-M_SIZE_LIST = [512, 1024, 2048, 4096, 8192, 16384]
-EP_SIZE_LIST = [32, 16, 8]
+M_SIZE_LIST = [4096]
+EP_SIZE_LIST = [1, 8]
 
 
 def _generate_moe_test_cases(
@@ -70,6 +70,12 @@ def generate_deepseekv2_test_cases():
 def generate_deepseekv2_lite_test_cases():
     return _generate_moe_test_cases(
         "DSV2-Lite", n_routed_experts=64, moe_intermediate_size=1408, hidden_size=2048
+    )
+
+
+def generate_llama4_scout_test_cases():
+    return _generate_moe_test_cases(
+        "DSV2-Lite", n_routed_experts=16, moe_intermediate_size=8192, hidden_size=5120
     )
 
 
@@ -145,10 +151,19 @@ def bench_grouped_gemm_fp8(B, M, N, K, ori_dtype, format, granularity, trans_b, 
 
 if __name__ == "__main__":
     dsv2_lite_test_cases = generate_deepseekv2_lite_test_cases()
-    dsv2_test_cases = generate_deepseekv2_test_cases()
-    dsv3_test_cases = generate_deepseekv3_test_cases()
-    test_cases = dsv2_lite_test_cases + dsv2_test_cases + dsv3_test_cases
-
+    # dsv2_test_cases = generate_deepseekv2_test_cases()
+    # dsv3_test_cases = generate_deepseekv3_test_cases()
+    test_cases = generate_llama4_scout_test_cases()
+    test_cases = [
+        {
+            "Case": "test",
+            "B": 2,
+            "M": 4096,
+            "N": 5120,
+            "K": 8192,
+            "dtype": torch.bfloat16,
+        }
+    ]
     # DataFrame to store results
     results = pd.DataFrame(
         columns=[
