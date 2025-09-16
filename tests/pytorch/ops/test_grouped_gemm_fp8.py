@@ -21,6 +21,13 @@ from tests.pytorch.ref.gemm_ref import (
 from tests.test_utils import compute_snr
 
 
+def _check_hit_int32_limit(B, M, N, K):
+    a_elems = B * M * K
+    b_elems = B * N * K
+    out_elems = B * M * N
+    return max(a_elems, out_elems, b_elems) >= 2**31
+
+
 @pytest.mark.parametrize("B", [1, 2, 3, 8, 16, 32, 64])
 @pytest.mark.parametrize("M", [128, 256, 512, 1024, 2048, 4096, 8192])
 @pytest.mark.parametrize(
@@ -42,9 +49,11 @@ from tests.test_utils import compute_snr
 @pytest.mark.parametrize("trans_b", [True, False])
 @pytest.mark.parametrize("balance", [True, False])
 def test_grouped_gemm_fp8(B, M, NK, ori_dtype, format, granularity, trans_b, balance):
-
     N, K = NK
     device = "cuda:0"
+
+    if _check_hit_int32_limit(B, M, N, K):
+        pytest.skip("Shape hits int32 indexing limit (numel >= 2**31).")
 
     group_lens = generate_grouped_gemm_group_lens(B, M, balance=balance).to(device)
     print(
