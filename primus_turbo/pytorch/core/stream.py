@@ -3,6 +3,8 @@
 #
 # See LICENSE for license information.
 ###############################################################################
+import warnings
+
 import torch
 
 import primus_turbo.pytorch._C.runtime as runtime
@@ -58,7 +60,7 @@ class TurboStream:
             cu_masks = [max(0, min(int(x), 0xFFFFFFFF)) for x in cu_masks]
 
         self._device = device
-        self._raw_stream = runtime.create_stream_with_cu_masks(device.index, cu_masks)
+        self._raw_stream = runtime.create_stream_with_cu_masks(self._device.index, cu_masks)
         self._torch_stream = torch.cuda.ExternalStream(self._raw_stream, device=self._device)
 
     @property
@@ -68,6 +70,6 @@ class TurboStream:
     def __del__(self):
         if hasattr(self, "_raw_stream"):
             try:
-                runtime.destroy_stream(self._raw_stream)
-            except Exception:
-                pass
+                runtime.destroy_stream(self._device.index, self._raw_stream)
+            except Exception as e:
+                warnings.warn(f"TurboStream destroy failed: {e}", RuntimeWarning)

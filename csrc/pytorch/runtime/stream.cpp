@@ -19,8 +19,9 @@ int64_t create_stream_with_cu_masks(const int device_id, const std::vector<uint3
     return reinterpret_cast<int64_t>(hip_stream);
 }
 
-void destroy_stream(const int64_t stream_ptr) {
-    hipStream_t hip_stream = reinterpret_cast<hipStream_t>(stream_ptr);
+void destroy_stream(const int device_id, const int64_t stream_ptr) {
+    at::cuda::CUDAGuard guard(device_id);
+    hipStream_t         hip_stream = reinterpret_cast<hipStream_t>(stream_ptr);
     PRIMUS_TURBO_CHECK_HIP(hipStreamDestroy(hip_stream));
 }
 

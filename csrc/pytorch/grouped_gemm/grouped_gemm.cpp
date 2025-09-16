@@ -151,10 +151,10 @@ at::Tensor grouped_gemm_fp8(at::Tensor &a, at::Tensor &b, at::Tensor &a_scales,
                        "out_dtype must be kBFloat16 or kHalf");
 
     // Determine output tensor size based on transA and transB
-    const int32_t bs = b.size(0);
-    const int32_t m  = transA ? a.size(1) : a.size(0);
-    const int32_t n  = transB ? b.size(1) : b.size(2);
-    const int32_t k  = transA ? a.size(0) : a.size(1);
+    const int64_t bs = b.size(0);
+    const int64_t m  = transA ? a.size(1) : a.size(0);
+    const int64_t n  = transB ? b.size(1) : b.size(2);
+    const int64_t k  = transA ? a.size(0) : a.size(1);
     // Alloc args workspace
     const int64_t args_sizes = get_ck_grouped_gemm_fp8_args_sizes(group_lens.numel());
     at::Tensor    args_tensor =
@@ -240,10 +240,10 @@ at::Tensor grouped_gemm_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor &gro
         at::empty({args_sizes}, at::TensorOptions().dtype(at::kByte).device(group_lens.device()));
 
     // Determine output tensor size based on transA and transB
-    const int32_t bs = group_lens.numel();
+    const int64_t bs = group_lens.numel();
     const int64_t m  = transA ? a.size(1) : a.size(0);
     const int64_t n  = transB ? b.size(0) : b.size(1);
-    const int32_t k  = transA ? a.size(0) : a.size(1);
+    const int64_t k  = transA ? a.size(0) : a.size(1);
     at::Tensor    c  = at::empty({bs, m, n}, at::dtype(out_dtype).device(at::kCUDA));
 
     auto stream = at::cuda::getCurrentCUDAStream();
@@ -290,10 +290,10 @@ at::Tensor grouped_gemm_fp8_variable_k(at::Tensor &a, at::Tensor &b, at::Tensor 
         at::empty({args_sizes}, at::TensorOptions().dtype(at::kByte).device(group_lens.device()));
 
     // Determine output tensor size based on transA and transB
-    const int32_t bs = group_lens.numel();
+    const int64_t bs = group_lens.numel();
     const int64_t m  = transA ? a.size(1) : a.size(0);
     const int64_t n  = transB ? b.size(0) : b.size(1);
-    const int32_t k  = transA ? a.size(0) : a.size(1);
+    const int64_t k  = transA ? a.size(0) : a.size(1);
     at::Tensor    c  = at::empty({bs, m, n}, at::dtype(out_dtype).device(at::kCUDA));
 
     // Process Scale
