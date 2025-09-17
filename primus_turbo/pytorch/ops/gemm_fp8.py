@@ -9,9 +9,9 @@ from typing import Optional, Union
 import torch
 
 from primus_turbo.pytorch.core.float8 import (
+    BlockQuantConfig,
     Float8QuantConfig,
     Format,
-    MXQuantConfig,
     ScalingGranularity,
     float8_e4m3,
     float8_e5m2,
@@ -66,7 +66,7 @@ class BlockwiseFP8GemmFunction(torch.autograd.Function):
         trans_a: bool,
         trans_b: bool,
         out_dtype: torch.dtype,
-        config: MXQuantConfig,
+        config: BlockQuantConfig,
     ):
         # Check
         assert config != None
@@ -180,7 +180,7 @@ def gemm_fp8_blockwise(
     trans_a: bool = False,
     trans_b: bool = False,
     out_dtype: Union[torch.dtype, None] = None,
-    config: Optional[MXQuantConfig] = None,
+    config: Optional[BlockQuantConfig] = None,
 ):
     """
     Blockwise GEMM using FP8 quantization.
@@ -197,7 +197,7 @@ def gemm_fp8_blockwise(
         trans_a (bool): Default: False.
         trans_b (bool): Default: False.
         out_dtype (torch.dtype, optional): Output dtype. If None, inferred via `torch.result_type(a, b)`.
-        config (MXQuantConfig, optional): Quantization configuration controlling FP8 dtype,
+        config (BlockQuantConfig, optional): Quantization configuration controlling FP8 dtype,
             scaling strategy, granularity, and block size. If None, a default config is used.
 
     Returns:
@@ -214,7 +214,7 @@ def gemm_fp8_blockwise(
         out_dtype = torch.result_type(a, b)
 
     if config is None:
-        config = MXQuantConfig()
+        config = BlockQuantConfig()
 
     return BlockwiseFP8GemmFunction.apply(a, b, trans_a, trans_b, out_dtype, config)
 

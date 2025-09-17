@@ -35,6 +35,16 @@ def check_fp8_support() -> Tuple[bool, str]:
     )
 
 
+def check_mxfp8_support() -> Tuple[bool, str]:
+    """Return if fp8 support is available"""
+    if get_device_compute_capability() >= (9, 5):
+        return True, ""
+    return (
+        False,
+        "Device compute capability gfx950 or higher required for MXFP8 execution.",
+    )
+
+
 def check_fp8_ocp_support() -> Tuple[bool, str]:
     """Return if fp8 ocp support is available"""
     if get_device_compute_capability() >= (9, 5):
@@ -81,8 +91,23 @@ class ScalingStrategy(Enum):
     # DELAYED_SCALING = auto() # TODO: undetermined
 
 
+class QuantConfig:
+    format: Format = None
+    granularity: ScalingGranularity = None
+    strategy: ScalingStrategy = None
+
+    def mxfp8_scaling(self):
+        return isinstance(self, MXFP8BlockQuantConfig)
+
+    def current_scaling(self):
+        return isinstance(self, Float8QuantConfig) and self.strategy == ScalingStrategy.DYNAMIC
+
+    def block_scaling(self):
+        return isinstance(self, BlockQuantConfig)
+
+
 @dataclass
-class Float8QuantConfig:
+class Float8QuantConfig(QuantConfig):
     format: Format = Format.E4M3
     granularity: ScalingGranularity = ScalingGranularity.TENSORWISE
     strategy: ScalingStrategy = ScalingStrategy.DYNAMIC
@@ -94,10 +119,25 @@ class Float8QuantConfig:
 
 
 @dataclass
-class MXQuantConfig(Float8QuantConfig):
+class BlockQuantConfig(Float8QuantConfig):
     format: Format = Format.E4M3
     granularity: ScalingGranularity = ScalingGranularity.BLOCKWISE
     block_size: int = 128  # Override: block_size required for blockwise
 
     def __post_init__(self):
         super().__post_init__()
+
+
+@dataclass
+class MXFP8BlockQuantConfig(BlockQuantConfig):
+    format: Format = Format.E4M3
+    granularity: ScalingGranularity = ScalingGranularity.BLOCKWISE
+    block_size: int = 32
+
+    def __post_init__(self):
+        super().__post_init__()
+
+        ret, msg = check_mxfp8_support()
+        assert ret, msg
+
+        assert self.block_size == 32, "MXFP8 block size should be 32."

@@ -8,7 +8,7 @@ from typing import Optional
 
 import torch
 
-from primus_turbo.pytorch.core.float8 import MXQuantConfig
+from primus_turbo.pytorch.core.float8 import BlockQuantConfig
 from primus_turbo.pytorch.ops.gemm_fp8 import gemm_fp8_blockwise
 
 __all__ = ["MXLinear"]
@@ -22,12 +22,12 @@ class MXLinear(torch.nn.Linear):
         in_features: int,
         out_features: int,
         bias: bool = True,
-        config: Optional[MXQuantConfig] = None,
+        config: Optional[BlockQuantConfig] = None,
         **kwargs,
     ):
         super().__init__(in_features, out_features, bias, **kwargs)
         if config is None:
-            config = MXQuantConfig()
+            config = BlockQuantConfig()
         self.config = config
 
     def forward(self, x):
@@ -48,12 +48,12 @@ class MXLinear(torch.nn.Linear):
     def from_float(
         cls,
         mod,
-        config: Optional[MXQuantConfig] = None,
+        config: Optional[BlockQuantConfig] = None,
     ):
         if config is None:
-            config = MXQuantConfig()
+            config = BlockQuantConfig()
         assert isinstance(mod, torch.nn.Linear), f"unsupported type(mod) {type(mod)}"
-        assert isinstance(config, MXQuantConfig)
+        assert isinstance(config, BlockQuantConfig)
         mod.__class__ = MXLinear
         mod.config = config
         return mod
