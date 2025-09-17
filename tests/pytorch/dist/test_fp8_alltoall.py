@@ -19,8 +19,8 @@ from torch.testing._internal.common_utils import (
 )
 
 from primus_turbo.pytorch.core.float8 import (
-    Float8QuantConfig,
     Format,
+    TensorwiseQuantConfig,
     float8_e4m3,
     float8_e5m2,
 )
@@ -95,7 +95,7 @@ def fp8_all_to_all(
     """Wrapper for autograd function"""
 
     if config is None:
-        config = Float8QuantConfig()
+        config = TensorwiseQuantConfig()
 
     args = (
         group,
@@ -154,7 +154,7 @@ class FP8AlltoAllTestCase(MultiProcessTestCase):
         inp = torch.rand(shape, dtype=dtype, device=self.device, requires_grad=True)
         inp_ref = inp.detach().clone().requires_grad_()
 
-        config = Float8QuantConfig()
+        config = TensorwiseQuantConfig()
         out = fp8_all_to_all(
             group,
             inp,

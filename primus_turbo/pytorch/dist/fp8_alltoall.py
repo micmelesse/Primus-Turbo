@@ -10,10 +10,10 @@ import torch
 import torch.distributed as dist
 
 from primus_turbo.pytorch.core.float8 import (
-    Float8QuantConfig,
     Format,
     ScalingGranularity,
     ScalingStrategy,
+    TensorwiseQuantConfig,
     float8_e4m3,
     float8_e5m2,
 )
@@ -55,7 +55,7 @@ class FP8AllToAll(torch.autograd.Function):
             equally by ``world_size``.
         fwd_quant (bool): Apply FP8 quantize on forward pass.
         bwd_quant (bool): Apply FP8 quantize on backward pass.
-        config (Float8QuantConfig): Primus-Turbo Float8Config. Only support strategy is ScalingStrategy.DYNAMIC and granularity is ScalingGranularity.TENSORWISE.
+        config (TensorwiseQuantConfig): Primus-Turbo Float8Config. Only support strategy is ScalingStrategy.DYNAMIC and granularity is ScalingGranularity.TENSORWISE.
 
     Returns:
         output (Tensor): Gathered concatenated output tensor.
@@ -70,7 +70,7 @@ class FP8AllToAll(torch.autograd.Function):
         input_split_sizes: Union[List, None],
         fwd_quant: bool,
         bwd_quant: bool,
-        config: Float8QuantConfig,
+        config: TensorwiseQuantConfig,
     ) -> torch.Tensor:
         assert group is not None, "group should not be None."
         assert config.strategy == ScalingStrategy.DYNAMIC

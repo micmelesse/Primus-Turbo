@@ -10,9 +10,9 @@ import torch.utils.benchmark as benchmark
 from tabulate import tabulate
 
 from primus_turbo.pytorch.core.float8 import (
-    Float8QuantConfig,
     Format,
     ScalingGranularity,
+    TensorwiseQuantConfig,
 )
 from primus_turbo.pytorch.ops import grouped_gemm_fp8
 from tests.pytorch.ref.gemm_ref import (
@@ -83,7 +83,7 @@ def bench_grouped_gemm_fp8(B, M, N, K, ori_dtype, format, granularity, trans_b, 
     a_ref = a.detach().clone().requires_grad_(True)
     b_ref = b.detach().clone().requires_grad_(True)
 
-    config = Float8QuantConfig(format=format, granularity=granularity)
+    config = TensorwiseQuantConfig(format=format, granularity=granularity)
 
     # Reference forward pass
     out_ref = grouped_gemm_ref(a_ref, b_ref, group_lens, trans_b=trans_b)

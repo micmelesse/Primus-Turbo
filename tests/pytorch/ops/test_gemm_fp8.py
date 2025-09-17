@@ -7,7 +7,11 @@
 import pytest
 import torch
 
-from primus_turbo.pytorch.core.float8 import BlockQuantConfig, Float8QuantConfig, Format
+from primus_turbo.pytorch.core.float8 import (
+    BlockwiseQuantConfig,
+    Format,
+    TensorwiseQuantConfig,
+)
 from primus_turbo.pytorch.ops import gemm_fp8_blockwise, gemm_fp8_tensorwise
 from tests.test_utils import compute_snr
 
@@ -42,7 +46,7 @@ def test_gemm_fp8_blockwise_func(dtype, block_size, B, M, NK):
     w_grad_ref = w_ref.grad
 
     # Config + FWD + BWD
-    config = BlockQuantConfig(block_size=block_size)
+    config = BlockwiseQuantConfig(block_size=block_size)
     out = gemm_fp8_blockwise(x, w, trans_a=False, trans_b=True, out_dtype=dtype, config=config)
     out.backward(grad_out)
     x_grad = x.grad
@@ -111,7 +115,7 @@ def test_gemm_fp8_tensorwise(m, n, k, layout, format, dtype):
     torch.cuda.synchronize()
 
     # Config + FWD + BWD
-    config = Float8QuantConfig(format=format)
+    config = TensorwiseQuantConfig(format=format)
     c = gemm_fp8_tensorwise(a, b, trans_a, trans_b, dtype, config)
     c.backward(grad_c)
 

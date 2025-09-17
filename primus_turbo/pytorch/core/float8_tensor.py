@@ -6,7 +6,7 @@
 
 import torch
 
-from primus_turbo.pytorch.core.float8 import Float8QuantConfig
+from primus_turbo.pytorch.core.float8 import TensorwiseQuantConfig
 
 
 # TODO: This Class is still develop.
@@ -35,7 +35,7 @@ class Float8Tensor(torch.Tensor):
         scale: torch.Tensor,
         orig_dtype: torch.dtype,
         fp8_dtype: torch.dtype,
-        config: Float8QuantConfig,
+        config: TensorwiseQuantConfig,
     ):
         self = torch.Tensor._make_wrapper_subclass(
             cls,
@@ -55,7 +55,7 @@ class Float8Tensor(torch.Tensor):
         return self
 
     @staticmethod
-    def from_tensor(x: torch.Tensor, fp8_dtype: torch.dtype, config: Float8QuantConfig):
+    def from_tensor(x: torch.Tensor, fp8_dtype: torch.dtype, config: TensorwiseQuantConfig):
         # TODO
         raise NotImplementedError("from_tensor is not implemented yet.")
 

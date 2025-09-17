@@ -10,9 +10,9 @@ import torch.utils.benchmark as benchmark
 from tabulate import tabulate
 
 from primus_turbo.pytorch.core.float8 import (
-    Float8QuantConfig,
     Format,
     ScalingGranularity,
+    TensorwiseQuantConfig,
 )
 from primus_turbo.pytorch.ops import gemm_fp8_tensorwise
 
@@ -57,7 +57,7 @@ def profile_gemm_fp8(M, N, K, ori_dtype, format, granularity, trans_b):
     b_shape = (N, K) if trans_b else (K, N)
     a = torch.randn((M, K), dtype=ori_dtype, device=device, requires_grad=True)
     b = torch.randn(b_shape, dtype=ori_dtype, device=device, requires_grad=True)
-    config = Float8QuantConfig(format=format, granularity=granularity)
+    config = TensorwiseQuantConfig(format=format, granularity=granularity)
 
     out = gemm_fp8_tensorwise(a, b, trans_b=trans_b, config=config)
     grad_out = torch.randn_like(out)

@@ -9,9 +9,9 @@ import torch
 
 import primus_turbo.pytorch as turbo
 from primus_turbo.pytorch.core.float8 import (
-    Float8QuantConfig,
     Format,
     ScalingGranularity,
+    TensorwiseQuantConfig,
 )
 from primus_turbo.pytorch.ops import grouped_gemm_fp8, grouped_gemm_fp8_blockwise
 from tests.pytorch.ref.gemm_ref import (
@@ -64,7 +64,7 @@ def test_grouped_gemm_fp8(B, M, NK, ori_dtype, format, granularity, trans_b, bal
     out_ref.backward(grad_out)
 
     # Turbo
-    config = Float8QuantConfig(format=format, granularity=granularity)
+    config = TensorwiseQuantConfig(format=format, granularity=granularity)
     out = grouped_gemm_fp8(a, b, group_lens, trans_b=trans_b, config=config)
     out.backward(grad_out)
 

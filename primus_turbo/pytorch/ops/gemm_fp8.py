@@ -9,10 +9,10 @@ from typing import Optional, Union
 import torch
 
 from primus_turbo.pytorch.core.float8 import (
-    BlockQuantConfig,
-    Float8QuantConfig,
+    BlockwiseQuantConfig,
     Format,
     ScalingGranularity,
+    TensorwiseQuantConfig,
     float8_e4m3,
     float8_e5m2,
 )
@@ -66,7 +66,7 @@ class BlockwiseFP8GemmFunction(torch.autograd.Function):
         trans_a: bool,
         trans_b: bool,
         out_dtype: torch.dtype,
-        config: BlockQuantConfig,
+        config: BlockwiseQuantConfig,
     ):
         # Check
         assert config != None
@@ -180,7 +180,7 @@ def gemm_fp8_blockwise(
     trans_a: bool = False,
     trans_b: bool = False,
     out_dtype: Union[torch.dtype, None] = None,
-    config: Optional[BlockQuantConfig] = None,
+    config: Optional[BlockwiseQuantConfig] = None,
 ):
     """
     Blockwise GEMM using FP8 quantization.
@@ -197,7 +197,7 @@ def gemm_fp8_blockwise(
         trans_a (bool): Default: False.
         trans_b (bool): Default: False.
         out_dtype (torch.dtype, optional): Output dtype. If None, inferred via `torch.result_type(a, b)`.
-        config (BlockQuantConfig, optional): Quantization configuration controlling FP8 dtype,
+        config (BlockwiseQuantConfig, optional): Quantization configuration controlling FP8 dtype,
             scaling strategy, granularity, and block size. If None, a default config is used.
 
     Returns:
@@ -214,7 +214,7 @@ def gemm_fp8_blockwise(
         out_dtype = torch.result_type(a, b)
 
     if config is None:
-        config = BlockQuantConfig()
+        config = BlockwiseQuantConfig()
 
     return BlockwiseFP8GemmFunction.apply(a, b, trans_a, trans_b, out_dtype, config)
 
@@ -249,7 +249,7 @@ class TensorwiseFP8GemmFunction(torch.autograd.Function):
         trans_a: bool,
         trans_b: bool,
         out_dtype: torch.dtype,
-        config: Float8QuantConfig,
+        config: TensorwiseQuantConfig,
     ):
         assert config.granularity == ScalingGranularity.TENSORWISE
 
@@ -320,7 +320,7 @@ def gemm_fp8_tensorwise(
     trans_a: bool = False,
     trans_b: bool = False,
     out_dtype: Union[torch.dtype, None] = None,
-    config: Union[Float8QuantConfig, None] = None,
+    config: Union[TensorwiseQuantConfig, None] = None,
 ) -> torch.Tensor:
     assert a.ndim == 2 and b.ndim == 2, "Only 2D tensors are supported"
 
@@ -328,7 +328,7 @@ def gemm_fp8_tensorwise(
         out_dtype = torch.result_type(a, b)
 
     if config is None:
-        config = Float8QuantConfig()
+        config = TensorwiseQuantConfig()
 
     args = (a, b, trans_a, trans_b, out_dtype, config)
 

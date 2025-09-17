@@ -165,7 +165,7 @@ FP16/BF16 -> Quantize -> FP8 -> GroupedGEMM(FP8 × FP8) -> FP16/BF16
 import torch
 import primus_turbo.pytorch as turbo
 from primus_turbo.pytorch.core.float8 import (
-    Float8QuantConfig,
+    TensorwiseQuantConfig,
     Format,
     ScalingGranularity,
 )
@@ -180,7 +180,7 @@ group_lens = torch.tensor([32, 16, 48, 32], device=device)
 a = torch.randn(M, K, device=device, dtype=dtype)
 b = torch.randn(G, N, K, device=device, dtype=dtype)  # shape [G, N, K] if trans_b=True
 
-fp8_cfg = Float8QuantConfig(
+fp8_cfg = TensorwiseQuantConfig(
     format=Format.E4M3,
     granularity=ScalingGranularity.TENSORWISE,  # or ROWWISE
 )
@@ -189,7 +189,7 @@ c = turbo.ops.grouped_gemm_fp8(a, b, group_lens, trans_b=True, config=fp8_cfg)
 print(c.shape)  # [128, 256]
 ```
 
-**Quantization Config (Float8QuantConfig)**
+**Quantization Config (TensorwiseQuantConfig)**
 * format
     * Format.E4M3 (default)
     * Format.E5M2

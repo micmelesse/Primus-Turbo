@@ -8,9 +8,9 @@ from typing import Union
 import torch
 
 from primus_turbo.pytorch.core.float8 import (
-    Float8QuantConfig,
     Format,
     ScalingGranularity,
+    TensorwiseQuantConfig,
     float8_e4m3,
     float8_e5m2,
 )
@@ -213,7 +213,7 @@ class GroupedGemmFP8RowFunc(torch.autograd.Function):
         group_lens: torch.Tensor,  # [B,] int64
         group_offs: torch.Tensor,  # [B+1,] int64
         trans_b: bool,
-        config: Float8QuantConfig,
+        config: TensorwiseQuantConfig,
         num_cu: int | None,
     ):
         assert config.granularity == ScalingGranularity.ROWWISE
@@ -328,7 +328,7 @@ class GroupedGemmFP8TensorFunc(torch.autograd.Function):
         group_lens: torch.Tensor,  # [B,] int64
         group_offs: torch.Tensor,  # [B+1,] int64
         trans_b: bool,
-        config: Float8QuantConfig,
+        config: TensorwiseQuantConfig,
         num_cu: int | None,
     ):
 
@@ -411,7 +411,7 @@ def grouped_gemm_fp8(
     group_lens: torch.Tensor,
     group_offs: torch.Tensor | None = None,
     trans_b: bool = True,
-    config: Union[Float8QuantConfig, None] = None,
+    config: Union[TensorwiseQuantConfig, None] = None,
     num_cu: int | None = None,
 ) -> torch.Tensor:
     """ """
@@ -422,7 +422,7 @@ def grouped_gemm_fp8(
     if group_offs is None:
         group_offs = grouped_gemm_compute_offs(group_lens)
     if config is None:
-        config = Float8QuantConfig()
+        config = TensorwiseQuantConfig()
 
     args = (a, b, group_lens, group_offs, trans_b, config, num_cu)
 

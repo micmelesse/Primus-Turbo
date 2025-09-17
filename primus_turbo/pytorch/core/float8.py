@@ -91,45 +91,49 @@ class ScalingStrategy(Enum):
     # DELAYED_SCALING = auto() # TODO: undetermined
 
 
-class QuantConfig:
+class Float8QuantConfig:
     format: Format = None
     granularity: ScalingGranularity = None
     strategy: ScalingStrategy = None
+    block_size: Optional[int] = None  # Default: not used for tensorwise/rowwise
 
     def mxfp8_scaling(self):
-        return isinstance(self, MXFP8BlockQuantConfig)
+        return isinstance(self, MXFP8BlockwiseQuantConfig)
 
     def current_scaling(self):
-        return isinstance(self, Float8QuantConfig) and self.strategy == ScalingStrategy.DYNAMIC
+        return isinstance(self, TensorwiseQuantConfig) and self.strategy == ScalingStrategy.DYNAMIC
 
     def block_scaling(self):
-        return isinstance(self, BlockQuantConfig)
+        return isinstance(self, BlockwiseQuantConfig)
 
 
 @dataclass
-class Float8QuantConfig(QuantConfig):
+class TensorwiseQuantConfig(Float8QuantConfig):
     format: Format = Format.E4M3
     granularity: ScalingGranularity = ScalingGranularity.TENSORWISE
     strategy: ScalingStrategy = ScalingStrategy.DYNAMIC
     block_size: Optional[int] = None  # Default: not used for tensorwise/rowwise
 
     def __post_init__(self):
-        if self.granularity == ScalingGranularity.BLOCKWISE and self.block_size is None:
-            raise ValueError("block_size must be set when granularity is BLOCKWISE")
+        assert (
+            self.granularity == ScalingGranularity.TENSORWISE and self.strategy == ScalingStrategy.DYNAMIC
+        ), "Tensorwise only support current scaling now."
 
 
 @dataclass
-class BlockQuantConfig(Float8QuantConfig):
+class BlockwiseQuantConfig(Float8QuantConfig):
     format: Format = Format.E4M3
     granularity: ScalingGranularity = ScalingGranularity.BLOCKWISE
     block_size: int = 128  # Override: block_size required for blockwise
 
     def __post_init__(self):
-        super().__post_init__()
+        assert (
+            self.granularity == ScalingGranularity.BLOCKWISE and self.block_size is not None
+        ), "block_size must be set when granularity is BLOCKWISE"
 
 
 @dataclass
-class MXFP8BlockQuantConfig(BlockQuantConfig):
+class MXFP8BlockwiseQuantConfig(BlockwiseQuantConfig):
     format: Format = Format.E4M3
     granularity: ScalingGranularity = ScalingGranularity.BLOCKWISE
     block_size: int = 32
