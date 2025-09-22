@@ -20,6 +20,9 @@ ROCSHMEM_LIBRARY = find_rocshmem_library()
 BUILD_TORCH = os.environ.get("PRIMUS_TURBO_BUILD_TORCH", "1") == "1"
 BUILD_JAX = os.environ.get("PRIMUS_TURBO_BUILD_JAX", "0") == "1"
 
+# -------- Supported GPU ARCHS --------
+SUPPORTED_GPU_ARCHS = ["gfx942", "gfx950"]
+
 
 class TurboBuildExt(BuildExtension):
     KERNEL_EXT_NAME = "libprimus_turbo_kernels"
@@ -92,6 +95,35 @@ def get_version():
         return base_version
 
 
+def get_offload_archs():
+    import torch
+
+    cur_device_arch = torch.cuda.get_device_properties(0).gcnArchName.split(":")[0].lower()
+
+    gpu_archs = os.environ.get("GPU_ARCHS", None)
+    # gpu_archs = None
+
+    arch_list = []
+    if gpu_archs is None or gpu_archs.strip() == "":
+        arch_list = [cur_device_arch]
+    else:
+        arch_list = [arch.strip().lower() for arch in gpu_archs.split(";")]
+
+    # TODO:Support compile multi-arch.
+    assert len(arch_list) == 1, "Primus Turbo only supports single arch for now."
+
+    macro_arch_list = []
+    offload_arch_list = []
+    for arch in arch_list:
+        if arch in SUPPORTED_GPU_ARCHS:
+            offload_arch_list.append(f"--offload-arch={arch}")
+            macro_arch_list.append(f"-DPRIMUS_TURBO_{arch.upper()}")
+        else:
+            print(f"[WARNING] Ignoring unsupported GPU_ARCHS entry: {arch}")
+    assert len(offload_arch_list) == 1, "Primus Turbo: expected exactly one --offload-arch."
+    return offload_arch_list, macro_arch_list
+
+
 def get_common_flags():
     arch = platform.machine().lower()
     extra_link_args = [
@@ -128,17 +160,22 @@ def get_common_flags():
         "-std=c++20",
     ]
 
-    # Device Arch
-    # TODO: Add ENV Setting
-    # TODO: ROCM Version support
-    nvcc_flags += [
-        "--offload-arch=native",
-        # "--offload-arch=gfx942",
-        # "--offload-arch=gfx950",
-    ]
+    # Device Archs
+    offload_arch_list, macro_arch_list = get_offload_archs()
+    cxx_flags += macro_arch_list
+    nvcc_flags += macro_arch_list
+    nvcc_flags += offload_arch_list
 
-    max_jobs = int(os.getenv("MAX_JOBS", "4"))
+    # Max Jobs
+    max_jobs = int(os.getenv("MAX_JOBS", "64"))
     nvcc_flags.append(f"-parallel-jobs={max_jobs}")
+
+    if "--offload-arch=gfx950" in nvcc_flags:
+        cxx_flags.append("-DCK_TILE_USE_OCP_FP8")
+        nvcc_flags.append("-DCK_TILE_USE_OCP_FP8")
+
+    print("********", cxx_flags)
+    print("********", nvcc_flags)
 
     return {
         "extra_link_args": extra_link_args,
