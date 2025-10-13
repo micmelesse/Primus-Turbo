@@ -335,10 +335,10 @@ if __name__ == "__main__":
 
     # Define test configurations
     test_configs_turbo = [
-        {"causal": False, "backend": "ck", "fp8": None, "test_backward": False},
-        {"causal": True, "backend": "ck", "fp8": None, "test_backward": False},
-        {"causal": False, "backend": "ck", "fp8": None, "test_backward": True},
-        {"causal": True, "backend": "ck", "fp8": None, "test_backward": True},
+        # {"causal": False, "backend": "ck", "fp8": None, "test_backward": False},
+        # {"causal": True, "backend": "ck", "fp8": None, "test_backward": False},
+        # {"causal": False, "backend": "ck", "fp8": None, "test_backward": True},
+        # {"causal": True, "backend": "ck", "fp8": None, "test_backward": True},
         {"causal": False, "backend": "triton", "fp8": "primus", "test_backward": False},
         {"causal": True, "backend": "triton", "fp8": "primus", "test_backward": False},
         {"causal": False, "backend": "triton", "fp8": "primus", "test_backward": True},
@@ -474,15 +474,15 @@ if __name__ == "__main__":
         
         plt.show()
 
-    test_configs_flash_attn = [
-        {"causal": False, "backend": "ck", "fp8": False, "test_backward": False},
-        {"causal": True, "backend": "ck", "fp8": False, "test_backward": False},
-        {"causal": False, "backend": "ck", "fp8": False, "test_backward": True},
-        {"causal": True, "backend": "ck", "fp8": False, "test_backward": True},
-    ]
-    # Run benchmarks with bench_flash_attention
-    flash_results = run_benchmark(bench_flash_attention, test_cases_flash_attn, test_configs_flash_attn)
-    print("\nFinal Flash Attention Results:")
-    print(tabulate(flash_results, headers="keys", tablefmt="grid", showindex=False))
-    flash_results.to_csv("flash_attention_benchmark_results.csv", index=False)
-    print("Flash Attention results saved to flash_attention_benchmark_results.csv")
+    # test_configs_flash_attn = [
+    #     {"causal": False, "backend": "ck", "fp8": False, "test_backward": False},
+    #     {"causal": True, "backend": "ck", "fp8": False, "test_backward": False},
+    #     {"causal": False, "backend": "ck", "fp8": False, "test_backward": True},
+    #     {"causal": True, "backend": "ck", "fp8": False, "test_backward": True},
+    # ]
+    # # Run benchmarks with bench_flash_attention
+    # flash_results = run_benchmark(bench_flash_attention, test_cases_flash_attn, test_configs_flash_attn)
+    # print("\nFinal Flash Attention Results:")
+    # print(tabulate(flash_results, headers="keys", tablefmt="grid", showindex=False))
+    # flash_results.to_csv("flash_attention_benchmark_results.csv", index=False)
+    # print("Flash Attention results saved to flash_attention_benchmark_results.csv")
