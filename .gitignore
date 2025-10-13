@@ -11,4 +11,4 @@ test-reports/
 *_hip.hpp
 *_hip.cuh
 *.csv
-.amd
+*.png
