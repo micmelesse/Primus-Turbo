@@ -323,13 +323,13 @@ if __name__ == "__main__":
         # {"causal": False, "backend": "ck", "fp8": None, "test_backward": True},
         # {"causal": True, "backend": "ck", "fp8": None, "test_backward": True},
         {"causal": False, "backend": "triton", "fp8": "primus", "test_backward": False},
-        # {"causal": True, "backend": "triton", "fp8": "primus", "test_backward": False},
-        # {"causal": False, "backend": "triton", "fp8": "primus", "test_backward": True},
-        # {"causal": True, "backend": "triton", "fp8": "primus", "test_backward": True},
+        {"causal": True, "backend": "triton", "fp8": "primus", "test_backward": False},
+        {"causal": False, "backend": "triton", "fp8": "primus", "test_backward": True},
+        {"causal": True, "backend": "triton", "fp8": "primus", "test_backward": True},
         {"causal": False, "backend": "triton", "fp8": "aiter", "test_backward": False},
-        # {"causal": True, "backend": "triton", "fp8": "aiter", "test_backward": False},
-        # {"causal": False, "backend": "triton", "fp8": "aiter", "test_backward": True},
-        # {"causal": True, "backend": "triton", "fp8": "aiter", "test_backward": True},
+        {"causal": True, "backend": "triton", "fp8": "aiter", "test_backward": False},
+        {"causal": False, "backend": "triton", "fp8": "aiter", "test_backward": True},
+        {"causal": True, "backend": "triton", "fp8": "aiter", "test_backward": True},
     ]
     # Run benchmarks with bench_turbo_attention
     aiter_results = run_benchmark(bench_turbo_attention, test_cases_turbo, test_configs_turbo)
