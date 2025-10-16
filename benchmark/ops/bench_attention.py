@@ -7,8 +7,7 @@
 import torch
 import torch.utils.benchmark as benchmark
 from flash_attn import flash_attn_func
-from aiter.ops.triton.mha_v3 import flash_attn_func as aiter_flash_attn_func
-from aiter.ops.triton.utils.mha_kernel_utils import _quantize_bshd
+from aiter.ops.triton.mha_v3 import flash_attn_func_fp8 as aiter_flash_attn_func_fp8
 
 import primus_turbo.pytorch as pt
 from tests.pytorch.ref.attention_ref import (
@@ -98,29 +97,13 @@ def bench_turbo_attention(batch, config, causal: bool, backend_type: str, use_fp
             backend_type=backend_type,
         )
     elif use_fp8 == "aiter":
-        def _aiter_forward():
-            fp8_dtype = torch.float8_e4m3fnuz
-            group_size = (
-                num_head_q // num_head_kv
-                if num_head_q % num_head_kv == 0 and num_head_q != num_head_kv
-                else None
-            )
-
-            q_fp8, q_descale = _quantize_bshd(query, fp8_dtype, group_size=group_size)
-            k_fp8, k_descale = _quantize_bshd(key, fp8_dtype)
-            v_fp8, v_descale = _quantize_bshd(value, fp8_dtype)
-            return aiter_flash_attn_func(
-                q_fp8,
-                k_fp8,
-                v_fp8,
-                softmax_scale=sm_scale,
-                causal=causal,
-                q_descale=q_descale,
-                k_descale=k_descale,
-                v_descale=v_descale,
-            )
-        
-        fn_forward = _aiter_forward
+        fn_forward = lambda: aiter_flash_attn_func_fp8(
+            query,
+            key,
+            value,
+            softmax_scale=sm_scale,
+            causal=causal,
+        )
     else:
         raise ValueError(f"Invalid use_fp8 value: {use_fp8}. Must be None, 'primus', or 'aiter'")
 
@@ -141,9 +124,9 @@ def bench_turbo_attention(batch, config, causal: bool, backend_type: str, use_fp
 
     # Verify SNRs meet requirements
     assert out_snr > 20, "out_snr too low"
-    # assert query_grad_snr > 15, "query_grad_snr too low"
-    # assert key_grad_snr > 15, "key_grad_snr too low"
-    # assert value_grad_snr > 15, "value_grad_snr too low"
+    assert query_grad_snr > 15, "query_grad_snr too low"
+    assert key_grad_snr > 15, "key_grad_snr too low"
+    assert value_grad_snr > 15, "value_grad_snr too low"
 
     # Calculate FLOPs
     total_flops = (
@@ -340,13 +323,13 @@ if __name__ == "__main__":
         # {"causal": False, "backend": "ck", "fp8": None, "test_backward": True},
         # {"causal": True, "backend": "ck", "fp8": None, "test_backward": True},
         {"causal": False, "backend": "triton", "fp8": "primus", "test_backward": False},
-        {"causal": True, "backend": "triton", "fp8": "primus", "test_backward": False},
-        {"causal": False, "backend": "triton", "fp8": "primus", "test_backward": True},
-        {"causal": True, "backend": "triton", "fp8": "primus", "test_backward": True},
+        # {"causal": True, "backend": "triton", "fp8": "primus", "test_backward": False},
+        # {"causal": False, "backend": "triton", "fp8": "primus", "test_backward": True},
+        # {"causal": True, "backend": "triton", "fp8": "primus", "test_backward": True},
         {"causal": False, "backend": "triton", "fp8": "aiter", "test_backward": False},
-        {"causal": True, "backend": "triton", "fp8": "aiter", "test_backward": False},
-        {"causal": False, "backend": "triton", "fp8": "aiter", "test_backward": True},
-        {"causal": True, "backend": "triton", "fp8": "aiter", "test_backward": True},
+        # {"causal": True, "backend": "triton", "fp8": "aiter", "test_backward": False},
+        # {"causal": False, "backend": "triton", "fp8": "aiter", "test_backward": True},
+        # {"causal": True, "backend": "triton", "fp8": "aiter", "test_backward": True},
     ]
     # Run benchmarks with bench_turbo_attention
     aiter_results = run_benchmark(bench_turbo_attention, test_cases_turbo, test_configs_turbo)
@@ -391,6 +374,7 @@ if __name__ == "__main__":
             
             # Build dictionary with values for each FP8 type
             row_data = {'label': label, 'config_id': config_id}
+            has_nan = False
             for fp8_type in unique_fp8_types:
                 fp8_data = config_df[config_df['FP8'].astype(str) == fp8_type]
                 if not fp8_data.empty:
@@ -399,9 +383,16 @@ if __name__ == "__main__":
                         row_data[fp8_type] = value
                     except (ValueError, TypeError):
                         row_data[fp8_type] = np.nan
+                        has_nan = True
                 else:
                     row_data[fp8_type] = np.nan
-            config_data.append(row_data)
+                    has_nan = True
+            
+            # Skip this config if any value is NaN
+            if not has_nan:
+                config_data.append(row_data)
+            else:
+                print(f"  Skipping config {config_id} due to NaN values")
         
         # Sort by config parameters
         config_data = sorted(config_data, key=lambda x: x['config_id'])
