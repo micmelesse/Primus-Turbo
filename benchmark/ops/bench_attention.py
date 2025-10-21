@@ -7,7 +7,7 @@
 import torch
 import torch.utils.benchmark as benchmark
 from flash_attn import flash_attn_func
-from aiter.ops.triton.mha_v3 import flash_attn_func_fp8 as aiter_flash_attn_func_fp8
+from aiter.ops.triton.mha_v3 import flash_attn_fp8_func
 
 import primus_turbo.pytorch as pt
 from tests.pytorch.ref.attention_ref import (
@@ -97,7 +97,7 @@ def bench_turbo_attention(batch, config, causal: bool, backend_type: str, use_fp
             backend_type=backend_type,
         )
     elif use_fp8 == "aiter":
-        fn_forward = lambda: aiter_flash_attn_func_fp8(
+        fn_forward = lambda: flash_attn_fp8_func(
             query,
             key,
             value,
