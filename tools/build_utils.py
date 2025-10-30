@@ -5,7 +5,9 @@
 ###############################################################################
 
 import os
+import re
 import shutil
+import subprocess
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,9 +16,15 @@ from typing import List, Optional
 import setuptools
 from hipify_torch.hipify_python import hipify
 
-from .patch import patch_torch_extension
+try:
+    import torch  # noqa: F401
 
-patch_torch_extension()
+    from .patch import patch_torch_extension
+except ImportError:
+    warnings.warn("PyTorch not found, skip patch_torch_extension.", ImportWarning)
+else:
+    # TODO: pytorch version check
+    patch_torch_extension()
 
 
 TURBO_FALLBACK_LIBRARY_HOME = "/opt/rocm"
@@ -73,6 +81,20 @@ def _find_library_home(
             lib_home = fallback_path
 
     return lib_home
+
+
+def find_rocm_home() -> Optional[str]:
+    """Find the ROCm install path."""
+    hipcc_path = shutil.which("hipcc")
+    if hipcc_path is not None:
+        rocm_home = os.path.dirname(os.path.dirname(os.path.realpath(hipcc_path)))
+        if os.path.basename(rocm_home) == "hip":
+            rocm_home = os.path.dirname(rocm_home)
+    else:
+        fallback_path = TURBO_FALLBACK_LIBRARY_HOME
+        if os.path.exists(fallback_path):
+            rocm_home = fallback_path
+    return rocm_home
 
 
 def find_hip_home() -> str:
@@ -191,3 +213,28 @@ def find_rocshmem_library() -> Library:
         ],
     )
     return rocshmem_library
+
+
+def get_gpu_arch(gpu_id: int = 0) -> str:
+    GPU_ARCH_PATTERN = re.compile(r"Name:\s*(gfx\d+\w*)")
+    try:
+        result = subprocess.run(
+            ["rocminfo"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=True,
+        )
+    except FileNotFoundError:
+        raise RuntimeError("rocminfo not found. Please ensure ROCm is installed.")
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"rocminfo failed: {e.stderr}")
+
+    matches = GPU_ARCH_PATTERN.findall(result.stdout)
+
+    if not matches:
+        raise RuntimeError("No gfx architecture found in rocminfo output.")
+    if gpu_id >= len(matches):
+        raise IndexError(f"gpu_id {gpu_id} out of range (found {len(matches)} GPUs).")
+
+    return matches[gpu_id].lower()
