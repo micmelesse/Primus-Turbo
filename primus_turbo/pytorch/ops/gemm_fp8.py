@@ -385,7 +385,6 @@ def gemm_fp8(
 
     """
     assert a.ndim == 2 and b.ndim == 2, "Only 2D tensors are supported"
-
     if out_dtype is None:
         out_dtype = torch.result_type(a, b)
 
